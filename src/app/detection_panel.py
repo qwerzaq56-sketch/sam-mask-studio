@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.app.objects_panel import color_icon
+from src.app.objects_panel import color_icon, later
 from src.core.project import Detection
 
 CANDIDATE_COLORS = ((255, 200, 0), (0, 220, 255), (255, 90, 200), (140, 255, 90), (255, 140, 60), (170, 140, 255))
@@ -87,7 +87,9 @@ class DetectionPanel(QWidget):
         self._updating = True
         self.list.clear()
         for i, (d, c) in enumerate(zip(detections, checked, strict=True)):
-            it = QListWidgetItem(color_icon(candidate_color(i)), f"{d.label}  {d.score:.2f}  · {int(d.mask.sum()):,} px")
+            it = QListWidgetItem(
+                color_icon(candidate_color(i)), f"{d.label}  {d.score:.2f}  · {int(d.mask.sum()):,} px"
+            )
             it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             it.setCheckState(Qt.CheckState.Checked if c else Qt.CheckState.Unchecked)
             self.list.addItem(it)
@@ -112,4 +114,4 @@ class DetectionPanel(QWidget):
             return
         c = self.checked()
         self.add_btn.setEnabled(any(c))
-        self.checks_changed.emit(c)
+        later(self.checks_changed, c)

@@ -1,13 +1,31 @@
-"""Image list with a marker for images that have masks (and for suspicious propagated ones)."""
+"""Image list with a per-image status mark (spec 02 §13): ✕ failed, ⚠ warning, ★ manual, ✓ propagated."""
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Dict, Sequence
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QListWidget, QVBoxLayout, QWidget
 
 from src.core.project import FrameStatus, Project
+
+
+# Most important first: a failed or suspicious frame must stand out in a long list.
+PRIORITY = (
+    (FrameStatus.FAILED, "✕"),
+    (FrameStatus.WARNING, "⚠"),
+    (FrameStatus.MANUAL, "★"),
+    (FrameStatus.PROPAGATED, "✓"),
+)
+
+
+def image_marks(project: Project) -> Dict[str, str]:
+    seen: Dict[str, set] = {}
+    for o in project.objects:
+        for k, fs in o.frames.items():
+            if fs.mask is not None:
+                seen.setdefault(k, set()).add(fs.status)
+    return {k: next(m for st, m in PRIORITY if st in sts) for k, sts in seen.items()}
 
 
 class ImagesPanel(QWidget):
@@ -31,16 +49,10 @@ class ImagesPanel(QWidget):
         self._updating = False
 
     def update_marks(self, project: Project) -> None:
-        """● = some Object has a mask here, ⚠ = a propagated mask there looks wrong or failed."""
-        has, bad = set(), set()
-        for o in project.objects:
-            for k, fs in o.frames.items():
-                if fs.mask is not None:
-                    has.add(k)
-                if fs.status in (FrameStatus.WARNING, FrameStatus.FAILED):
-                    bad.add(k)
+        """Mark each image with the most important status of the Object masks on it."""
+        marks = image_marks(project)
         for i, k in enumerate(self._keys):
-            mark = "⚠" if k in bad else ("●" if k in has else " ")
+            mark = marks.get(k, " ")
             text = f"{mark}  {k}"
             it = self.list.item(i)
             if it is not None and it.text() != text:

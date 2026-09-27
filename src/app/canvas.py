@@ -335,7 +335,11 @@ class Canvas(QWidget):
             self._pan_from = (pos, QPointF(self._pan))
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
-        if btn == Qt.MouseButton.LeftButton and self.mode == Mode.EDIT and event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+        if (
+            btn == Qt.MouseButton.LeftButton
+            and self.mode == Mode.EDIT
+            and event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        ):
             x, y = self._clamped(pos)
             base = self.edit_mask()
             h, w = self.image.shape[:2]

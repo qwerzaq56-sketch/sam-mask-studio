@@ -78,6 +78,8 @@ class Session:
         self.selected_point: Optional[int] = None
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
+        # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
+        self._detections_by_key: Dict[str, Tuple[List[Detection], List[bool]]] = {}
         self._sizes: Dict[str, Tuple[int, int]] = {}
 
     # ------------------------------------------------------------------
@@ -103,20 +105,27 @@ class Session:
         self.project = self.store.load([p.name for p in paths])
         self.max_side = self.store.max_side  # an existing project keeps its working resolution
         self._sizes.clear()
+        self._detections_by_key.clear()
+        self.clear_detections()
         self.index = -1
         self.go_to(0)
         return len(paths)
 
     def go_to(self, index: int) -> bool:
-        """Make image *index* current. Leaves Edit/New mode and drops Detections."""
+        """Make image *index* current. Leaves Edit/New mode; Detections stay with their image."""
         if not (0 <= index < len(self.paths)) or index == self.index:
             return False
+        if self.key is not None:
+            if self.detections:
+                self._detections_by_key[self.key] = (self.detections, self.detection_checked)
+            else:
+                self._detections_by_key.pop(self.key, None)
         self.index = index
         self.image = to_working(read_rgb(self.paths[index]), self.max_side)
         if self.engine is not None:
             self.engine.set_image(self.image)
         self.cancel_mode()
-        self.clear_detections()
+        self.detections, self.detection_checked = self._detections_by_key.pop(self.key, ([], []))
         return True
 
     def step(self, delta: int) -> bool:
@@ -256,9 +265,11 @@ class Session:
         self._update(lambda f: dataclasses.replace(f, box=None))
         return True
 
-    def select_variant(self, index: int) -> None:
-        if self.editing is not None and self.key is not None:
-            self.project.select_variant(self.editing, self.key, index)
+    def select_variant(self, index: int, obj_id: Optional[int] = None) -> None:
+        """Pick the Variant that becomes the Object's mask on this image (default: the edited Object)."""
+        obj_id = self.editing if obj_id is None else obj_id
+        if obj_id is not None and self.key is not None:
+            self.project.select_variant(obj_id, self.key, index)
 
     def brush(self, mask: np.ndarray) -> bool:
         """Replace the edited frame's mask with a brushed one.
@@ -274,7 +285,9 @@ class Session:
         self.project.set_frame(
             self.editing,
             self.key,
-            dataclasses.replace(fs, points=(), box=None, base_mask=m, variants=(Variant(m, 1.0),), selected=0, status=FrameStatus.MANUAL),
+            dataclasses.replace(
+                fs, points=(), box=None, base_mask=m, variants=(Variant(m, 1.0),), selected=0, status=FrameStatus.MANUAL
+            ),
         )
         self.selected_point = None
         return True
@@ -323,7 +336,7 @@ class Session:
         """Turn the checked Detections into Objects and close the Detection list."""
         if self.key is None:
             return []
-        chosen = [d for d, c in zip(self.detections, self.detection_checked) if c]
+        chosen = [d for d, c in zip(self.detections, self.detection_checked, strict=True) if c]
         ids = self.project.add_detections(self.key, chosen)
         self.clear_detections()
         return ids

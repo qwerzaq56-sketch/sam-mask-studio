@@ -85,12 +85,24 @@ def test_undo_past_creation_leaves_edit_mode(session):
     assert session.project.objects == [] and session.mode == Mode.IDLE and session.editing is None
 
 
-def test_navigation_leaves_edit_and_drops_detections(session):
+def test_navigation_leaves_edit_and_keeps_detections_per_image(session):
     session.set_detections(session.engine.detect("person"))
+    session.detection_checked[0] = False
     session.start_new_object()
     session.click(20, 20)
     assert session.step(1) and session.index == 1
     assert session.mode == Mode.IDLE and session.detections == []
+    session.step(-1)
+    assert len(session.detections) == 2 and session.detection_checked == [False, True]
+
+
+def test_select_variant_of_any_object_without_edit(session):
+    session.start_new_object()
+    oid = session.click(40, 30)
+    session.cancel_mode()
+    session.select_variant(1, oid)
+    fs = session.project.get(oid).frame(session.key)
+    assert fs.selected == 1 and fs.mask is fs.variants[1].mask
 
 
 def test_add_checked_detections(session):

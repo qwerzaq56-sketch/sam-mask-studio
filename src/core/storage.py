@@ -77,6 +77,10 @@ class ProjectStore:
     def mask_path(self, obj_id: int, key: str) -> Path:
         return self.root / "objects" / str(obj_id) / f"{key}.png"
 
+    def is_saved(self, project: Project) -> bool:
+        """True when *project* has no changes since the last save/load."""
+        return project.revision == self._saved_revision
+
     def exists(self) -> bool:
         return (self.root / "project.json").is_file()
 

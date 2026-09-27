@@ -1,4 +1,9 @@
-"""Properties of the Object in Edit: Variants, prompt points, box, and the edit buttons."""
+"""Properties (spec 01 §5, §8, §9): the selected / edited Object, its Variants and Points.
+
+Points are listed as Positive (●) and Negative (×) groups, numbered in the
+order they were placed; selecting one highlights it on the canvas and Delete
+removes exactly that point.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,7 @@ from typing import Optional
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QSize, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -20,9 +25,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.app.objects_panel import later
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
+POINT_ROLE = Qt.ItemDataRole.UserRole
 
 
 def mask_thumbnail(image: Optional[np.ndarray], mask: np.ndarray, color, size: int = THUMB) -> QIcon:
@@ -30,7 +37,11 @@ def mask_thumbnail(image: Optional[np.ndarray], mask: np.ndarray, color, size: i
     h, w = mask.shape
     s = size / max(h, w)
     tw, th = max(1, int(w * s)), max(1, int(h * s))
-    base = cv2.resize(image, (tw, th), interpolation=cv2.INTER_AREA) if image is not None else np.zeros((th, tw, 3), np.uint8)
+    base = (
+        cv2.resize(image, (tw, th), interpolation=cv2.INTER_AREA)
+        if image is not None
+        else np.zeros((th, tw, 3), np.uint8)
+    )
     m = cv2.resize(mask.astype(np.uint8), (tw, th), interpolation=cv2.INTER_NEAREST) > 0
     out = (base.astype(np.float32) * 0.45).astype(np.uint8)
     out[m] = (0.4 * base[m] + 0.6 * np.array(color)).astype(np.uint8)
@@ -50,7 +61,7 @@ class PropertiesPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._updating = False
-        self.title = QLabel("No Object in Edit")
+        self.title = QLabel("No Object selected")
         self.title.setWordWrap(True)
         self.hint = QLabel(
             "Pick an Object's <b>Edit</b>, or <b>+ New Object from Points</b>.<br>"
@@ -68,7 +79,7 @@ class PropertiesPanel(QWidget):
         QVBoxLayout(vbox).addWidget(self.variants)
 
         self.points = QListWidget()
-        self.points.currentRowChanged.connect(self._on_point)
+        self.points.currentItemChanged.connect(self._on_point)
         self.box_label = QLabel("Box: —")
         self.del_point_btn = QPushButton("Delete Point")
         self.del_point_btn.setToolTip("Delete the selected point (Delete)")
@@ -99,6 +110,10 @@ class PropertiesPanel(QWidget):
         lay.addWidget(self.finish_btn)
         self.show_frame(None, None, None, None)
 
+    def selected_point(self) -> Optional[int]:
+        it = self.points.currentItem()
+        return it.data(POINT_ROLE) if it is not None else None
+
     def show_frame(
         self,
         obj: Optional[MaskObject],
@@ -106,42 +121,62 @@ class PropertiesPanel(QWidget):
         selected_point: Optional[int],
         image: Optional[np.ndarray],
         new_mode: bool = False,
+        editing: bool = False,
     ) -> None:
+        """Show *obj*'s frame on the current image; point/box controls only work while *editing*."""
         self._updating = True
         self.variants.clear()
         self.points.clear()
         if obj is None:
-            self.title.setText("<b>New Object</b> — click or drag a box on the image" if new_mode else "No Object in Edit")
+            self.title.setText(
+                "<b>New Object</b> — click or drag a box on the image" if new_mode else "No Object selected"
+            )
         else:
-            self.title.setText(f"<b>{obj.name}</b> · {obj.source.value}")
+            state = "Editing" if editing else "Selected"
+            self.title.setText(f"{state}: <b>{obj.name}</b> · {obj.source.value}")
         if frame is not None and obj is not None:
             for i, v in enumerate(frame.variants):
-                it = QListWidgetItem(mask_thumbnail(image, v.mask, obj.color), f"#{i + 1}  score {v.score:.2f}  · {v.area:,} px")
+                sel = i == min(frame.selected, len(frame.variants) - 1)
+                it = QListWidgetItem(
+                    mask_thumbnail(image, v.mask, obj.color),
+                    f"{'●' if sel else '○'} Variant {i + 1}   {v.score:.3f}\n{v.area:,} px",
+                )
                 self.variants.addItem(it)
             if frame.variants:
                 self.variants.setCurrentRow(min(frame.selected, len(frame.variants) - 1))
-            for p in frame.points:
-                self.points.addItem(f"{'+' if p.positive else '−'}  ({p.x:.0f}, {p.y:.0f})")
-            if selected_point is not None and selected_point < self.points.count():
-                self.points.setCurrentRow(selected_point)
+            for positive, header in ((True, "Positive Points"), (False, "Negative Points")):
+                group = [(i, p) for i, p in enumerate(frame.points) if p.positive == positive]
+                if not group:
+                    continue
+                h = QListWidgetItem(header)
+                h.setFlags(Qt.ItemFlag.NoItemFlags)
+                self.points.addItem(h)
+                for i, p in group:
+                    it = QListWidgetItem(f"  {'●' if positive else '×'} Point {i + 1}   ({p.x:.0f}, {p.y:.0f})")
+                    it.setData(POINT_ROLE, i)
+                    if not editing:
+                        it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                    self.points.addItem(it)
+                    if i == selected_point:
+                        self.points.setCurrentItem(it)
             self.box_label.setText("Box: " + (", ".join(f"{v:.0f}" for v in frame.box) if frame.box else "—"))
         else:
             self.box_label.setText("Box: —")
-        editing = obj is not None
+        editing = editing and obj is not None
         has_points = frame is not None and bool(frame.points)
         self.del_point_btn.setEnabled(editing and selected_point is not None)
         self.clear_btn.setEnabled(editing and frame is not None and frame.has_prompts)
         self.clear_box_btn.setEnabled(editing and frame is not None and frame.box is not None)
         self.points.setEnabled(has_points)
+        self.variants.setEnabled(obj is not None)
         self.finish_btn.setEnabled(editing or new_mode)
         self.finish_btn.setText("Cancel New Object" if new_mode else "Finish Editing")
         self._updating = False
 
     def _on_variant(self, row: int) -> None:
         if not self._updating and row >= 0:
-            self.variant_selected.emit(row)
+            later(self.variant_selected, row)
 
-    def _on_point(self, row: int) -> None:
-        if not self._updating and row >= 0:
-            self.point_selected.emit(row)
-
+    def _on_point(self, item, _previous=None) -> None:
+        if not self._updating and item is not None and item.data(POINT_ROLE) is not None:
+            later(self.point_selected, item.data(POINT_ROLE))

@@ -61,7 +61,9 @@ class FakeEngine:
         return dets
 
 
-def fake_propagate(sam2_ckpt, image_paths, plan, seeds, max_side, device="cuda", cancel=None, progress=None) -> Iterator:
+def fake_propagate(
+    sam2_ckpt, image_paths, plan, seeds, max_side, device="cuda", cancel=None, progress=None
+) -> Iterator:
     """Stand-in for ``src.engine.video.propagate``: copies each seed to every target frame."""
     total = len(plan.targets)
     done = 0
