@@ -10,43 +10,48 @@ Goal: one workspace where **SAM3 finds, SAM2 cuts/refines**, and the user thinks
 
 Flow: find → select → refine → combine → save.
 
-## Spec summary (from the three planning docs)
+## Specs (source of truth)
 
-### GUI / UX
-- Layout: toolbar (Open, Save, Undo, Redo, Export, [ERP later]) · left **Objects** ·
-  center canvas · right **Properties** (selected Object, Variants, Points) ·
-  bottom **Prompt / Detection / Status / Logs**.
-- Objects are created **only** two ways:
-  1. SAM3 text prompt → Detection list with checkboxes → **Add Selected as Objects**
-     (over-detections such as "person on a sign" are simply left unchecked).
-  2. **+ New Object from Points** (explicit mode), then click / drag a box on the canvas → SAM2.
-- A plain canvas click must never silently create an Object.
-- Per Object: **checkbox = include in Final Mask**, **[Edit] = the one Object being edited**,
-  **[×]/[···] = delete/rename/duplicate**. Only one Object is in Edit at a time.
-- Edit mode: left click = positive point, right click = negative point, click a point to
-  select it, **Delete removes the selected point** (not only undo), Clear Points,
-  Finish Editing, Ctrl+Z / Ctrl+Y.
-- SAM3-created Objects can be refined with SAM2 points (SAM3 mask used as the SAM2 prior).
-- Variants: pick one per Object; Objects: many may be checked.
-- Final Mask: Preview + PNG Export.
-- ERP / 360°: later. Internals would project to perspective views and merge back;
-  the Object model and UX stay identical.
+The original planning documents are in `docs/specs/` and win over anything here:
 
-### Object management
-- Rename, Duplicate (copies masks, points, variants, frame masks; independent afterwards),
-  Delete (with confirm; removes its frame masks), **Merge** (union per frame over every
-  frame where any member has a mask → a new confirmed Object; members removed; no
-  variant combinations in MVP; can be edited/propagated afterwards).
-- Merge ≠ Final Mask selection: merge fuses Objects permanently, checkboxes only include.
+- [`01-gui-ux.md`](specs/01-gui-ux.md) — concepts, layout, Object creation, Edit, Variants, Final Mask, ERP (later)
+- [`02-propagation.md`](specs/02-propagation.md) — Current = reference, Start/End = bounds, directions, progress, ✓⚠✕★
+- [`03-object-management.md`](specs/03-object-management.md) — rename, duplicate, merge, delete, Object × Propagation
 
-### Propagation
-- **Current image = reference**; Start/End only **bound** the range; Current must be inside.
-- Direction Both / Forward (Current→End) / Backward (Current→Start); Current is never
-  re-processed or overwritten.
-- Only checked Objects propagate, each from its **currently selected Variant** on Current.
-- Confirm before overwriting frames that already have masks (list them).
-- Progress (per direction), per-frame status ✓ ok / ⚠ warning / ✕ failed / ★ reference,
-  clicking a frame navigates to it. Fix a frame, make it Current, propagate again.
+### Where each spec item lives
+
+| Spec | Implementation |
+|---|---|
+| 01 §5 layout: toolbar Open/Save/Undo/Redo/Export/ERP · Objects · Canvas · Properties · Prompt/Detection/Status/Logs | `app/main_window.py` (ERP action present but disabled — later) |
+| 01 §6 Objects only via SAM3 Detection or **+ New Object from Points**; plain clicks never create | `Session.click` (IDLE → no-op), `start_new_object` |
+| 01 §7 row: ☑ name [Edit] [×], Variant ●/○ rows under the Object; 03 §3 [···] + "Selected Objects: Merge/Duplicate/Delete" | `app/objects_panel.py` (both [×] and [···]) |
+| 01 §8 one Object in Edit; left/right = +/− point; select a point, Delete removes it; Clear Points; Finish Editing; Ctrl+Z/Y | `Session.edit/click/select_point/delete_point/clear_points`, canvas hit-test, Properties point list |
+| 01 §8.1 Positive / Negative point lists | `app/properties_panel.py` (grouped, numbered in placement order) |
+| 01 §9 one Variant per Object, many Objects checked | Variant rows (Objects panel) and thumbnails (Properties) → `Session.select_variant(i, obj_id)` |
+| 01 §10 over-detection left unchecked | Detection checkboxes → `add_checked_detections` |
+| 01 §11 SAM3 Object refined by SAM2 | `predict(points, box, seed_mask=base_mask)` |
+| 01 §12 Preview Final Mask / Export | toolbar `F` (+ hold Alt), Export dialog |
+| 01 §15 Image → DetectionResults | Detections kept per image in `Session` (restored on navigating back; not persisted) |
+| 02 §3 Current must be within Start~End; §8 Current never re-processed | `PropagationPlan`, `MainWindow.propagate` |
+| 02 §6–7 only checked Objects, from their selected Variant | `Session.seeds()` |
+| 02 §11 confirm overwrite, list the images | `Session.overwrite_targets` + dialog "Overwrite existing propagated masks?" |
+| 02 §12 per-direction progress with the frame chain, per-Object status, "Current: …" | `app/propagation_panel.py` |
+| 02 §13 ✓ ⚠ ✕ ★ per frame, click to navigate | frame list in the panel + marks in the image list |
+| 03 §8–9 Merge = per-frame union, new confirmed Object, no Variant combinations | `Project.merge` |
+| 03 §10 Duplicate copies masks/points/variants/selected/frames | `Project.duplicate` |
+| 03 §12 `Delete "name"?` confirm, frame masks removed | `MainWindow.delete_objects` |
+
+### Interpretations (where the specs leave room)
+
+- **Merge / Duplicate / Delete act on row selection**, not on the include checkboxes, so choosing
+  what goes into the Final Mask never doubles as choosing what to merge (03 §14 keeps them distinct).
+- **Brush** (upstream feature, not in the specs) is kept for the Object in Edit: the painted mask
+  becomes the frame's base mask and its points are cleared, so what you see is what was painted.
+- **"Propagate Selected Objects"** propagates the *checked* Objects, as 02 §6 describes.
+- 02 §12 shows Objects progressing one after another; SAM2's video predictor tracks all Objects in
+  one pass, so every Object's percentage advances together.
+- ⚠ is an area-jump heuristic (`WARN_AREA_RATIO`); automatic quality scoring is "later" in 02 §14.
+- 01 §16 lists project save/restore and propagation as "later"; both are implemented already.
 
 ## Design decisions
 
@@ -61,6 +66,8 @@ Flow: find → select → refine → combine → save.
 | Export | `<dir>_masks/` by default; `{stem}.png` or COLMAP-style `{name}.png`; optional invert (object black / keep white); optional empty masks for images without Objects. |
 | Propagation engine | SAM2 video predictor over the plan's window only. SAM2 reads a folder of numbered JPEGs, so frames are written there at working resolution (**copies, not symlinks** — symlinks need admin/Developer Mode on Windows; the upstream app's propagation used `os.symlink` and fails there). All Objects propagate in one pass. |
 | Bulk Object ops | Merge / Duplicate / Delete act on **row selection** (Ctrl/Shift-click rows) so they don't conflict with the include checkboxes. |
+| Threads | SAM2 clicks run on the UI thread (fast once the embedding exists); model loading, SAM3 detect, export and propagation run in `QThread`s. `InferenceEngine.lock` serialises GPU use. While a long job runs, navigation and editing are disabled. |
+| Settings | `config.local.json` (git-ignored): checkpoint paths, working max side, last folder, autosave delay. |
 | Windows | Unicode paths: read/write images via `np.fromfile` + `cv2.imdecode` / `imencode().tofile`. |
 
 ## Module map
@@ -72,49 +79,36 @@ src/core/storage.py      ProjectStore (autosave/load sidecar), export_final_mask
 src/engine/imageio.py    find_images, read_rgb (Unicode-safe), working_size/to_working, resize_mask
 src/engine/inference.py  InferenceEngine: load_sam2/load_sam3, set_image, predict(points, box, seed), detect(text)
 src/engine/video.py      propagate(ckpt, paths, plan, seeds, max_side, …) -> yields (index, {obj_id: mask})
-src/sam2/, src/sam3/     upstream model wrappers (reused)
+src/app/session.py       Session: folder, current image, mode IDLE/NEW/EDIT, prompts, detections, propagation apply (Qt-free)
+src/app/canvas.py        Canvas widget: overlays, points, box, brush, zoom/pan, Final Mask preview
+src/app/*_panel.py       Objects, Properties, Detection, Propagation, Images panels
+src/app/main_window.py   wiring, toolbar, shortcuts, autosave, workers (workers.py), dialogs.py, settings.py
+src/main.py, run.bat     entry points
+src/sam2/, src/sam3/     upstream model wrappers (reused); src/models/predictor_base.py their base class
 src/utils/               upstream decord/triton import stubs + package checks (reused)
 ```
 
-Upstream GUI code (`src/gui/**`, `src/models/image_state.py`, `session_models.py`,
-`src/services/mask_service.py`, controllers) is superseded and should be deleted once the
-new GUI replaces `src/main.py`.
+The upstream GUI (`src/gui`, `src/services`, upstream data models, the symlink-based
+`src/sam2/video_predictor.py`) has been removed.
+
+Qt note: panel signals that make the window rebuild the emitting list/tree are emitted on the
+next event-loop turn (`objects_panel.later`); rebuilding inside the widget's own signal crashes Qt.
 
 ## Status
 
-Done (tests: `tests/unit/test_project.py`, `tests/unit/test_storage_and_plan.py`, 14 passing):
-data model incl. merge/duplicate/undo, storage roundtrip + incremental save + export,
-propagation planning and grading, inference + video engine code.
+Done (cloud, CPU): data model, storage, propagation planning, engine code, the full GUI in
+`src/app/`, entry points, README. Tests: `tests/unit` (model/storage/plan + upstream stubs) and
+`tests/app` (Session rules and offscreen GUI flows with `tests/fakes.py`), all passing.
 
-Not yet verified on GPU: `InferenceEngine.predict/detect`, `engine.video.propagate`.
+### Remaining work
 
-### Remaining work (in order)
-
-1. **GUI package `src/app/`** replacing `src/gui/`:
-   - `canvas.py` (from upstream `gui/widgets/image_viewer`, reuse `CoordinateMapper`,
-     `BrushEngine`): modes IDLE / NEW_OBJECT / EDIT; per-Object colored overlays
-     (editing Object stronger + outline, unchecked hidden or faint); Detection candidate
-     overlays while the Detection list is open; point hit-test + selected-point ring;
-     box drag (NEW and EDIT); Shift brush on the editing Object; Final Mask preview
-     (toggle + hold Alt); zoom/pan as upstream.
-   - `objects_panel.py` (checkbox, color, name w/ double-click rename, [Edit], [···] menu,
-     row multi-select, + New Object from Points, Merge/Duplicate/Delete).
-   - `properties_panel.py` (Variants with thumbnail+score radio, positive/negative point
-     list with select/delete, Clear Points, Finish Editing).
-   - `detection_panel.py` (prompt field, Detect, checkable results with score, select
-     all/none, Add Selected as Objects).
-   - `propagation_panel.py` (Start/End combos, Current label, direction radios,
-     Propagate Selected Objects, overwrite confirm, progress, per-frame status list →
-     click to navigate, Cancel).
-   - image list (left, below Objects) with a marker for images that have masks.
-   - `main_window.py`: toolbar, shortcuts (Ctrl+Z/Y, Delete, Esc, N, E, ←/→, Ctrl+S,
-     Ctrl+E, F), autosave (debounced QTimer + on image change/close), export dialog,
-     model loading and SAM3 detect / propagation in `QThread` workers, status bar mode text.
-   - `src/main.py` entry point; `run.bat`.
-2. Headless GUI tests with a fake engine (`QT_QPA_PLATFORM=offscreen`).
-3. Delete superseded upstream GUI modules and their tests; README for the new tool.
-4. **Local only (needs the RTX 2060S + gated SAM3 weights):** GPU smoke tests of the
-   engine, full GUI walkthrough on Windows.
+1. **Local only (RTX 2060S + gated SAM3 weights):**
+   - GPU smoke test: `InferenceEngine.load_sam2/predict` (point, box, seed mask), `load_sam3/detect`,
+     `engine.video.propagate` over a short sequence (check memory with SAM2 image + video predictors
+     both on the GPU).
+   - Windows walkthrough of the specs' workflows (01 §14 both paths, 02 §10 fix-and-repropagate,
+     03 §16), Unicode folder names, `run.bat`.
+2. Later per specs: ERP / 360° input, keyframes, quality graph, Object split/groups.
 
 ## Running
 
@@ -123,7 +117,8 @@ Local Windows env (not in git): `.venv` (Python 3.12.10, torch 2.14 cu130),
 `checkpoints/sam3/sam3.pt`.
 
 ```bash
-python -m pytest tests/unit -q
+python -m pytest tests -q          # GUI tests set QT_QPA_PLATFORM=offscreen themselves
+python -m src.main [folder]        # or run.bat on Windows
 ```
 
 Cloud / CPU-only sessions can run all `tests/unit` and offscreen GUI tests with a fake

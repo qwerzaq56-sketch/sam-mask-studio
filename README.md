@@ -1,245 +1,142 @@
-<h1 align="center">SAM2/SAM3 Mask Creation GUI</h1>
+<h1 align="center">SAM Mask Studio</h1>
 
-<p align="center">
-<a href="https://www.python.org/">
-    <img src="https://img.shields.io/badge/python-3.12+-34D058?color=%2334D058&label=python" alt="Python">
-</a>
-<a href="https://pytorch.org/">
-    <img src="https://img.shields.io/badge/PyTorch-2.0+-34D058?color=%2334D058" alt="PyTorch">
-</a>
-<a href="https://www.riverbankcomputing.com/software/pyqt/">
-    <img src="https://img.shields.io/badge/PyQt6-6.6+-34D058?color=%2334D058" alt="PyQt6">
-</a>
-<a href="https://opencv.org/">
-    <img src="https://img.shields.io/badge/OpenCV-4.8+-34D058?color=%2334D058" alt="OpenCV">
-</a>
-<a href="https://numpy.org/">
-    <img src="https://img.shields.io/badge/NumPy-1.24+-34D058?color=%2334D058" alt="NumPy">
-</a>
-<a href="https://github.com/astral-sh/uv">
-    <img src="https://img.shields.io/badge/uv-package%20manager-34D058?color=%2334D058" alt="uv">
-</a>
-<a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-34D058?color=%2334D058" alt="License">
-</a>
-</p>
+<p align="center"><b>SAM3가 찾고, SAM2가 따고 다듬는</b> Object 기반 마스킹 툴<br>
+일반 이미지 · 이미지 시퀀스 · 3DGS / COLMAP 데이터셋용 마스크 제작</p>
 
-## Demo
+[`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)를 기반으로 만들었습니다.
+기획서 원문은 [`docs/specs/`](docs/specs)에, 설계 결정과 진행 상태는 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)에 있습니다.
 
-**Point-based segmentation, text-prompt segmentation:**
+## 핵심 개념
 
-<p align="center">
-  <img src="assets/keypoints.gif" width=380 />
-  <img src="assets/text_prompt.gif" width=380 />
-</p>
+| 개념 | 의미 |
+|---|---|
+| **Detection** | SAM3가 찾아준 후보 (아직 작업 대상이 아님) |
+| **Object** | 내가 작업할 대상. 이미지마다 자기 Mask를 가짐 |
+| **Variant** | 한 Object의 Mask 후보. Object마다 하나를 선택 |
+| **Final Mask** | 체크된 Object들의 Mask를 합친 결과 |
 
-**Brush tool, zoom and mask preview:**
+작업 흐름: **찾기 → 선택 → 수정 → 조합 → 저장**
 
-<p align="center">
-  <img src="assets/brush.gif" width=380 />
-  <img src="assets/zoom_and_preview.gif" width=380 />
-</p>
+## 화면 구성
 
-**Grow / shrink mask, propagate masks:**
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│ Open | Save | Undo | Redo | Export | Preview Final Mask | ERP(예정) │
+├──────────────┬──────────────────────────────┬──────────────────────┤
+│ Objects      │                              │ Properties           │
+│ ☑ Person #1  │                              │ 선택/편집 중인 Object │
+│   ● Variant 1│         Image Canvas         │ Variants (썸네일)     │
+│   ○ Variant 2│                              │ Positive / Negative  │
+│ [+ New Object│                              │ Points               │
+│  from Points]│                              │                      │
+│ Images ★✓⚠✕ │                              │                      │
+├──────────────┴──────────────────────────────┴──────────────────────┤
+│ Prompt / Detection | Propagation | Logs                            │
+└────────────────────────────────────────────────────────────────────┘
+```
 
-<p align="center">
-  <img src="assets/grow.gif" width=380 />
-  <img src="assets/propagate.gif" width=380 />
-</p>
+## 사용법
 
-## Contents
+### Object 만들기 (두 가지 방법뿐)
 
-- [Demo](#demo)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Run](#run)
-- [Usage](#usage)
-  - [Keyboard shortcuts](#keyboard-shortcuts)
-- [Project structure](#project-structure)
-- [Development](#development)
-- [Memory](#memory)
-- [BPE path (SAM3)](#bpe-path-sam3)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+1. **SAM3 Text Prompt** — 하단 *Prompt / Detection* 탭에 `person` 등을 입력하고 **Detect**를 누릅니다.
+   후보가 캔버스에 표시되면 필요한 것만 체크한 뒤 **Add Selected as Objects**를 누릅니다.
+   (간판 속 사람처럼 잘못 검출된 후보는 체크를 풀면 됩니다.)
+2. **+ New Object from Points** (`N`) — 버튼을 누른 뒤 캔버스를 클릭하거나 박스를 드래그합니다.
 
-## Features
+캔버스를 그냥 클릭해서는 Object가 생기지 않습니다.
 
-- **Point-based segmentation (SAM2):** place positive (left click) and negative (right click) points. Masks update in real time.
-- **Brush refinement:** hold **Shift** for brush mode; paint to add or subtract from the mask. **Shift + scroll** changes brush size. **Ctrl + scroll** zooms; **middle mouse drag** pans.
-- **Mask preview:** hold **Alt** for mask preview (see current mask without overlay).
-- **Text-prompt segmentation (SAM3):** describe the object in text to segment the current image or a batch of selected images.
-- **Propagate masks (SAM2):** propagate masks from key-frames to all images in order (“Propagate Masks” button).
-- **Grow / shrink mask:** expand or contract the mask boundary by a number of pixels (single image or selected images).
-- **Batch operations:** select multiple images (Ctrl+click), run “Grow Mask For Selected” or “Segment Selected by Prompt”; then “Save All” or “Revert”.
-- **Undo / Redo** for point and brush changes (per image).
-- **Auto-load existing masks** when opening a folder; optional scaling (max_side) to save memory; masks are saved at original resolution.
-- **Settings:** SAM2/SAM3 checkpoint paths, max_side, mask colour, opacity, keep-both-models loaded option.
+### Object 편집
 
-## Requirements
+- 목록에서 **[Edit]** (`E`)를 누르면 그 Object 하나만 편집 상태가 됩니다 (캔버스 상단에 `Editing: 이름` 표시).
+- 좌클릭은 Positive Point, 우클릭은 Negative Point, 드래그는 Box입니다.
+- 점을 클릭하면 선택되고, **Delete**를 누르면 그 점만 지워진 뒤 SAM2가 나머지 점으로 다시 추론합니다.
+- **Shift+드래그**는 브러시로 칠하기, **Ctrl+Shift+드래그**는 지우기, **Shift+휠**은 브러시 크기 조절입니다.
+- **Clear Points**와 **Finish Editing**(`Esc`)을 쓸 수 있습니다.
+- SAM3로 만든 Object도 [Edit]로 SAM2 보정이 됩니다. 검출된 Mask를 SAM2의 초기값으로 사용합니다.
+- Variant는 Objects 목록의 ●/○ 행이나 Properties 썸네일에서 고릅니다.
 
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) — Python package manager (recommended)
-- CUDA (optional, for GPU)
-- SAM2 and/or SAM3 checkpoints (see below)
+### Object 관리
 
-## Installation
+- **체크박스**는 Final Mask에 포함할지 여부입니다. Object를 지우지 않고도 결과에서 뺄 수 있습니다.
+- 이름을 더블클릭하면 **Rename**, `[×]`는 **Delete**(확인창이 뜨고 모든 이미지의 Mask가 함께 삭제), `[···]` 메뉴에는 Rename / Duplicate / 이 이미지의 Mask만 제거 / Delete가 있습니다.
+- 행을 Ctrl/Shift-클릭으로 여러 개 선택하면 **Merge / Duplicate / Delete**를 한 번에 적용할 수 있습니다.
+  - Merge는 각 이미지에서 존재하는 Mask끼리 Union하여 새 Object 하나를 만듭니다. 이후에도 Edit와 Propagation이 가능합니다.
 
-### 1. Clone the repository
+### Propagation (이미지 시퀀스)
+
+- **Current Image가 기준점**이고, Start / End는 전파 범위의 경계일 뿐입니다. Current는 반드시 범위 안에 있어야 합니다.
+- Direction은 Both / Forward(Current→End) / Backward(Current→Start) 중에서 고릅니다. Current 자체는 다시 처리하지 않습니다.
+- 체크된 Object만, 각자 Current에서 **선택된 Variant**를 기준으로 전파합니다.
+- 이미 Mask가 있는 이미지는 목록을 보여주고 덮어쓸지 확인합니다.
+- 방향별 진행률, Object별 상태, 프레임별 결과를 표시합니다: `✓` 성공 · `⚠` 경고(면적 급변) · `✕` 실패(빈 Mask) · `★` 기준/수동 수정.
+  프레임을 클릭하면 그 이미지로 이동합니다. 거기서 수정한 뒤 다시 전파하면 됩니다.
+- 전파 전체가 **Undo 한 번**으로 되돌아갑니다.
+
+### 저장과 Export
+
+- **자동 저장**: 이미지 폴더 **옆**의 `<폴더>.sms/`에 저장합니다. COLMAP/3DGS 로더가 이미지 폴더를 재귀적으로 읽기 때문에 폴더 안에는 두지 않습니다.
+  폴더를 다시 열면 Object, 이름, 점, 상태가 복구됩니다. 선택되지 않은 Variant는 저장하지 않습니다.
+- **Export** (`Ctrl+E`): Final Mask를 흑백 PNG로 **원본 해상도**에 맞춰 저장합니다. 기본 위치는 `<폴더>_masks/`이고 다음 옵션이 있습니다.
+  - 파일 이름: `{stem}.png` 또는 COLMAP 방식 `{name}.png`
+  - 반전 (객체 = 검정)
+  - Object가 없는 이미지도 빈 Mask로 저장
+- **Preview Final Mask** (`F`)로 Final Mask를 켜 두고 볼 수 있고, `Alt`를 누르고 있는 동안만 잠깐 볼 수도 있습니다.
+
+### 단축키
+
+| 키 | 동작 |
+|---|---|
+| Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export |
+| Ctrl+Z / Ctrl+Y | Undo / Redo |
+| N | + New Object from Points |
+| E | 선택한 Object Edit / 편집 종료 |
+| Esc | Finish Editing / New 취소 |
+| Delete | 선택한 점 삭제 (편집 중), 아니면 선택한 Object 삭제 |
+| ← → (A D, PgUp PgDn) | 이전 / 다음 이미지 |
+| F, Alt(누르고 있기) | Final Mask 보기 |
+| 휠 / 가운데 버튼 드래그 / Space+드래그 | 확대·축소 / 이동 |
+
+## 설치 (Windows, 로컬)
+
+```powershell
+python -m venv .venv                      # Python 3.12
+.venv\Scripts\pip install -e .            # PyQt6, OpenCV, ...
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu130
+.venv\Scripts\pip install -e vendor/sam2
+.venv\Scripts\pip install -e vendor/sam3  # 선택: Text Prompt
+```
+
+체크포인트는 기본으로 `checkpoints/sam2/sam2.1_hiera_tiny.pt`, `checkpoints/sam3/sam3.pt` 경로에서 찾습니다. 경로는 앱의 Settings에서 바꿀 수 있습니다.
+SAM3 가중치는 [Hugging Face facebook/sam3](https://huggingface.co/facebook/sam3)에서 접근 승인을 받아야 받을 수 있습니다.
+설정은 `config.local.json`에 저장되며 git에는 포함되지 않습니다.
+
+실행:
+
+```powershell
+run.bat                     # 또는: .venv\Scripts\python -m src.main [이미지폴더] [--debug]
+```
+
+**Working max side**(기본 1024)는 편집할 때의 해상도 상한입니다. VRAM이 부족하면 낮추세요. Export는 항상 원본 해상도로 저장됩니다.
+SAM2 tiny와 SAM3를 함께 쓰면 VRAM을 약 4 GB 사용합니다.
+
+## 개발
 
 ```bash
-git clone --recurse-submodules https://github.com/catfield123/sam-mask-gui
-cd sam-mask-gui
+pip install -e ".[dev]"
+python -m pytest tests -q       # 모델/GPU 없이 동작 (GUI 테스트는 QT_QPA_PLATFORM=offscreen + FakeEngine)
+ruff check src tests
 ```
 
-This clones the repo and initializes SAM2/SAM3 submodules in one go. If you already have cloned this repo without submodules, run `git submodule update --init --recursive`.
+모듈 구성:
 
-### 2. Create virtual environment and install dependencies
-
-Using [uv](https://github.com/astral-sh/uv):
-
-```bash
-uv venv
-source .venv/bin/activate   # Linux/macOS
-# or:  .venv\Scripts\activate   # Windows
-
-uv pip install .
+```text
+src/core/     Project · Object · Variant · undo/redo, 저장/Export, Propagation 계획 (Qt·torch 없음)
+src/engine/   SAM2/SAM3 추론, SAM2 video propagation, 이미지 I/O
+src/app/      PyQt6 GUI — session.py(Qt 없는 편집 로직), canvas, panels, main_window
+src/sam2/ src/sam3/ src/utils/   upstream 모델 래퍼와 import stub
 ```
-
-This installs all dependencies from `pyproject.toml`.
-
-### 3. Install SAM2 and/or SAM3
-
-
-```bash
-uv pip install -e vendor/sam2
-# Optional, for text prompts:
-uv pip install -e vendor/sam3
-```
-
-### 4. Download checkpoints
-
-- **SAM2**: Use the official [`download_ckpts.sh`](https://raw.githubusercontent.com/facebookresearch/sam2/refs/heads/main/checkpoints/download_ckpts.sh) script to download SAM 2.1 checkpoints (or [download them manually](https://github.com/facebookresearch/sam2?tab=readme-ov-file#download-checkpoints)). Then set the path to the downloaded `.pt` file either in the GUI settings menu or as `sam2_checkpoint_path` in `config.json`.
-- **SAM3**: Weights are hosted on [Hugging Face (facebook/sam3)](https://huggingface.co/facebook/sam3). The model is **gated**: you must open the [model page](https://huggingface.co/facebook/sam3), request access, and wait until your request is approved before you can download the checkpoint. Then set the path to the checkpoint either in the GUI settings menu or as `sam3_checkpoint_path` in `config.json`.
-
-## Run
-
-In activated venv run:
-
-```bash
-python -m src.main
-```
-
-**First run:** A settings dialog will open. Set at least one checkpoint path (SAM2 or SAM3) and, if you like, **max_side** (see [Memory](#memory) below). Then open an images folder and set a save folder.
-
-**Debug logging:**
-
-```bash
-python -m src.main --debug
-```
-
-## Usage
-
-- **Points:** Green = positive, red = negative. Red overlay = current mask. Checkmark in the list = mask saved.
-- **Help → Keyboard shortcuts** in the app shows all shortcuts in a window.
-
-### Keyboard shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| **Ctrl+O** | Open images folder |
-| **Ctrl+S** | Save current mask |
-| **Ctrl+Z** | Undo |
-| **Ctrl+Y** | Redo |
-| **G** | Grow / shrink current mask (apply value from right panel) |
-| **←** (Left) | Previous image |
-| **→** (Right) | Next image |
-| **Shift** | Brush mode (hold while painting) |
-| **Alt** | Mask preview (hold to see mask without overlay) |
-| **Ctrl + scroll** | Zoom in/out |
-| **Shift + scroll** | Change brush size |
-| **Middle mouse drag** | Pan the image |
-
-Other actions (Set Save Folder, Settings, Exit, Clear mask, Segment by prompt, etc.) use the menu or buttons.
-
-## Project structure
-
-```
-auto_segmentation/
-├── src/
-│   ├── main.py           # Entry point
-│   ├── models/           # Data models (keypoints, image state)
-│   ├── sam2/             # SAM2 integration (wrapper)
-│   ├── sam3/             # SAM3 integration (wrapper)
-│   ├── gui/              # Panels, controllers, dialogs, workers
-│   ├── services/         # Config, image, mask services
-│   └── utils/            # Helpers (e.g. package checks)
-├── vendor/               # Optional: sam2, sam3 submodules
-├── config.json           # App config (created/updated by app)
-├── pyproject.toml
-└── README.md
-```
-
-## Development
-
-Dev dependencies (pytest, ruff, mypy) are defined in `pyproject.toml` under `[project.optional-dependencies]` → `dev`. Install them with:
-
-```bash
-uv pip install -e ".[dev]"
-```
-
-From the project root with the venv activated:
-
-```bash
-ruff check src/ && ruff format src/   # Lint and format
-mypy -p src                            # Type check
-pytest tests/ -v                       # Run tests
-```
-
-## Memory
-
-If you run out of GPU or RAM (e.g. large images or multiple models loaded), use **Settings** and reduce **Max side size** (max_side). This limit applies only while working in the app: images are scaled down for display and for running the models, so less memory is used. **When you save a mask, it is always written at the original image resolution** (upscaled if needed). So you can safely use e.g. **512** or **1024** to reduce memory; masks on disk will still be full resolution. Use **0** for no limit (original size in memory, highest use).
-
-## BPE path (SAM3)
-
-**BPE** (Byte Pair Encoding) is the tokenizer that turns your text prompts into tokens for SAM3’s text encoder. You **do not need** to set the BPE path: the SAM3 package ships with a built-in vocabulary (`bpe_simple_vocab_16e6.txt.gz`), and the app uses it when the field is left empty. Only set a custom BPE path in Settings if you have a specific tokenizer file you want to use.
-
-## Troubleshooting
-
-- **`No module named '_bz2'` and  `No module named '_lzma'` on Linux (when loading SAM2):** These modules are part of the Python standard library but are built at compile time and require system libraries. If your Python was built without them (e.g. a pre-built binary or pyenv install before installing dev packages), you get this error when SAM2 loads. Fix: install the dev packages, then use a Python built *after* that—e.g. [pyenv](https://github.com/pyenv/pyenv#installation) (see [how to install pyenv](https://github.com/pyenv/pyenv#installation)). In the project directory, set the project Python with `pyenv local 3.13.7` (or your desired version), install the system deps, install that Python so it picks up the libs, then create the venv on that interpreter:
-
-  ```bash
-  # 1. Install system libraries (Debian/Ubuntu)
-  sudo apt install libbz2-dev liblzma-dev xz-utils
-  # On Fedora/RHEL: sudo dnf install bzip2-devel xz-devel
-
-  # 2. Rebuild Python so it links against the new libs (replace 3.13.7 if you use another version).
-  #    uninstall removes this version from pyenv globally; install puts it back, built with the libs.
-  pyenv uninstall -f 3.13.7
-  pyenv install 3.13.7
-
-  # 3. In the project root: pin Python version for this project (pyenv must be installed)
-  pyenv local 3.13.7
-
-  # 4. Create venv with that Python and install the project
-  uv venv
-  ```
-
-  After this, the project uses a Python built with `_bz2` and `_lzma`, and SAM2 should load. The same steps help if you see similar errors for other stdlib modules that depend on system libs.
-
-- **CUDA not available:** The app will run on CPU, but it will be slower. If you expected GPU acceleration, check that CUDA and the matching PyTorch build are installed (e.g. `python -c "import torch; print(torch.cuda.is_available())"`). If that prints `False`, install a CUDA-enabled PyTorch from [pytorch.org](https://pytorch.org). Either way, the app will still run on CPU if no GPU is detected.
- 
-- **Checkpoint load error:** Ensure the path in Settings is correct, the file exists, and the matching SAM package is installed (`uv pip install -e vendor/sam2` or your SAM path).
- 
-- **Out of memory:** Lower **max_side** in Settings (see [Memory](#memory) above).
 
 ## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file in the repository root.
-
-**Third-party code in this repository:**
-
-- **SAM2** (Segment Anything 2) is licensed under the **Apache License 2.0**. Code in `vendor/sam2/` is distributed under that license; see [vendor/sam2/LICENSE](vendor/sam2/LICENSE).
-- **SAM3** (Segment Anything 3) is licensed under the **SAM License** (Meta). Code in `vendor/sam3/` is distributed under that license; see [vendor/sam3/LICENSE](vendor/sam3/LICENSE).
-
-Use of SAM2 and SAM3 is subject to their respective license terms (including any use restrictions in the SAM License, such as prohibited military or nuclear applications).
+MIT — [LICENSE](LICENSE). SAM2(`vendor/sam2`, Apache 2.0)와 SAM3(`vendor/sam3`, SAM License)는 각자의 라이선스를 따릅니다.
