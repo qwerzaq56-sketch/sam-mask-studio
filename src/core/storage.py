@@ -1,0 +1,240 @@
+"""Autosave / load of a Project next to the image folder, and Final Mask export.
+
+Layout, for an image folder ``D:/data/images``::
+
+    D:/data/images.sms/project.json          objects, names, prompts, statuses
+    D:/data/images.sms/objects/<id>/<image file name>.png
+                                             each Object's current mask (working res)
+    D:/data/images_masks/<stem>.png          exported Final Masks (original res)
+
+The sidecar sits *beside* the image folder, not inside it, because COLMAP and
+most 3DGS loaders scan the image folder recursively and would pick the PNGs up
+as images.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+
+from src.core.project import FrameState, FrameStatus, MaskObject, Point, Project, Source, Variant, freeze
+
+FORMAT_VERSION = 1
+
+
+def sidecar_dir(image_dir: Path) -> Path:
+    return image_dir.parent / f"{image_dir.name}.sms"
+
+
+def default_export_dir(image_dir: Path) -> Path:
+    return image_dir.parent / f"{image_dir.name}_masks"
+
+
+def _write_png(path: Path, mask: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ok, buf = cv2.imencode(".png", mask.astype(np.uint8) * 255 if mask.dtype == np.bool_ else mask)
+    if not ok:
+        raise IOError(f"PNG encode failed for {path}")
+    buf.tofile(str(path))  # tofile handles non-ASCII Windows paths; cv2.imwrite does not
+
+
+def _read_png(path: Path) -> Optional[np.ndarray]:
+    data = np.fromfile(str(path), dtype=np.uint8)
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=str(path.parent))
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+class ProjectStore:
+    """Saves a Project incrementally: only masks whose array changed are rewritten."""
+
+    def __init__(self, image_dir: Path, max_side: int):
+        self.image_dir = image_dir
+        self.root = sidecar_dir(image_dir)
+        self.max_side = max_side
+        # (obj_id, key) -> the mask array last written for it. Masks are immutable, so
+        # an identity check tells whether it changed. Holding the reference (not id())
+        # keeps a freed array's id from being reused by a different mask.
+        self._written: Dict[Tuple[int, str], np.ndarray] = {}
+        self._saved_revision = -1
+
+    def mask_path(self, obj_id: int, key: str) -> Path:
+        return self.root / "objects" / str(obj_id) / f"{key}.png"
+
+    def exists(self) -> bool:
+        return (self.root / "project.json").is_file()
+
+    # ------------------------------------------------------------------
+    # Save
+    # ------------------------------------------------------------------
+
+    def save(self, project: Project, force: bool = False) -> bool:
+        """Write changes since the last save. Returns True if anything was written."""
+        if not force and project.revision == self._saved_revision:
+            return False
+        live: Dict[Tuple[int, str], np.ndarray] = {}
+        objects_json = []
+        for o in project.objects:
+            frames_json = {}
+            for key, fs in o.frames.items():
+                m = fs.mask
+                if m is not None:
+                    live[(o.id, key)] = m
+                sel = fs.variants[fs.selected] if fs.variants else None
+                frames_json[key] = {
+                    "points": [[p.x, p.y, 1 if p.positive else 0] for p in fs.points],
+                    "box": list(fs.box) if fs.box else None,
+                    "status": fs.status.value,
+                    "score": sel.score if sel else None,
+                    "has_mask": m is not None,
+                }
+            objects_json.append(
+                {
+                    "id": o.id,
+                    "name": o.name,
+                    "source": o.source.value,
+                    "color": list(o.color),
+                    "included": o.included,
+                    "frames": frames_json,
+                }
+            )
+
+        for (oid, key), m in live.items():
+            if force or self._written.get((oid, key)) is not m:
+                _write_png(self.mask_path(oid, key), m)
+                self._written[(oid, key)] = m
+        for gone in [k for k in self._written if k not in live]:
+            p = self.mask_path(*gone)
+            if p.exists():
+                p.unlink()
+            del self._written[gone]
+        live_ids = {str(o.id) for o in project.objects}
+        obj_root = self.root / "objects"
+        if obj_root.is_dir():
+            for d in obj_root.iterdir():
+                if d.is_dir() and d.name not in live_ids:
+                    shutil.rmtree(d, ignore_errors=True)
+
+        doc = {
+            "version": FORMAT_VERSION,
+            "image_dir": str(self.image_dir),
+            "max_side": self.max_side,
+            "next_id": project.next_id,
+            "label_counts": project.label_counts,
+            "objects": objects_json,
+        }
+        _atomic_write_text(self.root / "project.json", json.dumps(doc, indent=1, ensure_ascii=False))
+        self._saved_revision = project.revision
+        return True
+
+    # ------------------------------------------------------------------
+    # Load
+    # ------------------------------------------------------------------
+
+    def load(self, image_keys: List[str]) -> Project:
+        """Load the sidecar project (or return an empty one)."""
+        project = Project(image_keys)
+        if not self.exists():
+            return project
+        doc = json.loads((self.root / "project.json").read_text(encoding="utf-8"))
+        self.max_side = int(doc.get("max_side", self.max_side))
+        project.next_id = int(doc.get("next_id", 1))
+        project.label_counts = {k: int(v) for k, v in doc.get("label_counts", {}).items()}
+        known = set(image_keys)
+        for oj in doc.get("objects", []):
+            oid = int(oj["id"])
+            frames: Dict[str, FrameState] = {}
+            for key, fj in oj.get("frames", {}).items():
+                if key not in known:
+                    continue  # image was removed from the folder
+                mask = None
+                if fj.get("has_mask"):
+                    raw = _read_png(self.mask_path(oid, key))
+                    if raw is not None:
+                        mask = freeze(raw)
+                        self._written[(oid, key)] = mask
+                points = tuple(Point(float(x), float(y), bool(pos)) for x, y, pos in fj.get("points", []))
+                box = tuple(fj["box"]) if fj.get("box") else None
+                variants = (Variant(mask, float(fj.get("score") or 1.0)),) if mask is not None else ()
+                frames[key] = FrameState(
+                    points=points,
+                    box=box,
+                    base_mask=mask,
+                    variants=variants,
+                    status=FrameStatus(fj.get("status", "manual")),
+                )
+            project.objects.append(
+                MaskObject(
+                    id=oid,
+                    name=oj["name"],
+                    source=Source(oj.get("source", Source.SAM2_POINT.value)),
+                    color=tuple(oj.get("color", (230, 25, 75))),
+                    included=bool(oj.get("included", True)),
+                    frames=frames,
+                )
+            )
+        self._saved_revision = project.revision
+        return project
+
+
+# ----------------------------------------------------------------------
+# Export
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class ExportOptions:
+    out_dir: Path
+    name_pattern: str = "{stem}.png"  # or "{name}.png" (COLMAP style: image.jpg.png)
+    invert: bool = False  # True: object = black, background = white (keep-mask convention)
+    include_empty: bool = False  # also write masks for images with no object
+
+
+def export_final_masks(
+    project: Project,
+    image_dir: Path,
+    original_size: Callable[[str], Tuple[int, int]],
+    options: ExportOptions,
+    keys: Optional[List[str]] = None,
+    progress: Optional[Callable[[int, int], None]] = None,
+) -> List[Path]:
+    """Write each image's Final Mask at its original resolution. Returns written paths."""
+    if keys is None:
+        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks()
+    written = []
+    for i, key in enumerate(keys):
+        h0, w0 = original_size(key)
+        m = project.final_mask(key)
+        if m is None:
+            if not options.include_empty:
+                continue
+            full = np.zeros((h0, w0), dtype=np.uint8)
+        else:
+            full = m.astype(np.uint8) * 255
+            if full.shape != (h0, w0):
+                full = cv2.resize(full, (w0, h0), interpolation=cv2.INTER_NEAREST)
+        if options.invert:
+            full = 255 - full
+        stem = Path(key).stem
+        out = options.out_dir / options.name_pattern.format(stem=stem, name=key)
+        _write_png(out, full)
+        written.append(out)
+        if progress:
+            progress(i + 1, len(keys))
+    return written
