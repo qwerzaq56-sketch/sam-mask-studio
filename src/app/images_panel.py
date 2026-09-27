@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import QListWidget, QVBoxLayout, QWidget
 
 from src.core.project import FrameStatus, Project
 
-
 # Most important first: a failed or suspicious frame must stand out in a long list.
 PRIORITY = (
     (FrameStatus.FAILED, "✕"),

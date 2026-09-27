@@ -185,7 +185,7 @@ class PropagationPanel(QWidget):
         self._obj_done = {oid: 0 for oid, _ in objects}
         self.objects.clear()
         self._obj_rows.clear()
-        for oid, name in objects:
+        for oid, _name in objects:
             it = QListWidgetItem()
             self.objects.addItem(it)
             self._obj_rows[oid] = it

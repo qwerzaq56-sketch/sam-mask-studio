@@ -1,7 +1,7 @@
 [project]
-name = "sam-mask-gui"
+name = "sam-mask-studio"
 version = "0.1.0"
-description = "GUI application for creating masks from images using SAM2 and SAM3"
+description = "Object-based masking tool: SAM3 finds, SAM2 cuts and refines, SAM2 video propagates"
 requires-python = ">=3.12"
 dependencies = [
     "PyQt6>=6.6.0",

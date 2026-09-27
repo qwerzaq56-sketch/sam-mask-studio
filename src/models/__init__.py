@@ -1,13 +1,5 @@
-"""Application data models."""
+"""Model wrapper base class shared by the SAM2 / SAM3 predictors."""
 
-from .image_state import ImageState
-from .keypoint import Keypoint, KeypointType
-from .session_models import BatchSession, FrameBackup
+from .predictor_base import BasePredictor
 
-__all__ = [
-    "BatchSession",
-    "FrameBackup",
-    "ImageState",
-    "Keypoint",
-    "KeypointType",
-]
+__all__ = ["BasePredictor"]

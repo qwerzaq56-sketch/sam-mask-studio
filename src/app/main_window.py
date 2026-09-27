@@ -679,9 +679,10 @@ class MainWindow(QMainWindow):
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
         self.propagation_panel.finish(statuses, msg)
-        self.log(msg + (" — Ctrl+Z undoes the whole propagation" if statuses else ""))
         if outcome.startswith("Failed"):
-            QMessageBox.warning(self, "Propagation", msg)
+            self.warn(msg)
+        else:
+            self.log(msg + (" — Ctrl+Z undoes the whole propagation" if statuses else ""))
         self.refresh()
 
     def cancel_propagation(self) -> None:
