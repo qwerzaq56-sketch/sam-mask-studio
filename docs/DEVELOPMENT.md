@@ -100,14 +100,22 @@ Done (cloud, CPU): data model, storage, propagation planning, engine code, the f
 `src/app/`, entry points, README. Tests: `tests/unit` (model/storage/plan + upstream stubs) and
 `tests/app` (Session rules and offscreen GUI flows with `tests/fakes.py`), all passing.
 
+Verified locally (Windows 10, RTX 2060 Super 8 GB, torch 2.14 cu130, SAM2.1 tiny + SAM3), on a
+20-frame 600×364 sequence in a Korean-named folder:
+
+- Engine: SAM2 point → 3 Variants in 0.18 s, box and seed-mask + negative point OK; SAM3 load
+  17 s, first detect 1.7 s then 0.2 s; propagation of 19 frames (both directions) 7.3 s, Current
+  skipped, targets exact; peak VRAM 4.5 GB with SAM2 image + SAM3 + SAM2 video predictor.
+- Real app driven with mouse events (offscreen Qt, real models): SAM3 detect → keep one →
+  Object → SAM2 refine; New Object from Points → Variant choice → select a point and delete it;
+  rename (Korean) / duplicate / delete with confirm; propagate Both → ★ untouched, every frame
+  filled, ⚠/✕ where the object leaves the view; fix frame 15 → Forward re-propagate with the
+  overwrite prompt, earlier frames untouched; merge; Final preview; COLMAP-named inverted export
+  (20 files); close and reopen restores Objects and frames. `run.bat` launches the window.
+
 ### Remaining work
 
-1. **Local only (RTX 2060S + gated SAM3 weights):**
-   - GPU smoke test: `InferenceEngine.load_sam2/predict` (point, box, seed mask), `load_sam3/detect`,
-     `engine.video.propagate` over a short sequence (check memory with SAM2 image + video predictors
-     both on the GPU).
-   - Windows walkthrough of the specs' workflows (01 §14 both paths, 02 §10 fix-and-repropagate,
-     03 §16), Unicode folder names, `run.bat`.
+1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
 2. Later per specs: ERP / 360° input, keyframes, quality graph, Object split/groups.
 
 ## Running
