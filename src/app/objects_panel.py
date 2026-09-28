@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -85,6 +85,7 @@ class ObjectsPanel(QWidget):
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.itemSelectionChanged.connect(self._on_selection)
         self.tree.itemClicked.connect(self._on_clicked)
+        self.tree.viewport().installEventFilter(self)  # a click on empty space clears the selection
 
         self.new_btn = QPushButton("+ New Object from Points")
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
@@ -243,6 +244,26 @@ class ObjectsPanel(QWidget):
             it.setSelected(it.data(0, ID_ROLE) in wanted)
         self.tree.blockSignals(False)
         self._update_buttons()
+
+    def eventFilter(self, obj, event):
+        if (
+            obj is self.tree.viewport()
+            and event.type() == QEvent.Type.MouseButtonPress
+            and self.tree.itemAt(event.position().toPoint()) is None
+        ):
+            self.tree.clearSelection()
+        return super().eventFilter(obj, event)
+
+    def move_selection(self, ids: Sequence[int], delta: int) -> Optional[int]:
+        """The id *delta* rows from the current one among *ids* (the Objects that can be stepped to)."""
+        if not ids:
+            return None
+        sel = self.selected_ids()
+        current = self._editing if self._editing is not None else (sel[0] if sel else None)
+        if current not in ids:
+            return ids[0] if delta > 0 else ids[-1]
+        i = ids.index(current) + delta
+        return ids[i] if 0 <= i < len(ids) else None
 
     def _on_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         idx = item.data(0, VARIANT_ROLE)

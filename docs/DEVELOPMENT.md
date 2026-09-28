@@ -249,6 +249,16 @@ Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
   by the project's `undo_depth`). Pick history is dropped when the picks are applied or the tool
   changes, so Ctrl+Z then undoes the application itself.
 
+**P2.13 — navigation, points, explicit apply** (`v0.3-p2.13`)
+- Up / Down step through the Objects with a mask on this image (Edit follows); image changes are
+  blocked while editing; a viewport click on empty space keeps the selection, the Objects panel's
+  empty space clears it.
+- Points: drag = move (SAM2 re-runs on release), double-click = delete.
+- Auto tools: applying is explicit — the active mode button again or Enter (apply + recompute),
+  or Apply & Close. Every other way out drops the result; the tool button again does nothing.
+  A in Fill mode enters Paint mode with everything picked. Auto previews use their own styles
+  (`auto_add` / `auto_sub`) drawn over the Edit Changes tints.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

@@ -54,6 +54,8 @@ ALPHA = {
     "layer_add": 150,  # pixels the edit layer forces on
     "layer_sub": 110,  # pixels the edit layer forces off
     "region": 70,  # where the edit-layer tools act
+    "auto_add": 150,  # an auto tool's result: pixels it adds
+    "auto_sub": 130,  # ...and removes
     "guide": 150,  # an auto tool's result, not painted in yet (Brush mode)
 }
 
@@ -77,7 +79,7 @@ ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is h
 
 
 def group_of(style: str) -> str:
-    if style in ("edit", "layer_add", "layer_sub"):
+    if style in ("edit", "layer_add", "layer_sub", "auto_add", "auto_sub"):
         return "edit"
     if style.startswith("candidate"):
         return "candidates"
@@ -156,6 +158,8 @@ class Canvas(QWidget):
     clicked = pyqtSignal(float, float, bool)  # x, y, positive
     box_drawn = pyqtSignal(float, float, float, float)
     point_picked = pyqtSignal(int)
+    point_moved = pyqtSignal(int, float, float)  # index, new x, y (dragged)
+    point_deleted = pyqtSignal(int)  # double-clicked
     object_picked = pyqtSignal(float, float)
     brush_finished = pyqtSignal(object)  # bool mask
     region_box = pyqtSignal(float, float, float, float, bool)  # x0, y0, x1, y1, subtract
@@ -198,6 +202,7 @@ class Canvas(QWidget):
         self._pan = QPointF(0, 0)
         self._pan_from: Optional[Tuple[QPointF, QPointF]] = None
         self._space_held = False
+        self._point_drag: Optional[Tuple[int, QPointF, bool]] = None  # index, press pos, moved
         self._press: Optional[Tuple[QPointF, Qt.MouseButton]] = None
         self._drag_to: Optional[QPointF] = None
         self._mouse: Optional[QPointF] = None
@@ -605,6 +610,7 @@ class Canvas(QWidget):
             hit = self._point_at(pos)
             if hit is not None:
                 self.point_picked.emit(hit)
+                self._point_drag = (hit, pos, False)  # a drag moves it
                 return
         if btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
             self._press = (pos, btn)
@@ -616,6 +622,16 @@ class Canvas(QWidget):
         if self._pan_from is not None:
             start, pan = self._pan_from
             self._pan = pan + (pos - start)
+        elif self._point_drag is not None:
+            i, start, moved = self._point_drag
+            d = pos - start
+            if moved or (d.x() ** 2 + d.y() ** 2) ** 0.5 > CLICK_SLOP:
+                self._point_drag = (i, start, True)
+                if 0 <= i < len(self.points):  # show it where it will land
+                    x, y = self._clamped(pos)
+                    pts = list(self.points)
+                    pts[i] = Point(float(x), float(y), pts[i].positive)
+                    self.points = tuple(pts)
         elif self._brush.is_drawing:
             x, y = self._clamped(pos)
             m = self._brush.continue_stroke(x, y, self._brush_radius())
@@ -635,6 +651,13 @@ class Canvas(QWidget):
             return
         if self._brush.is_drawing:
             self._finish_stroke()
+            return
+        if self._point_drag is not None:
+            i, _, moved = self._point_drag
+            self._point_drag = None
+            if moved:
+                x, y = self._clamped(pos)
+                self.point_moved.emit(i, float(x), float(y))
             return
         if self._press is None:
             return
@@ -666,6 +689,22 @@ class Canvas(QWidget):
                 self.object_picked.emit(x, y)
         else:
             self.clicked.emit(x, y, btn == Qt.MouseButton.LeftButton)
+
+    def mouseDoubleClickEvent(self, event):
+        """Double-clicking a point deletes it; anywhere else it is a second click."""
+        if (
+            self.image is not None
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.mode == Mode.EDIT
+            and not self.brush_mode
+            and not self.region_mode
+        ):
+            hit = self._point_at(event.position())
+            if hit is not None:
+                self._point_drag = None
+                self.point_deleted.emit(hit)
+                return
+        self.mousePressEvent(event)
 
     def wheelEvent(self, event):
         if self.image is None:

@@ -248,12 +248,16 @@ class MainWindow(QMainWindow):
         key("A", self.a_key)
         for seq in ("Right", "PgDown"):
             key(seq, lambda: self.step(1))
+        key("Up", lambda: self.step_object(-1))
+        key("Down", lambda: self.step_object(1))
 
     def _connect(self) -> None:
         c = self.canvas
         c.clicked.connect(self.on_click)
         c.box_drawn.connect(lambda x0, y0, x1, y1: self._prompt(lambda: self.session.drag_box((x0, y0, x1, y1))))
         c.point_picked.connect(self.on_point_selected)
+        c.point_moved.connect(lambda i, x, y: self._prompt(lambda: self.session.move_point(i, x, y)))
+        c.point_deleted.connect(lambda i: self._prompt(lambda: self.session.delete_point(i)))
         c.object_picked.connect(self.on_object_picked)
         c.brush_finished.connect(self.on_brush)
         c.region_box.connect(self.on_region_box)
@@ -459,15 +463,15 @@ class MainWindow(QMainWindow):
             overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             added, removed = s.auto_changes()
-            if added is not None:  # the auto tool: taken parts magenta / purple, the rest (Paint mode) gray
+            if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
+                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
+            if added is not None:  # the auto tool (on top): taken parts magenta / purple, the rest gray
                 taken = s.auto_taken()
                 overlays.append(Overlay((added | removed) & ~taken, (170, 170, 170), "guide"))
                 # own colors, so they are never confused with the edit layer's green / red
-                overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "layer_add"))
-                overlays.append(Overlay(removed & taken, AUTO_SUB_COLOR, "layer_sub"))
-            elif layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
-                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
-                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
+                overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "auto_add"))
+                overlays.append(Overlay(removed & taken, AUTO_SUB_COLOR, "auto_sub"))
             if s.auto_tool is not None and not self._auto_pending():
                 if added is None:
                     self.properties_panel.set_preview(0, 0, 0, 0)
@@ -514,9 +518,13 @@ class MainWindow(QMainWindow):
         return True
 
     def go_to(self, index: int) -> None:
-        self.close_tool()
         if self._busy or index is None:
             return
+        if self.session.mode == Mode.EDIT and index != self.session.index:
+            self.log("Finish editing (Esc) before moving to another image")
+            self.images_panel.set_current(self.session.index)
+            return
+        self.close_tool()
         self.save(background=True)
         try:
             moved = self.session.go_to(index)
@@ -579,6 +587,15 @@ class MainWindow(QMainWindow):
         """App-wide: Z held (no modifiers, not in a text box) shows the Final Mask; the wheel
         over a slider / number box scrolls the panel instead of changing the value."""
         t = event.type()
+        if (
+            t == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and self.session.auto_tool is not None
+            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            and self.isActiveWindow()
+        ):
+            self.reapply_tool()  # Enter = the active mode button again
+            return True
         if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() == Qt.Key.Key_Z
@@ -692,7 +709,7 @@ class MainWindow(QMainWindow):
         on = bool(tool) and self.session.mode == Mode.EDIT and not self._busy
         tool = tool if on else ""
         if tool and tool == self._tool and tool in AUTO_TOOLS:
-            self.reapply_tool()  # the same auto tool again: apply once more, stay in it
+            self.properties_panel.set_brush_tool(tool)  # clicking the active auto tool changes nothing
             return
         if tool != self._tool:
             self.close_tool()
@@ -746,14 +763,18 @@ class MainWindow(QMainWindow):
         self._auto_refresh()
 
     def set_auto_mode(self, mode: str) -> None:
-        """Fill <-> Paint with the tool on: the same result; Paint shows the unpicked parts in gray."""
+        """Fill <-> Paint with the tool on (same result; Paint shows the unpicked parts in gray).
+        Clicking the mode already in use applies the result and computes the next one."""
+        if mode == self.session.auto_mode and self.session.auto_tool is not None:
+            self.reapply_tool()
+            return
         self.session.set_auto_mode(mode)
         if self.session.auto_tool:
             self.canvas.set_brush_mode(mode == "paint")
         self.refresh()
 
-    def close_tool(self, apply: bool = True) -> None:
-        """End an auto tool, writing its result in (Fill: all of it, Paint: the picks); Esc passes False."""
+    def close_tool(self, apply: bool = False) -> None:
+        """End an auto tool; only Apply & Close writes its result in (every other way out drops it)."""
         if self.session.auto_tool is None:
             return
         tool = self.session.auto_tool
@@ -764,7 +785,15 @@ class MainWindow(QMainWindow):
     def a_key(self) -> None:
         """A: in an auto tool's Paint mode pick all / none of the result (A / D never change image)."""
         s = self.session
-        if s.auto_tool is not None and s.auto_mode == "paint" and s.pick_all():
+        if s.auto_tool is None:
+            return
+        if s.auto_mode == "fill":  # into Paint mode with everything picked: then Alt+drag takes parts out
+            s.set_auto_mode("paint")
+            self.properties_panel._set_mode("paint")
+            self.canvas.set_brush_mode(True)
+            s.pick_everything()
+            self.refresh()
+        elif s.pick_all():
             self._update_overlays()
 
     def reapply_tool(self) -> None:
@@ -848,9 +877,24 @@ class MainWindow(QMainWindow):
             m = o.mask(key) if key else None
             if m is not None and 0 <= int(y) < m.shape[0] and 0 <= int(x) < m.shape[1] and m[int(y), int(x)]:
                 self.objects_panel.select_ids([o.id])
-                break
-        else:
-            self.objects_panel.select_ids([])
+                break  # empty space keeps the selection (the Objects panel's empty space clears it)
+        self.refresh()
+
+    def step_object(self, delta: int) -> None:
+        """Up / Down: the previous / next Object with a mask on this image (Edit follows it)."""
+        s = self.session
+        key = s.key
+        if key is None or self._busy:
+            return
+        ids = [o.id for o in s.project.objects if o.mask(key) is not None]
+        oid = self.objects_panel.move_selection(ids, delta)
+        if oid is None:
+            return
+        self.objects_panel.select_ids([oid])
+        if s.mode == Mode.EDIT and s.editing != oid:
+            self.close_tool(apply=False)
+            self.set_brush_tool("", redraw=False)
+            s.edit(oid)
         self.refresh()
 
     def on_brush(self, mask) -> None:

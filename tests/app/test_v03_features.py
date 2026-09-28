@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QPushButton
 
@@ -208,14 +208,14 @@ def test_region_box_limits_the_fill(qapp, win):
     assert s.region is None and "whole mask" in p.scope_label.text()
     added, _ = s.auto_changes()
     assert added[25, 25] and added[35, 35]
-    p.tool_btns["fill_holes"].click()  # clicking the tool again applies it
+    p.mode_fill_btn.click()  # Fill again applies it
     oid = s.project.objects[0].id
     assert s.project.get(oid).mask(s.key)[25, 25]
     win.finish_editing()
     assert not win.canvas.region_mode and s.region is None
 
 
-def test_fill_preview_is_applied_by_clicking_the_tool_again(qapp, win):
+def test_fill_preview_is_applied_by_fill_again(qapp, win):
     s = win.session
     win.new_object()
     s.click(30, 30)
@@ -232,12 +232,14 @@ def test_fill_preview_is_applied_by_clicking_the_tool_again(qapp, win):
     assert not s.editing_frame().mask[25, 25]  # only a preview so far
     p.fill_area.setValue(10)  # a setting moves the preview
     wait_until(qapp, lambda: "+5 px" in p.preview_label.text())
-    assert any(o.style == "layer_add" for o in win.canvas._overlays)  # tinted green
+    assert any(o.style == "auto_add" for o in win.canvas._overlays)  # tinted magenta
 
     win.escape()  # Esc drops the preview and leaves the tool (Edit stays)
     assert not s.editing_frame().mask[25, 25] and s.auto_tool is None and s.editing is not None
     p.tool_btns["fill_holes"].click()
-    p.tool_btns["fill_holes"].click()  # clicking the tool again applies it and stays in the tool
+    p.tool_btns["fill_holes"].click()  # clicking the tool again changes nothing
+    assert not s.editing_frame().mask[25, 25] and s.auto_tool == "fill_holes"
+    p.mode_fill_btn.click()  # Fill again applies it and stays in the tool
     m = s.editing_frame().mask
     assert m[25, 25] and m[35, 35] and s.auto_tool == "fill_holes" and p.tool_btns["fill_holes"].isChecked()
     win.undo()  # one undo step
@@ -248,7 +250,10 @@ def test_fill_preview_is_applied_by_clicking_the_tool_again(qapp, win):
     assert s.editing is None  # with no tool on, Esc finishes editing
 
 
-def test_each_click_applies_once_more_and_leaving_follows_the_mode(qapp, win):
+def test_each_apply_adds_one_more_and_leaving_drops(qapp, win):
+    from PyQt6.QtCore import QEvent
+    from PyQt6.QtGui import QKeyEvent
+
     s = win.session
     win.new_object()
     s.click(40, 30)
@@ -256,18 +261,29 @@ def test_each_click_applies_once_more_and_leaving_follows_the_mode(qapp, win):
     p = win.properties_panel
     p.amount.setValue(2)
     area0 = s.editing_frame().mask.sum()
-    for _ in range(3):
-        p.tool_btns["grow"].click()  # enter, then apply, apply
+    p.tool_btns["grow"].click()
+    p.mode_fill_btn.click()  # apply once
+    win.activateWindow()
+    enter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    assert win.eventFilter(win.canvas, enter)  # Enter = apply once more
     area2 = s.editing_frame().mask.sum()
     assert area2 > area0 and s.auto_tool == "grow"
-    p.tool_btns["shrink"].click()  # another tool applies the pending Grow preview, then Shrink
-    area3 = s.editing_frame().mask.sum()
-    assert area3 > area2 and s.auto_tool == "shrink"
+    p.tool_btns["shrink"].click()  # another tool drops the pending Grow preview
+    assert s.editing_frame().mask.sum() == area2 and s.auto_tool == "shrink"
 
-    p.mode_paint_btn.click()
-    win.a_key()  # pick all of the Shrink result
-    win.act_brush.trigger()  # Paint mode: switching tools applies the picks
-    assert s.editing_frame().mask.sum() < area3 and s.auto_tool is None
+    win.a_key()  # Fill mode: A enters Paint mode with everything picked
+    assert s.auto_mode == "paint" and p.mode_paint_btn.isChecked() and win.canvas.brush_mode
+    assert (s.auto_taken() == s.auto_changes()[1]).all()
+    win.act_brush.trigger()  # switching tools drops the picks too
+    assert s.editing_frame().mask.sum() == area2 and s.auto_tool is None
+    p.tool_btns["shrink"].click()  # the mode stays Paint: nothing picked yet
+    assert s.auto_mode == "paint" and not s.auto_taken().any()
+    win.a_key()  # Paint mode: A toggles all...
+    assert s.auto_taken().any()
+    win.a_key()  # ...and none
+    assert not s.auto_taken().any()
+    p.apply_auto_btn.click()  # Apply & Close with nothing picked: no change, tool closed
+    assert s.auto_tool is None and s.editing_frame().mask.sum() == area2 and p.apply_auto_btn.text() == "Apply && Close"
     p.mode_fill_btn.click()
 
 
@@ -280,12 +296,12 @@ def test_mode_switch_keeps_the_same_area(qapp, win):
     p.tool_btns["fill_holes"].click()
     added, _ = s.auto_changes()
     styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
-    assert (styles()["layer_add"] == added).all() and not styles()["guide"].any()  # all of it, green
+    assert (styles()["auto_add"] == added).all() and not styles()["guide"].any()  # all of it, green
     p.mode_paint_btn.click()  # the same area, now gray until picked
-    assert win.canvas.brush_mode and (styles()["guide"] == added).all() and not styles()["layer_add"].any()
+    assert win.canvas.brush_mode and (styles()["guide"] == added).all() and not styles()["auto_add"].any()
     assert not s.editing_frame().mask[25, 25]  # switching writes nothing
     p.mode_fill_btn.click()
-    assert (styles()["layer_add"] == added).all() and not win.canvas.brush_mode
+    assert (styles()["auto_add"] == added).all() and not win.canvas.brush_mode
 
 
 def test_object_fill_computes_in_the_background(qapp, win):
@@ -339,12 +355,12 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
         qapp.processEvents()
 
     stroke(35, 35)
-    assert styles()["layer_add"][35, 35] and styles()["guide"][25, 25]  # picked: green; the rest gray
+    assert styles()["auto_add"][35, 35] and styles()["guide"][25, 25]  # picked: green; the rest gray
     assert not s.editing_frame().mask[35, 35]  # nothing written before leaving the tool
     stroke(25, 25)
     stroke(25, 25, Qt.KeyboardModifier.AltModifier)  # Alt+drag unpicks: back to gray
-    assert styles()["guide"][25, 25] and not styles()["layer_add"][25, 25]
-    p.tool_btns["fill_holes"].click()  # leaving the tool writes the picks in
+    assert styles()["guide"][25, 25] and not styles()["auto_add"][25, 25]
+    p.mode_paint_btn.click()  # Paint again writes the picks in
     m = s.editing_frame().mask
     assert m[35, 35] and not m[25, 25]
     win.act_brush.trigger()  # B = Paint
@@ -646,8 +662,53 @@ def test_paint_mode_picks_are_undoable(qapp, win):
     win.undo()
     assert taken()[35, 35] and not taken()[25, 25]
 
-    p.tool_btns["fill_holes"].click()  # apply: now Ctrl+Z undoes the application
+    p.mode_paint_btn.click()  # apply: now Ctrl+Z undoes the application
     assert s.editing_frame().mask[35, 35]
     win.undo()
     assert not s.editing_frame().mask[35, 35] and not s.auto_taken().any()
     p.mode_fill_btn.click()
+
+
+
+def test_arrows_step_objects_and_points_drag_or_double_click(qapp, win):
+    from tests.app.test_gui import canvas_pos
+
+    s = win.session
+    ids = make_objects(win, 3)
+    s.go_to(1)
+    s.start_new_object()
+    s.click(60, 40)  # a 4th Object only on image 1
+    s.finish_editing()
+    s.go_to(0)
+    win.refresh()
+    win.objects_panel.select_ids([ids[0]])
+    win.step_object(1)
+    assert win.objects_panel.selected_ids() == [ids[1]]
+    win.step_object(1)
+    win.step_object(1)  # the 4th has no mask here: skipped, stays on the last one
+    assert win.objects_panel.selected_ids() == [ids[2]]
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 75, 55))  # empty space
+    assert win.objects_panel.selected_ids() == [ids[2]]  # keeps the selection
+    tree = win.objects_panel.tree
+    tree.collapseAll()  # leave empty space below the rows
+    QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=tree.viewport().rect().bottomLeft() + QPoint(5, -5))
+    assert win.objects_panel.selected_ids() == []  # empty space in the panel clears it
+
+    win.toggle_edit(ids[0])
+    win.step_object(1)  # Edit follows
+    assert s.editing == ids[1]
+    win.step(1)
+    assert s.index == 0  # no image change while editing
+
+    s.click(20, 40)  # a second point
+    win.refresh()
+    pts = s.editing_frame().points
+    q = canvas_pos(win, pts[1].x, pts[1].y)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=q)
+    QTest.mouseMove(win.canvas, q + QPoint(40, 20))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=q + QPoint(40, 20))
+    moved = s.editing_frame().points[1]
+    assert (moved.x, moved.y) != (pts[1].x, pts[1].y) and len(s.editing_frame().points) == 2
+    q = canvas_pos(win, moved.x, moved.y)
+    QTest.mouseDClick(win.canvas, Qt.MouseButton.LeftButton, pos=q)
+    assert len(s.editing_frame().points) == 1

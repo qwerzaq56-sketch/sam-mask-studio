@@ -239,8 +239,10 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn = QPushButton("Fill")
         self.mode_paint_btn = QPushButton("Paint")
         for b, value, tip in (
-            (self.mode_fill_btn, "fill", "Take the whole result (inside the region, if any)"),
-            (self.mode_paint_btn, "paint", "Pick parts of the result with the brush; Alt+drag unpicks"),
+            (self.mode_fill_btn, "fill", "Take the whole result (inside the region, if any).\n"
+                                         "Click again (or Enter) to apply it and compute the next one"),
+            (self.mode_paint_btn, "paint", "Pick parts of the result with the brush; Alt+drag unpicks.\n"
+                                           "Click again (or Enter) to apply the picks"),
         ):
             b.setCheckable(True)
             b.setToolTip(tip)
@@ -257,7 +259,7 @@ class PropertiesPanel(QWidget):
         self.clear_region_btn = QPushButton("Clear")
         self.clear_region_btn.clicked.connect(self.clear_region_requested)
         self.scope_label = note("")
-        self.apply_auto_btn = QPushButton("Apply")
+        self.apply_auto_btn = QPushButton("Apply && Close")
         self.apply_auto_btn.setToolTip("Write the auto tool's result in (Fill: all of it, Paint: the picks) and leave it")
         self.apply_auto_btn.clicked.connect(self.auto_apply_requested)
         self.apply_auto_btn.setEnabled(False)
@@ -484,11 +486,11 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn.setChecked(mode == "fill")
         self.mode_paint_btn.setChecked(mode == "paint")
         self.mode_hint.setText(
-            "Fill: the result is shown in magenta (added) / purple (removed); click the tool again to apply it (and again for more). "
-            "Apply or another tool applies it and leaves; Esc drops it."
+            "Fill: the result is shown in magenta (added) / purple (removed). Fill again or Enter applies it "
+            "(and again for more); A switches to Paint with everything picked. Leaving the tool drops it."
             if mode == "fill"
-            else "Paint: drag over the gray to pick it (magenta / purple), Alt+drag to unpick, A picks all / none; "
-            "the picks are applied when you click the tool again, Apply or switch tools (Esc drops them)."
+            else "Paint: drag over the gray to pick it (magenta / purple), Alt+drag to unpick, A picks all / none. "
+            "Paint again or Enter applies the picks; leaving the tool drops them."
         )
         if emit:
             self.auto_mode_changed.emit(mode)
