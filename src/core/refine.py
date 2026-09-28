@@ -57,14 +57,39 @@ def fill_holes_and_specks(mask: np.ndarray, max_area: int) -> np.ndarray:
     return out
 
 
-def grow_to_edges(image: np.ndarray, mask: np.ndarray, max_grow: int, iterations: int = 4) -> np.ndarray:
+def _gmm_log_density(model: np.ndarray, pixels: np.ndarray) -> np.ndarray:
+    """Log density of *pixels* (N, 3) under an OpenCV GrabCut color model (1, 65).
+
+    Layout (opencv grabcut.cpp): 5 weights, 5 means (3), 5 covariances (3x3).
+    """
+    model = model.reshape(-1)
+    weights, means, covs = model[:5], model[5:20].reshape(5, 3), model[20:65].reshape(5, 3, 3)
+    total = np.zeros(len(pixels))
+    for w, mu, cov in zip(weights, means, covs, strict=True):
+        if w <= 0:
+            continue
+        cov = cov + np.eye(3) * 1e-3
+        det = np.linalg.det(cov)
+        if det <= 0:
+            continue
+        d = pixels - mu
+        maha = np.einsum("ni,ij,nj->n", d, np.linalg.inv(cov), d)
+        total += w * np.exp(-0.5 * maha) / np.sqrt((2 * np.pi) ** 3 * det)
+    return np.log(total + 1e-300)
+
+
+def grow_to_edges(
+    image: np.ndarray, mask: np.ndarray, max_grow: int, sensitivity: int = 50, iterations: int = 4
+) -> np.ndarray:
     """Grow *mask* outward, by at most *max_grow* px, to where the object's colors end.
 
-    GrabCut on a crop around the mask: the mask is sure foreground, a band of
-    *max_grow* px around it is "probably background" (GrabCut moves the band
-    pixels that look like the object to the foreground) and everything beyond
-    is sure background. Only growth connected to the mask is kept, and the
-    mask never shrinks.
+    GrabCut on a crop around the mask learns the object's and the surrounding
+    background's colors: the mask is sure foreground, a band of *max_grow* px
+    around it is "probably background" and everything beyond is sure
+    background. A band pixel joins the mask when its color is more likely
+    object than background; *sensitivity* (0-100, default 50) shifts that
+    decision — higher grows further into similar colors, lower stops sooner.
+    Only growth connected to the mask is kept, and the mask never shrinks.
     """
     m = mask.astype(bool)
     if max_grow <= 0 or not m.any():
@@ -76,7 +101,7 @@ def grow_to_edges(image: np.ndarray, mask: np.ndarray, max_grow: int, iterations
     crop = m[y0:y1, x0:x1]
     img = np.ascontiguousarray(image[y0:y1, x0:x1, :3])
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * max_grow + 1, 2 * max_grow + 1))
-    band = cv2.dilate(crop.astype(np.uint8), k) > 0
+    band = (cv2.dilate(crop.astype(np.uint8), k) > 0) & ~crop
     gc = np.full(crop.shape, cv2.GC_BGD, np.uint8)
     gc[band] = cv2.GC_PR_BGD
     gc[crop] = cv2.GC_FGD
@@ -84,9 +109,18 @@ def grow_to_edges(image: np.ndarray, mask: np.ndarray, max_grow: int, iterations
         return m.copy()  # the band covers the whole crop: nothing to learn the background from
     bgd, fgd = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
     cv2.grabCut(img, gc, None, bgd, fgd, iterations, cv2.GC_INIT_WITH_MASK)
-    fg = (gc == cv2.GC_FGD) | (gc == cv2.GC_PR_FGD) | crop
+    # per band pixel: log p(object color) - log p(background color), smoothed so that
+    # the decision follows regions rather than single noisy pixels
+    px = img[band].astype(np.float64)
+    ratio = np.zeros(crop.shape, np.float32)
+    ratio[band] = np.clip(_gmm_log_density(fgd, px) - _gmm_log_density(bgd, px), -50, 50)
+    ratio = cv2.GaussianBlur(ratio, (0, 0), 1.5)
+    threshold = (50 - int(sensitivity)) / 8.0  # 50 -> 0 (equal odds); 100 -> -6.25; 0 -> +6.25
+    grown = crop | (band & (ratio > threshold))
+    grown = cv2.morphologyEx(grown.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
+    grown |= crop
     # keep only the pieces that touch the original mask
-    n, labels = cv2.connectedComponents(fg.astype(np.uint8), connectivity=8)
+    n, labels = cv2.connectedComponents(grown.astype(np.uint8), connectivity=8)
     keep = np.zeros(n, bool)
     keep[np.unique(labels[crop])] = True
     keep[0] = False

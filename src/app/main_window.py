@@ -636,9 +636,12 @@ class MainWindow(QMainWindow):
         self.session.set_region(region)
         self.refresh()
 
-    def object_fill(self, max_grow: int) -> None:
+    def object_fill(self, max_grow: int, sensitivity: int = 50) -> None:
         self.statusBar().showMessage("Object Fill…")
-        self._layer(lambda: self.session.object_fill(max_grow), "Object Fill: grown to the object's edges")
+        self._layer(
+            lambda: self.session.object_fill(max_grow, sensitivity),
+            f"Object Fill: grown to the object's edges (sensitivity {sensitivity})",
+        )
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""

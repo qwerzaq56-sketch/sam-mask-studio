@@ -73,7 +73,7 @@ class PropertiesPanel(QWidget):
     brush_toggled = pyqtSignal(bool)
     fill_holes_requested = pyqtSignal(int)  # max hole area in working-resolution px
     remove_specks_requested = pyqtSignal(int)  # max speck area
-    object_fill_requested = pyqtSignal(int)  # max growth in px
+    object_fill_requested = pyqtSignal(int, int)  # max growth in px, sensitivity 0-100
     paint_region_toggled = pyqtSignal(bool)  # brush strokes paint the tool region
     clear_region_requested = pyqtSignal()
     apply_layer_requested = pyqtSignal()
@@ -158,7 +158,17 @@ class PropertiesPanel(QWidget):
         self.object_fill_btn.setToolTip(
             "Grow the mask outward to the object's edges in the image (never shrinks it)"
         )
-        self.object_fill_btn.clicked.connect(lambda: self.object_fill_requested.emit(int(self.grow.value())))
+        self.sensitivity = QSpinBox()
+        self.sensitivity.setRange(0, 100)
+        self.sensitivity.setValue(50)
+        self.sensitivity.setPrefix("sens ")
+        self.sensitivity.setToolTip(
+            "Object Fill sensitivity: higher grows further into colors like the object's,\n"
+            "lower stops sooner (50 = grow where the color is more object than background)"
+        )
+        self.object_fill_btn.clicked.connect(
+            lambda: self.object_fill_requested.emit(int(self.grow.value()), int(self.sensitivity.value()))
+        )
         self.layer_label = QLabel("Layer: none")
         self.apply_layer_btn = QPushButton("Apply Layer")
         self.apply_layer_btn.setToolTip("Make the edited mask the main mask (points are cleared; new points refine it)")
@@ -180,6 +190,7 @@ class PropertiesPanel(QWidget):
         r2.addWidget(self.specks_btn, 1)
         rg = QHBoxLayout()
         rg.addWidget(self.grow)
+        rg.addWidget(self.sensitivity)
         rg.addWidget(self.object_fill_btn, 1)
         r3 = QHBoxLayout()
         r3.addWidget(self.apply_layer_btn)
@@ -291,6 +302,7 @@ class PropertiesPanel(QWidget):
             b.setEnabled(has_mask)
         self.refine_area.setEnabled(editing)
         self.grow.setEnabled(editing)
+        self.sensitivity.setEnabled(editing)
         self.region_btn.setEnabled(editing)
         if not editing:
             self.set_paint_region(False)

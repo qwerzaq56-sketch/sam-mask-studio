@@ -348,11 +348,11 @@ class Session:
         """Remove separate pieces up to *max_area* px (the main piece stays)."""
         return self._tool(lambda m: remove_specks(m, max_area))
 
-    def object_fill(self, max_grow: int) -> bool:
+    def object_fill(self, max_grow: int, sensitivity: int = 50) -> bool:
         """Grow the mask outward (at most *max_grow* px) to the object's edges in the image."""
         if self.image is None:
             return False
-        return self._tool(lambda m: grow_to_edges(self.image, m, max_grow))
+        return self._tool(lambda m: grow_to_edges(self.image, m, max_grow, sensitivity))
 
     def discard_edit(self) -> bool:
         """Delete the edit layer: back to the points/prompt-based mask."""

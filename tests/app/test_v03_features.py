@@ -153,6 +153,17 @@ def test_refine_tools_are_separate_and_grow_to_edges():
     assert grown.sum() > 0.97 * truth.sum() and not (grown & ~(truth > 0)).any()
     assert not grow_to_edges(img, seed > 0, 5)[100, 38]  # growth is capped at max_grow
 
+    # sensitivity: a background gradient toward the object's color is taken more readily when higher
+    rng = np.random.default_rng(0)
+    ramp = np.zeros((200, 200, 3), np.float32)
+    ramp[:] = np.linspace(60, 220, 200)[None, :, None]
+    left = np.zeros((200, 200), bool)
+    left[60:140, 20:60] = True
+    ramp[left] = 60
+    ramp = np.clip(ramp + rng.normal(0, 12, ramp.shape), 0, 255).astype(np.uint8)
+    sizes = [grow_to_edges(ramp, left, 60, s).sum() for s in (10, 50, 90)]
+    assert sizes[0] <= sizes[1] <= sizes[2] and sizes[0] < sizes[2]
+
     region = np.zeros((200, 200), bool)
     region[:, 100:] = True
     half = within(region, seed > 0, grown)
