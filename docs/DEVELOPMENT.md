@@ -198,6 +198,15 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Leaving the tool, switching tools or Esc only drops the tint/guide.
 - The Apply-at-once buttons are gone (Fill mode replaces them).
 
+**P2.7 — tool exit as first proposed** (`v0.3-p2.7`; replaces P2.6's write-at-once Fill)
+- One result per auto tool (`Session._result`), shown two ways: Fill = green/red preview,
+  Brush = gray guide. Switching Brush <-> Fill keeps the same area; nothing is written by it.
+- A Fill preview is written in (one undo step) when the tool closes: clicking it again,
+  another tool, Finish Editing, another Object / image, New Object. **Esc** drops the preview
+  and leaves the tool; with no tool on, Esc finishes editing.
+- Brush strokes write immediately; the guide keeps fitting the painted mask. If the mask
+  changes otherwise (undo, a SAM2 click) the result is recomputed. `Project.amend_frame` gone.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

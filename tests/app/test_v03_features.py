@@ -201,17 +201,20 @@ def test_region_box_limits_the_fill(qapp, win):
     assert len(s.editing_frame().points) == 1  # region drags never make a SAM2 box
 
     p.mode_fill_btn.click()
-    p.tool_btns["fill_holes"].click()  # Fill: applied at once, inside the region
-    m = s.editing_frame().mask
-    assert m[35, 35] and not m[25, 25]
-    p.clear_region_btn.click()  # the live Fill follows the region
+    p.tool_btns["fill_holes"].click()  # Fill: a preview inside the region
+    added, _ = s.auto_changes()
+    assert added[35, 35] and not added[25, 25]
+    p.clear_region_btn.click()  # the preview follows the region
     assert s.region is None and "whole mask" in p.scope_label.text()
-    assert s.editing_frame().mask[25, 25] and s.editing_frame().mask[35, 35]
-    win.finish_editing()
+    added, _ = s.auto_changes()
+    assert added[25, 25] and added[35, 35]
+    win.finish_editing()  # leaving Edit writes the preview in
+    oid = s.project.objects[0].id
+    assert s.project.get(oid).mask(s.key)[25, 25]
     assert not win.canvas.region_mode and s.region is None
 
 
-def test_fill_mode_is_live_and_one_undo_step(qapp, win):
+def test_fill_preview_is_written_in_when_the_tool_closes(qapp, win):
     s = win.session
     win.new_object()
     s.click(30, 30)
@@ -224,17 +227,39 @@ def test_fill_mode_is_live_and_one_undo_step(qapp, win):
     p.refine_area.setValue(1)
     p.mode_fill_btn.click()
     p.tool_btns["fill_holes"].click()
+    assert "Will apply: +1 px" in p.preview_label.text()
+    assert not s.editing_frame().mask[25, 25]  # only a preview so far
+    p.refine_area.setValue(10)  # a setting moves the preview
+    wait_until(qapp, lambda: "+5 px" in p.preview_label.text())
+    assert any(o.style == "layer_add" for o in win.canvas._overlays)  # tinted green
+
+    win.escape()  # Esc drops the preview and leaves the tool (Edit stays)
+    assert not s.editing_frame().mask[25, 25] and s.auto_tool is None and s.editing is not None
+    p.tool_btns["fill_holes"].click()
+    p.tool_btns["fill_holes"].click()  # clicking the tool again writes it in
     m = s.editing_frame().mask
-    assert m[25, 25] and not m[35, 35]
-    assert "Changed: +1 px" in p.preview_label.text()
-    p.refine_area.setValue(10)  # moving a setting updates the result...
-    wait_until(qapp, lambda: s.editing_frame().mask[35, 35])
-    assert "+5 px" in p.preview_label.text()
-    p.tool_btns["fill_holes"].click()  # leaving the tool: nothing to confirm, the result stays
-    assert s.editing_frame().mask[35, 35]
-    win.undo()  # ...and the whole live Fill is one undo step
+    assert m[25, 25] and m[35, 35]
+    win.undo()  # one undo step
     m = s.editing_frame().mask
     assert not m[25, 25] and not m[35, 35]
+    win.escape()
+    assert s.editing is None  # with no tool on, Esc finishes editing
+
+
+def test_mode_switch_keeps_the_same_area(qapp, win):
+    s = holes_object(win)
+    p = win.properties_panel
+    p.refine_area.setValue(5)
+    p.mode_fill_btn.click()
+    p.tool_btns["fill_holes"].click()
+    fill_added, _ = s.auto_changes()
+    assert [o.style for o in win.canvas._overlays].count("layer_add") == 1
+    p.mode_brush_btn.click()  # the same area turns into the gray guide
+    guide = [o for o in win.canvas._overlays if o.style == "guide"]
+    assert guide and (guide[0].mask == fill_added).all() and win.canvas.brush_mode
+    assert not s.editing_frame().mask[25, 25]  # nothing was written by switching
+    p.mode_fill_btn.click()
+    assert (s.auto_changes()[0] == fill_added).all() and not win.canvas.brush_mode
 
 
 def test_object_fill_computes_in_the_background(qapp, win):

@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(seq), self, slot)
 
         key("Delete", self.delete_key)
-        key("Escape", self.finish_editing)
+        key("Escape", self.escape)
         key("N", self.new_object)
         key("E", self.edit_key)
         for seq in ("Left", "A", "PgUp"):
@@ -357,6 +357,8 @@ class MainWindow(QMainWindow):
             banner = ""
         if s.mode != Mode.EDIT and (self._tool or self.canvas.brush_mode):
             self.set_brush_tool("", redraw=False)
+        if s.auto_stale() and not self._auto_pending():
+            QTimer.singleShot(0, self._auto_refresh)  # the mask changed (undo, a click): recompute
         if s.mode != Mode.EDIT and self.canvas.region_mode:
             self.set_region_mode(False, redraw=False)
         self.canvas.set_region(s.region)
@@ -486,6 +488,7 @@ class MainWindow(QMainWindow):
         return True
 
     def go_to(self, index: int) -> None:
+        self.close_tool(apply=True)
         if self._busy or index is None:
             return
         self.save(background=True)
@@ -630,6 +633,8 @@ class MainWindow(QMainWindow):
         """
         on = bool(tool) and self.session.mode == Mode.EDIT and not self._busy
         tool = tool if on else ""
+        if tool != self._tool:
+            self.close_tool(apply=True)  # switching or re-clicking writes a Fill preview in
         self._tool = tool
         auto = tool in AUTO_TOOLS
         self.session.set_auto_tool(tool if auto else None)
@@ -680,10 +685,28 @@ class MainWindow(QMainWindow):
         self._auto_refresh()
 
     def set_auto_mode(self, mode: str) -> None:
+        """Brush <-> Fill with the tool on: the same result, as a gray guide or a green/red preview."""
         self.session.set_auto_mode(mode)
         if self.session.auto_tool:
             self.canvas.set_brush_mode(mode == "brush")
-        self._auto_refresh()
+        self.refresh()
+
+    def close_tool(self, apply: bool) -> None:
+        """End an auto tool: *apply* writes a pending Fill preview in (Esc passes False)."""
+        if self.session.auto_tool is None:
+            return
+        tool = self.session.auto_tool
+        if self.session.close_auto(apply):
+            self.log(f"{tool.replace('_', ' ').title()} applied")
+        self._auto_gen += 1  # drop a computation still running
+
+    def escape(self) -> None:
+        """Esc: first leave the tool (dropping a Fill preview), then finish editing."""
+        if self._tool:
+            self.close_tool(apply=False)
+            self.set_brush_tool("")
+        else:
+            self.finish_editing()
 
     def _auto_refresh(self, redraw: bool = True) -> None:
         """Recompute the auto tool's result (Object Fill off the UI thread) and show / apply it."""
@@ -766,6 +789,7 @@ class MainWindow(QMainWindow):
             self._do(lambda: self.session.select_variant(index, oid))
 
     def new_object(self) -> None:
+        self.close_tool(apply=True)
         if self.session.key is None or self._busy:
             return
         self.session.start_new_object()
@@ -773,6 +797,7 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def toggle_edit(self, oid: int) -> None:
+        self.close_tool(apply=True)
         if self.session.editing == oid:
             self.session.finish_editing()
         else:
@@ -790,6 +815,7 @@ class MainWindow(QMainWindow):
             self.toggle_edit(self.session.project.objects[0].id)
 
     def finish_editing(self) -> None:
+        self.close_tool(apply=True)
         self.session.finish_editing()
         self.refresh()
 
