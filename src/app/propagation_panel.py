@@ -55,7 +55,7 @@ def chain(keys: Sequence[str], indices: Sequence[int], current: int, limit: int 
 
 
 SCOPES = (
-    ("selection", "Selection (Images list)"),
+    ("selection", "Selection (Frame List)"),
     ("range", "Range (Start ~ End)"),
     ("custom", "Custom (IDs: 1-4, 35, 23)"),
     ("all", "All images"),
@@ -64,7 +64,7 @@ SCOPES = (
 
 class PropagationPanel(QWidget):
     propagate_requested = pyqtSignal(int, int, object, str)  # start, end, Direction, scope
-    pin_toggled = pyqtSignal(bool)  # fix the Images-list selection as the Selection scope
+    pin_toggled = pyqtSignal(bool)  # fix the Frame List selection as the Selection scope
     resume_requested = pyqtSignal()  # continue a stopped propagation
     stop_requested = pyqtSignal()  # stop, keep the frames done
     cancel_requested = pyqtSignal()  # stop and discard the run
@@ -81,18 +81,18 @@ class PropagationPanel(QWidget):
         self._dir_done = {"Backward": 0, "Forward": 0}
 
         self.reference = QLabel("—")
-        self.reference.setToolTip("Double-click an image in the Images list to make it the reference (◎)")
+        self.reference.setToolTip("Double-click an image in the Frame List to make it the reference (◎)")
         self.scope = QComboBox()
         for value, text in SCOPES:
             self.scope.addItem(text, value)
         self.scope.setToolTip(
-            "Selection: the images picked in the Images list (Shift/Ctrl-click), or the pinned ones\n"
+            "Selection: the images picked in the Frame List (Shift/Ctrl-click), or the pinned ones\n"
             "Range: Start ~ End · Custom: IDs and ID ranges, e.g. 1-4, 35, 23 · All images: the whole folder"
         )
         self.scope.currentIndexChanged.connect(self._scope_changed)
         self.pin_btn = QPushButton("📌 Pin")
         self.pin_btn.setCheckable(True)
-        self.pin_btn.setToolTip("Fix the current Images-list selection, so moving between images keeps it")
+        self.pin_btn.setToolTip("Fix the current Frame List selection, so moving between images keeps it")
         self.pin_btn.toggled.connect(self.pin_toggled)
         self.pin_label = QLabel("")
         self.pin_label.setStyleSheet("color: gray;")
@@ -116,7 +116,7 @@ class PropagationPanel(QWidget):
         self.custom_edit.setPlaceholderText("e.g. 1-4, 35, 23")
         self.custom_edit.setToolTip("Image IDs and ID ranges, in any order")
         self.custom_ids: List[int] = []  # the last Custom scope parsed (0-based)
-        self.ref_hint = QLabel("Double-click an image in the Images list to use it as the reference")
+        self.ref_hint = QLabel("Double-click an image in the Frame List to use it as the reference")
         self.ref_hint.setStyleSheet("color: gray;")
         self.ref_hint.setWordWrap(True)
         self.dirs = QButtonGroup(self)
@@ -209,13 +209,13 @@ class PropagationPanel(QWidget):
         self.reference.setText(f"◎ {name}" if chosen else f"{name}  (current image)")
 
     def set_pinned(self, indices: Optional[Sequence[int]]) -> None:
-        """Show the pinned images by ID (None: the live Images-list selection is used)."""
+        """Show the pinned images by ID (None: the live Frame List selection is used)."""
         self.pin_btn.blockSignals(True)
         self.pin_btn.setChecked(indices is not None)
         self.pin_btn.blockSignals(False)
         self.pin_label.setText(
             f"Pinned: {format_ids(indices)} ({len(indices)} image(s))" if indices is not None
-            else "uses the Images-list selection"
+            else "uses the Frame List selection"
         )
 
     def scope_value(self) -> str:

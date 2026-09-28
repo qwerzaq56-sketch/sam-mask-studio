@@ -46,6 +46,14 @@
 - 제목줄 버튼(`1`, `Aa`, 띄우기, 닫기)을 20px로 줄여, 좁은 칸의 최소 너비를 113 → 90px로.
 - 개수 요약은 좁을 때 잘리지 않고 두 줄로.
 
+### 5단계 · UI 점검 버그 (`v0.4-p5`, 목록: [`ui-issues.md`](ui-issues.md) 1~6)
+- Batch 탭 `Run on Images` / `Stop` / `Cancel`이 너비 0으로 사라지던 문제: 좁은 칸용 버튼 정책을 `Ignored` → `Preferred` + 최소 24px(`ui_util.shrinkable`). 오토 툴 버튼 줄도 같은 방식.
+- Frames 줄 개수 요약이 세로로 쌓이던 문제: 줄바꿈은 Frame List 쪽만.
+- Frames 줄 썸네일 아래 ID·표시가 잘리던 문제: 목록 최소 높이 = 칸 + 스크롤바, 기본 높이 150 → 190.
+- Frame List 10번부터 줄이 밀리던 문제: ID(오른쪽 정렬) / 표시 / 이름을 고정 칸으로 직접 그림. 선택 행 글자색도 창 활성 상태에 맞춤.
+- 글자 잘림: Detection `Select All` / `Select None` → `All` / `None`, 버튼 비율 조정. 왼쪽 탭은 스크롤 화살표 대신 이름 줄임.
+- 옛 이름 `Images list` → `Frame List` (Propagation / Batch 문구).
+
 ## 진행 예정
 - 없음 (v0.4 리뷰 반영 1~4단계 완료). 릴리스(`main` 병합, `v0.4.0` 태그)는 확인 후 진행.
 

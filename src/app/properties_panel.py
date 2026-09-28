@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.objects_panel import later
-from src.app.ui_util import CollapsibleBox
+from src.app.ui_util import CollapsibleBox, shrinkable
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
@@ -288,8 +288,7 @@ class PropertiesPanel(QWidget):
                 label.setMinimumWidth(48)
                 row.addWidget(label)
             for b in buttons:
-                b.setMinimumWidth(0)
-                b.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)  # shrink with the dock
+                shrinkable(b)  # shrink with the dock
                 row.addWidget(b, 1)
             av.addLayout(row)
         self.mode = "fill"

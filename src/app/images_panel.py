@@ -21,14 +21,17 @@ from typing import Dict, List, Optional, Sequence, Set
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QIcon, QImage, QPixmap
+from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QIcon, QImage, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QLabel,
     QListView,
     QListWidget,
+    QStyle,
     QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -128,6 +131,43 @@ class OneLineDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
         return QSize(option.rect.width(), option.fontMetrics.height() + 6)
 
+    def paint(self, painter, option, index):
+        """ID, marks and name in fixed columns, so 9 and 10 line up."""
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        raw = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        first, _, name = raw.replace(" ", "\n").partition("\n")  # "12  ★ ◎" / file name
+        opt.text = ""
+        style = opt.widget.style() if opt.widget is not None else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)  # background, selection
+        num, _, marks = first.partition("  ")
+        fm = opt.fontMetrics
+        digits = len(str(index.model().rowCount()))
+        id_w = fm.horizontalAdvance("0" * max(2, digits))
+        marks_w = max(fm.horizontalAdvance("★ ◎"), fm.horizontalAdvance(marks)) + 8  # wider only for 📌 rows
+        r = opt.rect.adjusted(2, 0, -2, 0)
+        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        group = (QPalette.ColorGroup.Active if opt.state & QStyle.StateFlag.State_Active
+                 else QPalette.ColorGroup.Inactive)
+        fg = index.data(Qt.ItemDataRole.ForegroundRole)
+        if selected:
+            color = opt.palette.color(group, QPalette.ColorRole.HighlightedText)
+        elif isinstance(fg, QBrush) and fg.style() != Qt.BrushStyle.NoBrush:
+            color = fg.color()
+        else:
+            color = opt.palette.color(group, QPalette.ColorRole.Text)
+        painter.save()
+        painter.setPen(color)
+        v = Qt.AlignmentFlag.AlignVCenter
+        painter.drawText(QRect(r.left(), r.top(), id_w, r.height()), Qt.AlignmentFlag.AlignRight | v, num)
+        x = r.left() + id_w + 5
+        painter.drawText(QRect(x, r.top(), marks_w, r.height()), Qt.AlignmentFlag.AlignLeft | v, marks)
+        if self.names and name:
+            x += marks_w
+            text = fm.elidedText(name, Qt.TextElideMode.ElideMiddle, max(0, r.right() - x))
+            painter.drawText(QRect(x, r.top(), r.right() - x, r.height()), Qt.AlignmentFlag.AlignLeft | v, text)
+        painter.restore()
+
 
 class ImagesPanel(QWidget):
     navigate_requested = pyqtSignal(int)
@@ -195,7 +235,8 @@ class ImagesPanel(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.list)
-        self.setMinimumHeight(THUMB_H + 70)
+        # the tile (thumbnail + ID / marks line) and the scrollbar always fit
+        self.list.setMinimumHeight(THUMB_H + 44 + self.list.horizontalScrollBar().sizeHint().height() + 6)
 
     # ------------------------------------------------------------------
 
@@ -251,12 +292,15 @@ class ImagesPanel(QWidget):
                 color = MARK_COLORS.get(self._marks.get(self._keys[i], ""))
                 it.setForeground(QBrush(color) if color is not None else QBrush())
 
-    def summary_label(self) -> QLabel:
-        """A new label with the mark counts (``★3 ✓40 ⚠2 ✕0``), kept up to date."""
+    def summary_label(self, wrap: bool = False) -> QLabel:
+        """A new label with the mark counts (``★3 ✓40 ⚠2 ✕0``), kept up to date.
+
+        *wrap*: break into lines when narrow (the folded Frame List); else one line.
+        """
         label = QLabel()
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setMinimumWidth(10)
-        label.setWordWrap(True)  # a folded Frame List: two lines instead of clipping
+        label.setWordWrap(wrap)
         self._summaries.append(label)
         self._summarize()
         return label

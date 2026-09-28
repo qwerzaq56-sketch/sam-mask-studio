@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
         self._discard = False  # the running batch/propagation was cancelled: drop its results
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._reference: Optional[int] = None  # propagation reference (double-clicked image); None = current
-        self._pinned: Optional[List[int]] = None  # the pinned Images-list selection (Selection scope)
+        self._pinned: Optional[List[int]] = None  # the pinned Frame List selection (Selection scope)
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
         self._last_prop: Optional[tuple] = None
         self._prop_queue: List[tuple] = []
@@ -165,6 +165,8 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(2000)
         self.tabs = QTabWidget()
+        self.tabs.setUsesScrollButtons(False)  # a narrow column elides the tab names instead of hiding tabs
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.batch_panel = BatchPanel()
         self.tabs.addTab(self.detection_panel, "Prompt / Detection")
         self.tabs.addTab(self.batch_panel, "Batch")
@@ -183,7 +185,7 @@ class MainWindow(QMainWindow):
         lb.setContentsMargins(0, 0, 0, 0)
         lb.setSpacing(2)
         lb.addWidget(self.images_panel.frame_list, 1)
-        lb.addWidget(self.images_panel.summary_label())  # ★ ✓ ⚠ ✕ counts
+        lb.addWidget(self.images_panel.summary_label(wrap=True))  # ★ ✓ ⚠ ✕ counts
         lb.addLayout(self._frame_tools())
         strip_row = self._frame_tools()  # and under the strip, with its own counts
         strip_row.addWidget(self.images_panel.summary_label())
@@ -212,7 +214,7 @@ class MainWindow(QMainWindow):
         # the frame strip spans only the canvas: the side docks keep the full height
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
-        self._dock_sizes = ([list_dock, left_dock, right_dock], [210, 380, 380], [frames_dock], [150])
+        self._dock_sizes = ([list_dock, left_dock, right_dock], [210, 380, 380], [frames_dock], [190])
         self._size_docks()
 
         self.mode_label = QLabel()
@@ -1315,7 +1317,7 @@ class MainWindow(QMainWindow):
         if not indices:
             self.warn(
                 "No images to process"
-                + (" — select images in the Images list (Ctrl/Shift-click)." if scope == "selected" else ".")
+                + (" — select images in the Frame List (Ctrl/Shift-click)." if scope == "selected" else ".")
             )
             return
         paths, max_side = list(s.paths), s.max_side
@@ -1383,7 +1385,7 @@ class MainWindow(QMainWindow):
 
     def propagate(self, start: int, end: int, direction: Direction, scope: str = "range") -> None:
         """Propagate the checked Objects from the reference image over *scope*:
-        ``selection`` (Images list, or the pinned one) · ``range`` (start..end) · ``all``."""
+        ``selection`` (Frame List, or the pinned one) · ``range`` (start..end) · ``all``."""
         s = self.session
         if s.key is None or self._busy:
             return
@@ -1396,7 +1398,7 @@ class MainWindow(QMainWindow):
             else:
                 picked = self._pinned if self._pinned is not None else self.images_panel.selected_rows()
             if not [i for i in picked if i != ref]:
-                self.warn("Select the images to propagate to in the Images list (Shift/Ctrl-click), or pin them.")
+                self.warn("Select the images to propagate to in the Frame List (Shift/Ctrl-click), or pin them.")
                 return
             plan = PropagationPlan.of_frames(picked, ref, direction)
         else:

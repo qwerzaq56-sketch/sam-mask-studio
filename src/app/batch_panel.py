@@ -1,7 +1,7 @@
 """Batch masking: a SAM3 text prompt over many images, one Object per label.
 
 Its own prompt (separate from the current-image Detection tab). Scope: all
-images, a Start ~ End range, or the images selected in the Images list. Every
+images, a Start ~ End range, or the images selected in the Frame List. Every
 label becomes one Object whose mask on each image is the union of that
 label's detections above the score threshold. Processed images are listed
 with their counts and can be clicked to jump there.
@@ -35,7 +35,7 @@ INDEX_ROLE = Qt.ItemDataRole.UserRole
 SCOPES = (
     ("all", "All images"),
     ("range", "Range (Start ~ End)"),
-    ("selected", "Selected images (Images list, Ctrl/Shift-click)"),
+    ("selected", "Selected images (Frame List, Ctrl/Shift-click)"),
 )
 
 

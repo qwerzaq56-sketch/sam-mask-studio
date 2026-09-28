@@ -165,3 +165,21 @@ def test_folded_frame_list_starts_narrow(qapp, folder, tmp_path):
     finally:
         w._autosave.stop()
         w.close()
+
+
+# --- UI audit bugs: buttons never squeezed to nothing -----------------------------
+
+
+def test_batch_and_detection_buttons_keep_their_width(qapp, win):
+    import time
+
+    win.tabs.setCurrentWidget(win.batch_panel)
+    for _ in range(10):
+        qapp.processEvents()
+        time.sleep(0.01)
+    bp = win.batch_panel
+    assert bp.batch_btn.width() >= bp.batch_btn.sizeHint().width() - 2  # was 0 next to the prompt
+    assert bp.stop_btn.isHidden() or bp.stop_btn.width() > 30
+    win.tabs.setCurrentWidget(win.detection_panel)
+    qapp.processEvents()
+    assert win.detection_panel.detect_btn.width() > 30

@@ -73,9 +73,11 @@ class DetectionPanel(QWidget):
         self.tree.itemChanged.connect(self._on_changed)
         self.status = QLabel("")
         self.status.setStyleSheet("color: gray;")
-        self.all_btn = QPushButton("Select All")
+        self.all_btn = QPushButton("All")
+        self.all_btn.setToolTip("Check every candidate")
         self.all_btn.clicked.connect(lambda: self._set_all(True))
-        self.none_btn = QPushButton("Select None")
+        self.none_btn = QPushButton("None")
+        self.none_btn.setToolTip("Uncheck every candidate")
         self.none_btn.clicked.connect(lambda: self._set_all(False))
         self.preview_btn = QPushButton("Preview")
         self.preview_btn.setCheckable(True)
@@ -101,11 +103,11 @@ class DetectionPanel(QWidget):
         self.clear_btn = QPushButton("Discard")
         self.clear_btn.clicked.connect(self.clear_requested)
         row = QHBoxLayout()  # selection / view
-        for b in (self.all_btn, self.none_btn, self.preview_btn, self.select_btn):
-            row.addWidget(b)
+        for b, stretch in ((self.all_btn, 2), (self.none_btn, 2), (self.preview_btn, 3), (self.select_btn, 4)):
+            row.addWidget(b, stretch)
         row2 = QHBoxLayout()  # what to do with the checked ones
-        for b in (self.clear_btn, self.add_btn, self.merge_btn, self.per_label_btn):
-            row2.addWidget(b)
+        for b, stretch in ((self.clear_btn, 2), (self.add_btn, 3), (self.merge_btn, 3), (self.per_label_btn, 4)):
+            row2.addWidget(b, stretch)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(top)
