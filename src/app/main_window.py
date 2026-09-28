@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
         p.finish_requested.connect(self.finish_editing)
         p.brush_tool_selected.connect(self.set_brush_tool)
         p.auto_mode_changed.connect(self.set_auto_mode)
-        p.auto_apply_requested.connect(lambda: self.set_brush_tool(""))  # leaving applies
+        p.auto_apply_requested.connect(self.apply_and_leave_tool)
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
         p.clear_region_requested.connect(lambda: self.on_region(None))
@@ -509,7 +509,7 @@ class MainWindow(QMainWindow):
         return True
 
     def go_to(self, index: int) -> None:
-        self.close_tool(apply=True)
+        self.close_tool()
         if self._busy or index is None:
             return
         self.save(background=True)
@@ -686,8 +686,11 @@ class MainWindow(QMainWindow):
         """
         on = bool(tool) and self.session.mode == Mode.EDIT and not self._busy
         tool = tool if on else ""
+        if tool and tool == self._tool and tool in AUTO_TOOLS:
+            self.reapply_tool()  # the same auto tool again: apply once more, stay in it
+            return
         if tool != self._tool:
-            self.close_tool(apply=True)  # switching or re-clicking writes a Fill preview in
+            self.close_tool()
         self._tool = tool
         auto = tool in AUTO_TOOLS
         self.session.set_auto_tool(tool if auto else None)
@@ -744,11 +747,14 @@ class MainWindow(QMainWindow):
             self.canvas.set_brush_mode(mode == "paint")
         self.refresh()
 
-    def close_tool(self, apply: bool) -> None:
-        """End an auto tool: *apply* writes a pending Fill preview in (Esc passes False)."""
+    def close_tool(self, apply: Optional[bool] = None) -> None:
+        """End an auto tool. By default (another tool, Finish, another image) Paint-mode picks are
+        written in and a Fill preview is dropped; Apply passes True, Esc False."""
         if self.session.auto_tool is None:
             return
         tool = self.session.auto_tool
+        if apply is None:
+            apply = self.session.auto_mode == "paint"
         if self.session.close_auto(apply):
             self.log(f"{tool.replace('_', ' ').title()} applied")
         self._auto_gen += 1  # drop a computation still running
@@ -761,6 +767,18 @@ class MainWindow(QMainWindow):
                 self._update_overlays()
             return
         self.step(-1)
+
+    def reapply_tool(self) -> None:
+        """Write the auto tool's result in (Fill: all of it, Paint: the picks) and show the next one."""
+        tool = self.session.auto_tool
+        if tool is not None and self.session.apply_auto():
+            self.log(f"{tool.replace('_', ' ').title()} applied")
+        self.properties_panel.set_brush_tool(self._tool)  # the button stays on
+        self._auto_refresh()  # recompute from the new mask
+
+    def apply_and_leave_tool(self) -> None:
+        self.close_tool(True)
+        self.set_brush_tool("")
 
     def escape(self) -> None:
         """Esc: first leave the tool (dropping a Fill preview), then finish editing."""
@@ -845,7 +863,7 @@ class MainWindow(QMainWindow):
             self._do(lambda: self.session.select_variant(index, oid))
 
     def new_object(self) -> None:
-        self.close_tool(apply=True)
+        self.close_tool()
         if self.session.key is None or self._busy:
             return
         self.session.start_new_object()
@@ -853,7 +871,7 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def toggle_edit(self, oid: int) -> None:
-        self.close_tool(apply=True)
+        self.close_tool()
         if self.session.editing == oid:
             self.session.finish_editing()
         else:
@@ -871,7 +889,7 @@ class MainWindow(QMainWindow):
             self.toggle_edit(self.session.project.objects[0].id)
 
     def finish_editing(self) -> None:
-        self.close_tool(apply=True)
+        self.close_tool()
         self.session.finish_editing()
         self.refresh()
 

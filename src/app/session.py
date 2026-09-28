@@ -467,14 +467,24 @@ class Session:
         self._picked = np.zeros(added.shape, bool) if everything else np.ones(added.shape, bool)
         return True
 
-    def close_auto(self, apply: bool) -> bool:
-        """Leave the auto tool; with *apply*, write what it takes in (one undo step)."""
+    def apply_auto(self) -> bool:
+        """Write what the auto tool takes in (one undo step) and keep the tool on.
+
+        The picks are cleared; the result no longer fits the new mask, so it is
+        recomputed and the next application is shown.
+        """
         taken, fs, r = self.auto_taken(), self.editing_frame(), self._result
-        self._result = self._picked = None
-        self.auto_tool = None
-        if not apply or taken is None or fs is None or not taken.any():
+        self._picked = None
+        if taken is None or fs is None or not taken.any():
             return False
         return self._set_target(freeze(np.where(taken, r[1], fs.mask)))
+
+    def close_auto(self, apply: bool) -> bool:
+        """Leave the auto tool; with *apply*, write what it takes in first."""
+        done = self.apply_auto() if apply else False
+        self._result = self._picked = None
+        self.auto_tool = None
+        return done
 
     def add_region_box(self, box: Box, subtract: bool = False) -> None:
         """Add a dragged box to the tool region (or cut it out with *subtract*)."""

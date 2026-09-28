@@ -238,6 +238,12 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 
 Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
 
+**P2.11 — click again = apply once more** (`v0.3-p2.11`)
+- An auto tool's button is not a toggle: clicking the active one writes its result in
+  (`Session.apply_auto`, one undo step), keeps the tool and recomputes, so N clicks apply N times.
+- Leaving by another tool / Finish / another image follows the mode: Fill drops the pending
+  preview (like Esc), Paint writes its picks in. Apply writes and leaves; Esc drops and leaves.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

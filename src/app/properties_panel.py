@@ -205,7 +205,10 @@ class PropertiesPanel(QWidget):
             b = QPushButton(text)
             b.setCheckable(True)
             b.setToolTip(tip + " — Ctrl+wheel = brush size, wheel = zoom")
-            b.clicked.connect(lambda on, t=name: self.brush_tool_selected.emit(t if on else ""))
+            # an auto tool's button is never a toggle: clicking it again applies once more
+            b.clicked.connect(
+                lambda on, t=name: self.brush_tool_selected.emit(t if on or t in AUTO_TOOLS else "")
+            )
             self.tool_btns[name] = b
             return b
 
@@ -481,10 +484,11 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn.setChecked(mode == "fill")
         self.mode_paint_btn.setChecked(mode == "paint")
         self.mode_hint.setText(
-            "Fill: the whole result is shown in green / red and applied when you leave the tool (Esc drops it)."
+            "Fill: the result is shown in green / red; click the tool again to apply it (and again for more). "
+            "Another tool or Esc drops it; Apply applies and leaves."
             if mode == "fill"
             else "Paint: drag over the gray to pick it (green / red), Alt+drag to unpick, A picks all / none; "
-            "the picks are applied when you leave the tool."
+            "the picks are applied when you click the tool again, Apply or switch tools (Esc drops them)."
         )
         if emit:
             self.auto_mode_changed.emit(mode)
