@@ -1,6 +1,7 @@
 """Main window: wires the Session to the canvas and panels (spec 01 §5 layout).
 
-Toolbar (Open, Save, Undo, Redo, Export, Final Mask preview, ERP later) ·
+Toolbar (Open, Save, Undo, Redo, Export, Final Mask preview, Brush,
+Outline + width, Edit Changes) ·
 left Objects + Images · center canvas · right Properties · bottom
 Prompt/Detection, Propagation and Logs tabs · status bar with the mode.
 
@@ -20,6 +21,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QLabel,
     QMainWindow,
@@ -171,8 +173,25 @@ class MainWindow(QMainWindow):
             "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, wheel = size",
             True,
         )
-        self.act_erp = self._action("ERP", lambda: None, tip="ERP / 360° input — planned for a later version")
-        self.act_erp.setEnabled(False)
+        self.act_outline = self._action(
+            "Outline", self.set_outline, ["O"], "White outline around the edited mask", True
+        )
+        self.act_outline.setChecked(self.settings.outline_visible)
+        self.outline_width = QDoubleSpinBox()
+        self.outline_width.setRange(0.5, 8.0)
+        self.outline_width.setSingleStep(0.5)
+        self.outline_width.setDecimals(1)
+        self.outline_width.setSuffix(" px")
+        self.outline_width.setValue(self.settings.outline_width)
+        self.outline_width.setToolTip("Outline width in screen pixels")
+        self.outline_width.valueChanged.connect(lambda _v: self.set_outline(self.act_outline.isChecked()))
+        self.act_changes = self._action(
+            "Edit Changes",
+            self.set_show_changes,
+            tip="Tint what the edit layer added (green) and removed (red)",
+            checkable=True,
+        )
+        self.act_changes.setChecked(self.settings.show_edit_changes)
         self.act_settings = self._action("Settings", self.show_settings)
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
@@ -182,10 +201,14 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_final)
         tb.addAction(self.act_brush)
-        tb.addAction(self.act_erp)
+        tb.addSeparator()
+        tb.addAction(self.act_outline)
+        tb.addWidget(self.outline_width)
+        tb.addAction(self.act_changes)
         tb.addSeparator()
         tb.addAction(self.act_settings)
         self.addToolBar(tb)
+        self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
             QShortcut(QKeySequence(seq), self, slot)
@@ -382,7 +405,7 @@ class MainWindow(QMainWindow):
         if edit_layer is not None:
             overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
-            if layer is not None:  # show what the hand edits changed
+            if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
@@ -530,6 +553,17 @@ class MainWindow(QMainWindow):
             self.canvas.setFocus()
         if redraw:
             self.refresh()
+
+    def set_outline(self, on: bool) -> None:
+        self.settings.outline_visible = bool(on)
+        self.settings.outline_width = float(self.outline_width.value())
+        self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
+        self.settings.save(self.settings_path)
+
+    def set_show_changes(self, on: bool) -> None:
+        self.settings.show_edit_changes = bool(on)
+        self.settings.save(self.settings_path)
+        self._update_overlays()
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""
