@@ -379,8 +379,8 @@ class MainWindow(QMainWindow):
         self.propagation_panel.set_current(s.index)
 
         has_folder = key is not None
-        self.act_undo.setEnabled(project.can_undo and not busy)
-        self.act_redo.setEnabled(project.can_redo and not busy)
+        self.act_undo.setEnabled(s.can_undo and not busy)
+        self.act_redo.setEnabled(s.can_redo and not busy)
         self.act_save.setEnabled(has_folder)
         self.act_export.setEnabled(has_folder and not busy)
         self.act_brush.setEnabled(s.mode == Mode.EDIT and not busy)
