@@ -65,6 +65,7 @@ class ObjectsPanel(QWidget):
         self._editing: Optional[int] = None
         self._updating = False
         self._shape: tuple = ()
+        self._order: List[int] = []  # selected ids, oldest first
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(4)
@@ -223,10 +224,19 @@ class ObjectsPanel(QWidget):
             self.tree.editItem(it, 0)
 
     def selected_ids(self) -> List[int]:
-        return [it.data(0, ID_ROLE) for it in self.tree.selectedItems() if it.parent() is None]
+        """Selected Object ids in the order they were selected (Merge keeps the first one's name)."""
+        now = {it.data(0, ID_ROLE) for it in self.tree.selectedItems() if it.parent() is None}
+        self._order = [i for i in self._order if i in now]
+        self._order += [
+            it.data(0, ID_ROLE)
+            for i in range(self.tree.topLevelItemCount())
+            if (it := self.tree.topLevelItem(i)).data(0, ID_ROLE) in now and it.data(0, ID_ROLE) not in self._order
+        ]
+        return list(self._order)
 
     def select_ids(self, ids: Sequence[int]) -> None:
         wanted = set(ids)
+        self._order = list(dict.fromkeys(ids))
         self.tree.blockSignals(True)
         for i in range(self.tree.topLevelItemCount()):
             it = self.tree.topLevelItem(i)

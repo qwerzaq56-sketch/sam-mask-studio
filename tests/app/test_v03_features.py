@@ -199,3 +199,20 @@ def test_object_fill_button(qapp, win):
     win.refresh()
     win.properties_panel.object_fill_btn.click()
     assert s.editing_frame().mask.sum() >= before  # never shrinks (a flat test image may not grow)
+
+
+# --- Merge keeps the name of the first Object selected --------------------------
+
+
+def test_merge_uses_first_selected_name(qapp, win):
+    ids = make_objects(win, 3)
+    win.session.project.rename(ids[2], "Tripod")
+    win.refresh()
+    tree = win.objects_panel.tree
+    tree.topLevelItem(2).setSelected(True)  # picked first
+    tree.topLevelItem(0).setSelected(True)
+    tree.topLevelItem(1).setSelected(True)
+    assert win.objects_panel.selected_ids() == [ids[2], ids[0], ids[1]]
+    win.objects_panel.merge_btn.click()
+    settle(qapp)
+    assert [o.name for o in win.session.project.objects] == ["Tripod"]

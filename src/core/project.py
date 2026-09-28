@@ -395,7 +395,8 @@ class Project:
         """Union two or more Objects frame by frame into one new Object.
 
         On every image where any of them has a mask, the merged Object gets the
-        union of the masks that exist there. The originals are removed.
+        union of the masks that exist there. The originals are removed. It is
+        named after the first id in *obj_ids* (the first one the user picked).
         """
         chosen = [o for o in self.objects if o.id in set(obj_ids)]
         if len(chosen) < 2:
@@ -409,7 +410,8 @@ class Project:
                 continue
             manual = any(k in o.frames and o.frames[k].status == FrameStatus.MANUAL for o in chosen)
             frames[k] = FrameState.from_mask(m, status=FrameStatus.MANUAL if manual else FrameStatus.PROPAGATED)
-        merged = self._alloc(name or " + ".join(o.name for o in chosen), Source.MERGED, frames)
+        first = next(o for o in (self.get(i) for i in obj_ids) if o is not None)
+        merged = self._alloc(name or first.name, Source.MERGED, frames)
         merged = dataclasses.replace(merged, included=any(o.included for o in chosen))
         at = min(self._index(o.id) for o in chosen)
         self.objects = [o for o in self.objects if o not in chosen]
