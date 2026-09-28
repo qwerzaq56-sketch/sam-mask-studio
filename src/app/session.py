@@ -26,6 +26,7 @@ from src.core.project import (
     Project,
     Source,
     Variant,
+    freeze,
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.refine import fill_holes, grow_to_edges, remove_specks, within
@@ -97,6 +98,15 @@ class Session:
         # history position, so region and project steps undo in the order they happened.
         self._region_undo: List[Tuple[int, Optional[np.ndarray]]] = []  # (depth, region before)
         self._region_redo: List[Tuple[int, int, Optional[np.ndarray]]] = []  # (depth, actions, region)
+        # Auto tools (object_fill | fill_holes | remove_specks): a result computed from the
+        # mask, applied at once and kept live while settings move (Fill), or shown as a
+        # gray guide that brush strokes paint in (Brush).
+        self.auto_tool: Optional[str] = None
+        self.auto_mode = "brush"
+        # Fill: (obj id, key, tool, project.actions, undo depth, mask before) of the live step
+        self._fill: Optional[tuple] = None
+        self._guide: Optional[Tuple[str, np.ndarray]] = None  # Brush: (tool, target mask)
+        self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -343,10 +353,108 @@ class Session:
         self.region = region
 
     def _reset_region(self) -> None:
-        """Leaving the edit target ends its region and the region's history."""
+        """Leaving the edit target ends its region, the region's history and any auto-tool result."""
         self.region = None
         self._region_undo.clear()
         self._region_redo.clear()
+        self._fill = self._guide = None
+
+    # ------------------------------------------------------------------
+    # Auto tools: no "confirm" step. Fill writes the result into the mask right away
+    # and amends that same undo step while settings move; Brush shows a gray guide.
+    # ------------------------------------------------------------------
+
+    def set_auto_tool(self, tool: Optional[str]) -> None:
+        if tool != self.auto_tool:
+            self._fill = self._guide = None
+        self.auto_tool = tool
+
+    def set_auto_mode(self, mode: str) -> None:
+        if mode != self.auto_mode:
+            self._fill = self._guide = None
+        self.auto_mode = mode
+
+    def _fill_live(self) -> bool:
+        """The last change is this tool's Fill step and nothing happened since (so it can be amended)."""
+        f = self._fill
+        return (
+            f is not None
+            and f[:3] == (self.editing, self.key, self.auto_tool)
+            and f[3] == self.project.actions
+            and f[4] == self.project.undo_depth
+        )
+
+    def auto_base(self) -> Optional[np.ndarray]:
+        """The mask the auto tool works from: before the live Fill step, else the current one."""
+        if self.auto_mode == "fill" and self._fill_live():
+            return self._fill[5]
+        fs = self.editing_frame()
+        return fs.mask if fs is not None else None
+
+    def auto_cached(self, tool: str, base: np.ndarray, settings: dict) -> Optional[np.ndarray]:
+        c = self._auto_cache
+        if c is not None and c[0] == (tool, tuple(sorted(settings.items()))) and c[1] is base:
+            return c[2]
+        return None
+
+    def auto_compute(self, tool: str, base: np.ndarray, **settings) -> np.ndarray:
+        """*tool* applied to *base* everywhere (thread-safe: reads only the image)."""
+        target = self.auto_cached(tool, base, settings)
+        if target is not None:
+            return target
+        if tool == "fill_holes":
+            target = fill_holes(base, settings.get("max_area", 200))
+        elif tool == "remove_specks":
+            target = remove_specks(base, settings.get("max_area", 200))
+        elif tool == "object_fill":
+            target = grow_to_edges(self.image, base, settings.get("max_grow", 20), settings.get("sensitivity", 50))
+        else:
+            raise ValueError(f"Unknown auto tool: {tool}")
+        self._auto_cache = ((tool, tuple(sorted(settings.items()))), base, target)
+        return target
+
+    def auto_apply(self, base: np.ndarray, target: np.ndarray) -> None:
+        """Use a computed result: write it in (Fill, inside the region) or keep it as the guide (Brush)."""
+        if self.auto_mode == "brush":
+            self._guide = (self.auto_tool, target)
+            return
+        fs = self.editing_frame()
+        if fs is None or self.editing is None or self.key is None:
+            return
+        new = freeze(within(self.region, base, target))
+        if self._fill_live():
+            layer = EditLayer.between(fs.prompt_mask, new)
+            frame = dataclasses.replace(fs, edit=layer, status=FrameStatus.MANUAL)
+            self.project.amend_frame(self.editing, self.key, frame)
+        elif not self._set_target(new):
+            return  # nothing to change: no undo step
+        self._fill = (self.editing, self.key, self.auto_tool, self.project.actions, self.project.undo_depth, base)
+
+    def auto_changes(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """(added, removed) pixels: by the live Fill step, or available in the Brush guide."""
+        fs = self.editing_frame()
+        if fs is None or fs.mask is None or self.auto_tool is None:
+            return None, None
+        m = fs.mask
+        if self.auto_mode == "fill":
+            if not self._fill_live():
+                return None, None
+            base = self._fill[5]
+            return m & ~base, base & ~m
+        if self._guide is None or self._guide[0] != self.auto_tool:
+            return None, None
+        target = self._guide[1]
+        inside = self.region if self.region is not None else True
+        return target & ~m & inside, m & ~target & inside
+
+    def paint_guide(self, area: np.ndarray) -> bool:
+        """A Brush-mode stroke: take the guide's result where *area* was painted (inside the region)."""
+        fs = self.editing_frame()
+        if self._guide is None or fs is None or fs.mask is None:
+            return False
+        if self.region is not None:
+            area = area & self.region
+        return self._set_target(np.where(area, self._guide[1], fs.mask))
 
     def add_region_box(self, box: Box, subtract: bool = False) -> None:
         """Add a dragged box to the tool region (or cut it out with *subtract*)."""

@@ -39,7 +39,7 @@ from src.app.dialogs import ExportDialog, SettingsDialog
 from src.app.images_panel import ImagesPanel
 from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
-from src.app.properties_panel import PropertiesPanel
+from src.app.properties_panel import AUTO_TOOLS, PropertiesPanel
 from src.app.session import Mode, Session
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
@@ -81,6 +81,9 @@ class MainWindow(QMainWindow):
         self._prop_worker: Optional[PropagationWorker] = None
         self._discard = False  # the running batch/propagation was cancelled: drop its results
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
+        self._tool = ""  # the Edit Layer tool in use ("" = none)
+        self._auto_gen = 0  # newest auto-tool computation; older results are dropped
+        self._auto_shown = 0  # the computation whose result is on screen
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._loading_models = False
 
@@ -258,11 +261,8 @@ class MainWindow(QMainWindow):
         p.clear_box_requested.connect(lambda: self._prompt(self.session.clear_box))
         p.finish_requested.connect(self.finish_editing)
         p.brush_tool_selected.connect(self.set_brush_tool)
-        p.fill_holes_requested.connect(lambda a: self._layer(lambda: self.session.fill_holes(a), "Holes filled"))
-        p.remove_specks_requested.connect(
-            lambda a: self._layer(lambda: self.session.remove_specks(a), "Specks removed")
-        )
-        p.object_fill_requested.connect(self.object_fill)
+        p.auto_mode_changed.connect(self.set_auto_mode)
+        p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
@@ -355,8 +355,8 @@ class MainWindow(QMainWindow):
             banner = "Click or drag a box to create the first Object"
         else:
             banner = ""
-        if mode != Mode.EDIT and self.canvas.brush_mode:
-            self.set_brush(False, redraw=False)
+        if s.mode != Mode.EDIT and (self._tool or self.canvas.brush_mode):
+            self.set_brush_tool("", redraw=False)
         if s.mode != Mode.EDIT and self.canvas.region_mode:
             self.set_region_mode(False, redraw=False)
         self.canvas.set_region(s.region)
@@ -435,9 +435,19 @@ class MainWindow(QMainWindow):
         if edit_layer is not None:
             overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
-            if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
+            added, removed = s.auto_changes()
+            if added is not None and s.auto_mode == "brush":  # the auto tool's guide, to paint in
+                overlays.append(Overlay(added | removed, (170, 170, 170), "guide"))
+            elif added is not None:  # what the live Fill step changed
+                overlays.append(Overlay(added, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(removed, (255, 60, 60), "layer_sub"))
+            elif layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
+            if s.auto_tool is not None and not self._auto_pending():
+                self.properties_panel.set_preview(
+                    int(added.sum()) if added is not None else 0, int(removed.sum()) if removed is not None else 0
+                )
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
             overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.set_overlays(overlays)
@@ -613,15 +623,25 @@ class MainWindow(QMainWindow):
         self.set_brush_tool("paint" if on else "", redraw)
 
     def set_brush_tool(self, tool: str, redraw: bool = True) -> None:
-        """Pick the brush tool ("" = brush off): paint | fill_holes | remove_specks | object_fill."""
+        """Pick the Edit Layer tool ("" = none): paint | restore | object_fill | fill_holes | remove_specks.
+
+        Auto tools compute their result right away: Fill mode writes it in (and
+        keeps it live while settings move), Brush mode shows it as a gray guide.
+        """
         on = bool(tool) and self.session.mode == Mode.EDIT and not self._busy
+        tool = tool if on else ""
+        self._tool = tool
+        auto = tool in AUTO_TOOLS
+        self.session.set_auto_tool(tool if auto else None)
         if on:
             self.canvas.set_brush_tool(tool)
-            if self.canvas.region_mode:
+            if self.canvas.region_mode and not auto:
                 self.set_region_mode(False, redraw=False)
-        self.canvas.set_brush_mode(on)
-        self.act_brush.setChecked(on)
-        self.properties_panel.set_brush_tool(tool if on else "")
+        self.canvas.set_brush_mode(on and (not auto or self.session.auto_mode == "brush"))
+        self.act_brush.setChecked(tool == "paint")
+        self.properties_panel.set_brush_tool(tool)
+        if auto:
+            self._auto_refresh(redraw=False)
         self.properties_panel.set_brush_size(self.canvas.brush_size)
         if on:
             self.canvas.setFocus()
@@ -640,9 +660,9 @@ class MainWindow(QMainWindow):
         self._update_overlays()
 
     def set_region_mode(self, on: bool, redraw: bool = True) -> None:
-        """A drag on the image sets the tool region (box) instead of a SAM2 box; turns the brush off."""
+        """A drag on the image sets the auto-tool region (box) instead of a SAM2 box or a stroke."""
         on = bool(on) and self.session.mode == Mode.EDIT and not self._busy
-        if on and self.canvas.brush_mode:
+        if on and self._tool and self._tool not in AUTO_TOOLS:
             self.set_brush_tool("", redraw=False)
         self.canvas.set_region_mode(on)
         self.properties_panel.set_region_mode(on)
@@ -653,14 +673,58 @@ class MainWindow(QMainWindow):
 
     def on_region(self, region) -> None:
         self.session.set_region(region)
-        self.refresh()
+        self._auto_refresh()
 
     def on_region_box(self, x0: float, y0: float, x1: float, y1: float, subtract: bool) -> None:
         self.session.add_region_box((x0, y0, x1, y1), subtract)
-        self.refresh()
+        self._auto_refresh()
+
+    def set_auto_mode(self, mode: str) -> None:
+        self.session.set_auto_mode(mode)
+        if self.session.auto_tool:
+            self.canvas.set_brush_mode(mode == "brush")
+        self._auto_refresh()
+
+    def _auto_refresh(self, redraw: bool = True) -> None:
+        """Recompute the auto tool's result (Object Fill off the UI thread) and show / apply it."""
+        s = self.session
+        tool = s.auto_tool
+        base = s.auto_base() if tool else None
+        if tool is None or base is None:
+            if redraw:
+                self.refresh()
+            return
+        settings = self.properties_panel.tool_settings()
+        settings.pop("restore", None)
+        self._auto_gen += 1
+        gen = self._auto_gen
+        target = s.auto_cached(tool, base, settings)
+        if target is None and tool != "object_fill":
+            target = s.auto_compute(tool, base, **settings)  # fast enough to stay on the UI thread
+        if target is not None:
+            self._auto_done(gen, base, target, redraw)
+            return
+        self.properties_panel.set_preview(0, 0, busy=True)
+        self._start(Task(lambda: s.auto_compute(tool, base, **settings)), lambda t: self._auto_done(gen, base, t))
+
+    def _auto_pending(self) -> bool:
+        return self._auto_gen != self._auto_shown
+
+    def _auto_done(self, gen: int, base, target, redraw: bool = True) -> None:
+        if gen != self._auto_gen or self.session.auto_tool is None:
+            return  # a newer setting or another tool took over
+        self._auto_shown = gen
+        self.session.auto_apply(base, target)
+        if redraw:
+            self.refresh()
+        else:
+            self._update_overlays()
 
     def on_tool_stroke(self, tool: str, area) -> None:
-        """A tool brush was released: run the tool once, inside the brushed area."""
+        """A tool stroke was released: paint the auto tool's guide in, or run Restore there."""
+        if tool in AUTO_TOOLS:
+            self._layer(lambda: self.session.paint_guide(area), f"{tool.replace('_', ' ').title()} painted in")
+            return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             settings = self.properties_panel.tool_settings()
@@ -670,13 +734,6 @@ class MainWindow(QMainWindow):
             )
         finally:
             QApplication.restoreOverrideCursor()
-
-    def object_fill(self, max_grow: int, sensitivity: int = 50) -> None:
-        self.statusBar().showMessage("Object Fill…")
-        self._layer(
-            lambda: self.session.object_fill(max_grow, sensitivity),
-            f"Object Fill: grown to the object's edges (sensitivity {sensitivity})",
-        )
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""
