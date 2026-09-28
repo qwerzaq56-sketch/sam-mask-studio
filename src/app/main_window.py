@@ -49,7 +49,7 @@ from src.app.properties_panel import AUTO_TOOLS, PropertiesPanel
 from src.app.session import Mode, Session
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
-from src.core.propagation import Direction
+from src.core.propagation import Direction, PropagationPlan
 from src.core.storage import default_export_dir
 from src.logging_config import get_logger
 
@@ -91,6 +91,11 @@ class MainWindow(QMainWindow):
         self._prop_worker: Optional[PropagationWorker] = None
         self._discard = False  # the running batch/propagation was cancelled: drop its results
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
+        self._reference: Optional[int] = None  # propagation reference (double-clicked image); None = current
+        self._pinned: Optional[List[int]] = None  # the pinned Images-list selection (Selection scope)
+        # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
+        self._last_prop: Optional[tuple] = None
+        self._prop_queue: List[tuple] = []
         self._tool = ""  # the Edit Layer tool in use ("" = none)
         self._auto_gen = 0  # newest auto-tool computation; older results are dropped
         self._auto_shown = 0  # the computation whose result is on screen
@@ -313,7 +318,10 @@ class MainWindow(QMainWindow):
         c.candidates_boxed.connect(self.on_candidates_boxed)
 
         pp = self.propagation_panel
-        pp.propagate_requested.connect(self.propagate)
+        pp.propagate_requested.connect(lambda a, b, d, scope: self.propagate(a, b, d, scope))
+        pp.pin_toggled.connect(self.set_pinned)
+        pp.resume_requested.connect(self.resume_propagation)
+        self.images_panel.reference_requested.connect(self.set_reference)
         pp.stop_requested.connect(lambda: self.stop_job(discard=False))
         pp.cancel_requested.connect(lambda: self.stop_job(discard=True))
         pp.navigate_requested.connect(self.go_to)
@@ -414,9 +422,12 @@ class MainWindow(QMainWindow):
             self.detection_panel.select_btn.blockSignals(True)  # nothing left to pick (added / discarded)
             self.detection_panel.select_btn.setChecked(False)
             self.detection_panel.select_btn.blockSignals(False)
+        self.images_panel.set_reference(self._reference)  # before the marks: they draw the ◎
         self.images_panel.update_marks(project)
         self.images_panel.set_current(s.index)
-        self.propagation_panel.set_current(s.index)
+        ref = self._reference if self._reference is not None else s.index
+        self.propagation_panel.set_reference(ref, self._reference is not None)
+        self.propagation_panel.set_pinned(len(self._pinned) if self._pinned is not None else None)
 
         has_folder = key is not None
         self.act_undo.setEnabled(s.can_undo and not busy)
@@ -526,6 +537,8 @@ class MainWindow(QMainWindow):
         self.settings.save(self.settings_path)
         self.images_panel.set_images(self.session.keys)
         self.propagation_panel.set_images(self.session.keys)
+        self._reference, self._pinned, self._last_prop, self._prop_queue = None, None, None, []
+        self.propagation_panel.set_resumable(False)
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.setWindowTitle(f"SAM Mask Studio — {folder}")
@@ -1153,20 +1166,41 @@ class MainWindow(QMainWindow):
     # Propagation
     # ------------------------------------------------------------------
 
-    def propagate(self, start: int, end: int, direction: Direction) -> None:
+    def set_reference(self, index: int) -> None:
+        """Double-clicked image: propagation starts from it (double-click it again to go back to current)."""
+        self._reference = None if index == self._reference else index
+        self.refresh()
+
+    def set_pinned(self, on: bool) -> None:
+        self._pinned = self.images_panel.selected_rows() if on else None
+        self.refresh()
+
+    def propagate(self, start: int, end: int, direction: Direction, scope: str = "range") -> None:
+        """Propagate the checked Objects from the reference image over *scope*:
+        ``selection`` (Images list, or the pinned one) · ``range`` (start..end) · ``all``."""
         s = self.session
         if s.key is None or self._busy:
             return
-        if not (start <= s.index <= end):
-            self.warn("The Current image must lie within Start ~ End.")
-            return
-        plan = s.plan(start, end, direction)
+        ref = self._reference if self._reference is not None else s.index
+        if scope == "all":
+            plan = PropagationPlan(0, len(s.keys) - 1, ref, direction)
+        elif scope == "selection":
+            picked = self._pinned if self._pinned is not None else self.images_panel.selected_rows()
+            if not [i for i in picked if i != ref]:
+                self.warn("Select the images to propagate to in the Images list (Shift/Ctrl-click), or pin them.")
+                return
+            plan = PropagationPlan.of_frames(picked, ref, direction)
+        else:
+            if not (start <= ref <= end):
+                self.warn("The reference image must lie within Start ~ End.")
+                return
+            plan = s.plan(start, end, direction, reference=ref)
         if not plan.targets:
-            self.warn("Nothing to propagate: the range has no images in that direction.")
+            self.warn("Nothing to propagate: no images in that direction.")
             return
-        seeds = s.seeds()
+        seeds = s.seeds(ref)
         if not seeds:
-            self.warn("Check at least one Object that has a mask on the Current image.")
+            self.warn(f"Check at least one Object that has a mask on the reference image ({s.keys[ref]}).")
             return
         existing = s.overwrite_targets(plan, seeds)
         if existing:
@@ -1177,17 +1211,26 @@ class MainWindow(QMainWindow):
                 "Overwrite",
             ):
                 return
+        self._prop_queue = []
+        self._run_propagation(plan, seeds)
+
+    def _run_propagation(self, plan: PropagationPlan, seeds) -> None:
+        s = self.session
         propagate = self.propagate_fn or default_propagate()
         ckpt, paths, max_side = self.settings.sam2_checkpoint, list(s.paths), s.max_side
 
+        self.close_tool()
         s.finish_editing()
         self._busy = "Propagating…"
         names = [(oid, s.project.get(oid).name) for oid in seeds]
         self.propagation_panel.begin(plan, names)
         self.tabs.setCurrentWidget(self.propagation_panel)
         self.log(
-            f"Propagating {len(seeds)} Object(s) from {s.key} over {len(plan.targets)} image(s) ({direction.value})"
+            f"Propagating {len(seeds)} Object(s) from {s.keys[plan.current]} over {len(plan.targets)} image(s) "
+            f"({plan.direction.value})"
         )
+        self._last_prop = (plan, list(seeds), set())
+        self.propagation_panel.set_resumable(False)
 
         def run(cancel, progress):
             return propagate(ckpt, paths, plan, seeds, max_side, cancel=cancel, progress=progress)
@@ -1195,6 +1238,7 @@ class MainWindow(QMainWindow):
         w = PropagationWorker(run, self)
         w.progress.connect(self.propagation_panel.on_progress)
         w.frame_done.connect(lambda idx, masks: self.propagation_panel.on_frame(idx, list(masks)))
+        w.frame_done.connect(lambda idx, _masks: self._last_prop[2].add(idx))
         w.finished_ok.connect(
             lambda results, stopped: self._propagation_done(results, seeds, "Stopped" if stopped else "Done")
         )
@@ -1222,6 +1266,47 @@ class MainWindow(QMainWindow):
             self.warn(msg)
         else:
             self.log(msg + (" — Ctrl+Z undoes the whole propagation" if statuses else ""))
+        if outcome == "Done" and self._prop_queue:
+            self.refresh()
+            self._run_next_queued()  # Resume: the other direction
+            return
+        resumable = outcome != "Done" and bool(self._remaining_plans())
+        self.propagation_panel.set_resumable(resumable)
+        if resumable:
+            self.log("Resume continues from the last frame reached")
+        self.refresh()
+
+    def _remaining_plans(self) -> List[tuple]:
+        """After a stop: per direction, (plan over the frames left, object ids), starting at the last frame done."""
+        if self._last_prop is None:
+            return []
+        plan, ids, done = self._last_prop
+        out = []
+        for targets, direction in ((plan.backward, Direction.BACKWARD), (plan.forward, Direction.FORWARD)):
+            left = [i for i in targets if i not in done]
+            if not left:
+                continue
+            reached = [i for i in targets if i in done]  # targets run outward, so the last one is the edge
+            start = reached[-1] if reached else plan.current
+            out.append((PropagationPlan.of_frames(left, start, direction), ids))
+        return out
+
+    def resume_propagation(self) -> None:
+        """Continue a stopped propagation: each direction from the last frame it reached."""
+        if self._busy:
+            return
+        self._prop_queue = self._remaining_plans()
+        self._run_next_queued()
+
+    def _run_next_queued(self) -> None:
+        while self._prop_queue:
+            plan, ids = self._prop_queue.pop(0)
+            seeds = self.session.seeds(plan.current, ids=ids)
+            if seeds:
+                self._run_propagation(plan, seeds)
+                return
+            self.log(f"Nothing to resume from {self.session.keys[plan.current]}: no masks there")
+        self.propagation_panel.set_resumable(False)
         self.refresh()
 
     def stop_job(self, discard: bool) -> None:

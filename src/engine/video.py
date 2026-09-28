@@ -31,7 +31,7 @@ def propagate(
     cancel: Optional[Callable[[], bool]] = None,
     progress: Optional[ProgressFn] = None,
 ) -> Iterator[Tuple[int, Dict[int, np.ndarray]]]:
-    """Propagate each seed mask (obj_id -> bool mask on ``plan.current``) through the plan.
+    """Propagate each seed mask (obj_id -> bool mask on ``plan.current``) through the plan's frames.
 
     Yields ``(sequence_index, {obj_id: bool mask at that image's working size})``
     for every target frame, backward pass first, then forward. The current
@@ -49,13 +49,13 @@ def propagate(
         raise ValueError("No objects to propagate.")
     if device == "cuda" and not torch.cuda.is_available():
         device = "cpu"
-    lo, hi = plan.window
+    seq = plan.sequence  # the frames, in order; the model sees them as one video
     total = len(plan.targets)
     cancelled = lambda: bool(cancel and cancel())  # noqa: E731
 
     with tempfile.TemporaryDirectory(prefix="sms_video_") as tmp:
         sizes: Dict[int, Tuple[int, int]] = {}
-        for n, idx in enumerate(range(lo, hi + 1)):
+        for n, idx in enumerate(seq):
             if cancelled():
                 return
             img = to_working(read_rgb(image_paths[idx]), max_side)
@@ -65,7 +65,7 @@ def propagate(
                 raise IOError(f"JPEG encode failed: {image_paths[idx]}")
             buf.tofile(str(Path(tmp) / f"{n:05d}.jpg"))
             if progress:
-                progress("Preparing frames", n + 1, hi - lo + 1)
+                progress("Preparing frames", n + 1, len(seq))
 
         if progress:
             progress("Loading SAM2 video model", 0, 0)
@@ -73,7 +73,7 @@ def propagate(
         state = None
         try:
             state = predictor.init_state(video_path=tmp, offload_video_to_cpu=True)
-            rel_cur = plan.current - lo
+            rel_cur = seq.index(plan.current)
             for oid, m in seeds.items():
                 predictor.add_new_mask(state, frame_idx=rel_cur, obj_id=int(oid), mask=torch.from_numpy(np.asarray(m, dtype=bool)))
 
@@ -89,7 +89,7 @@ def propagate(
                 for rel_idx, obj_ids, video_masks in stream:
                     if cancelled():
                         return
-                    idx = lo + rel_idx
+                    idx = seq[rel_idx]
                     if idx == plan.current:
                         continue
                     out = {}

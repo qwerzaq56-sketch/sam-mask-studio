@@ -52,8 +52,17 @@ def chain(keys: Sequence[str], indices: Sequence[int], current: int, limit: int 
     return " → ".join(names)
 
 
+SCOPES = (
+    ("selection", "Selection (Images list)"),
+    ("range", "Range (Start ~ End)"),
+    ("all", "All images"),
+)
+
+
 class PropagationPanel(QWidget):
-    propagate_requested = pyqtSignal(int, int, object)  # start, end, Direction
+    propagate_requested = pyqtSignal(int, int, object, str)  # start, end, Direction, scope
+    pin_toggled = pyqtSignal(bool)  # fix the Images-list selection as the Selection scope
+    resume_requested = pyqtSignal()  # continue a stopped propagation
     stop_requested = pyqtSignal()  # stop, keep the frames done
     cancel_requested = pyqtSignal()  # stop and discard the run
     navigate_requested = pyqtSignal(int)
@@ -68,9 +77,27 @@ class PropagationPanel(QWidget):
         self._obj_done: Dict[int, int] = {}
         self._dir_done = {"Backward": 0, "Forward": 0}
 
+        self.reference = QLabel("—")
+        self.reference.setToolTip("Double-click an image in the Images list to make it the reference (◎)")
+        self.scope = QComboBox()
+        for value, text in SCOPES:
+            self.scope.addItem(text, value)
+        self.scope.setToolTip(
+            "Selection: the images picked in the Images list (Shift/Ctrl-click), or the pinned ones\n"
+            "Range: Start ~ End · All images: the whole folder"
+        )
+        self.scope.currentIndexChanged.connect(self._scope_changed)
+        self.pin_btn = QPushButton("📌 Pin")
+        self.pin_btn.setCheckable(True)
+        self.pin_btn.setToolTip("Fix the current Images-list selection, so moving between images keeps it")
+        self.pin_btn.toggled.connect(self.pin_toggled)
+        self.pin_label = QLabel("")
+        self.pin_label.setStyleSheet("color: gray;")
+        pin_row = QHBoxLayout()
+        pin_row.addWidget(self.pin_btn)
+        pin_row.addWidget(self.pin_label, 1)
         self.start = QComboBox()
         self.end = QComboBox()
-        self.current = QLabel("—")
         self.dirs = QButtonGroup(self)
         drow = QHBoxLayout()
         for i, (d, text) in enumerate(
@@ -82,13 +109,16 @@ class PropagationPanel(QWidget):
             drow.addWidget(rb)
         self.dirs.button(0).setChecked(True)
         form = QFormLayout()
+        form.addRow("Reference", self.reference)
+        form.addRow("Scope", self.scope)
+        form.addRow("", pin_row)
         form.addRow("Start Image", self.start)
         form.addRow("End Image", self.end)
-        form.addRow("Current Image", self.current)
         form.addRow("Direction", drow)
+        self._form = form
 
         self.run_btn = QPushButton("Propagate Selected Objects")
-        self.run_btn.setToolTip("Every checked Object propagates from its selected Variant on the Current image")
+        self.run_btn.setToolTip("Every checked Object propagates from its mask on the reference image")
         self.run_btn.clicked.connect(self._run)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setToolTip("Stop and keep the frames propagated so far")
@@ -102,6 +132,11 @@ class PropagationPanel(QWidget):
         brow.addWidget(self.run_btn, 1)
         brow.addWidget(self.stop_btn)
         brow.addWidget(self.cancel_btn)
+        self.resume_btn = QPushButton("Resume")
+        self.resume_btn.setToolTip("Continue a stopped propagation from the last frame it reached")
+        self.resume_btn.setEnabled(False)
+        self.resume_btn.clicked.connect(self.resume_requested)
+        brow.addWidget(self.resume_btn)
 
         self.phase = QLabel("")
         self.bars: Dict[str, Tuple[QLabel, QProgressBar]] = {}
@@ -134,6 +169,7 @@ class PropagationPanel(QWidget):
         lay.addLayout(left, 1)
         lay.addWidget(lists, 2)
         self._reset_bars()
+        self._scope_changed()
 
     # ------------------------------------------------------------------
 
@@ -152,21 +188,46 @@ class PropagationPanel(QWidget):
         self._rows.clear()
         self._obj_rows.clear()
 
-    def set_current(self, index: int) -> None:
-        self.current.setText(self._keys[index] if 0 <= index < len(self._keys) else "—")
+    def set_reference(self, index: int, chosen: bool) -> None:
+        """The image propagation starts from; *chosen*: picked by double-click (else the current one)."""
+        name = self._keys[index] if 0 <= index < len(self._keys) else "—"
+        self.reference.setText(f"◎ {name}" if chosen else f"{name}  (current image)")
+
+    def set_pinned(self, count: Optional[int]) -> None:
+        self.pin_btn.blockSignals(True)
+        self.pin_btn.setChecked(count is not None)
+        self.pin_btn.blockSignals(False)
+        self.pin_label.setText(f"{count} image(s) pinned" if count is not None else "uses the Images-list selection")
+
+    def scope_value(self) -> str:
+        return self.scope.currentData()
+
+    def _scope_changed(self, *_):
+        scope = self.scope_value()
+        for w in (self.start, self.end):
+            self._form.setRowVisible(w, scope == "range")
+        self.pin_btn.setVisible(scope == "selection")
+        self.pin_label.setVisible(scope == "selection")
 
     def direction(self) -> Direction:
         return Direction(self.dirs.checkedButton().property("direction"))
 
     def _run(self) -> None:
-        self.propagate_requested.emit(self.start.currentIndex(), self.end.currentIndex(), self.direction())
+        self.propagate_requested.emit(
+            self.start.currentIndex(), self.end.currentIndex(), self.direction(), self.scope_value()
+        )
+
+    def set_resumable(self, on: bool) -> None:
+        self.resume_btn.setEnabled(on)
 
     def set_running(self, running: bool) -> None:
         self.run_btn.setEnabled(not running)
         self.stop_btn.setEnabled(running)
         self.cancel_btn.setEnabled(running)
-        for w in (self.start, self.end, *self.dirs.buttons()):
+        for w in (self.start, self.end, self.scope, self.pin_btn, *self.dirs.buttons()):
             w.setEnabled(not running)
+        if running:
+            self.resume_btn.setEnabled(False)
 
     def _reset_bars(self) -> None:
         for name, (label, bar) in self.bars.items():
@@ -216,9 +277,9 @@ class PropagationPanel(QWidget):
             it.setText(f"{name}    {text}")
 
     def stopping(self) -> None:
+        """Stop was pressed: Cancel stays available (it turns the stop into a discard)."""
         self.stop_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(False)
-        self.phase.setText("Stopping after the current frame…")
+        self.phase.setText("Stopping after the current frame… (Cancel discards instead)")
 
     def mark(self, index: int, status: Optional[object]) -> None:
         it = self._rows.get(index)

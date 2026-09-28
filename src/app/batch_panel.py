@@ -151,9 +151,9 @@ class BatchPanel(QWidget):
         self.progress.setValue(self.results.count())
 
     def batch_stopping(self) -> None:
+        """Stop was pressed: Cancel stays available (it turns the stop into a discard)."""
         self.stop_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(False)
-        self.status.setText("Stopping after the current prompt…")
+        self.status.setText("Stopping after the current prompt… (Cancel discards instead)")
 
     def batch_end(self, message: str) -> None:
         self.stop_btn.setEnabled(False)

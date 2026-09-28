@@ -281,6 +281,14 @@ New Object are blocked while on): click / drag = add, Shift = toggle, Ctrl = rem
 every candidate it touches; unchecked candidates keep their outline. The v0.2 "first click creates
 the first Object" rule is gone (`Session.effective_mode` == `mode`).
 
+**P5a — propagation scope and resume** (`v0.3-p5a`)
+- `PropagationPlan.frames` / `of_frames`: a plan over picked images (one sequence, others skipped);
+  `sequence` is what `engine.video.propagate` loads (was the contiguous window).
+- Reference = the double-clicked image (◎) or the current one; Scope Selection (Images list or 📌
+  pinned) / Range / All; seeds come from the reference (`Session.seeds(index, ids)`).
+- Resume: after Stop / failure, each direction continues from the last frame reached
+  (`_remaining_plans`, queued runs). Cancel stays enabled after Stop and turns it into a discard.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
