@@ -305,6 +305,11 @@ cached in `<images>.sms/thumbs/` and read in ~8 ms slices (visible first, then t
 **v0.3.0 released** (2026-09-28): phases P1 – P5f above (tags `v0.3-p1` … `v0.3-p5f`), merged
 to `main` and tagged `v0.3.0`; the stable launcher runs it.
 
+**v0.3.1 — portable build**: `tools/make_portable.py <out> [--force]` (standalone CPython + the
+.venv packages, SAM2 / SAM3 sources in place of their editable installs, VC++ runtime DLLs, app from
+git HEAD, hard-linked checkpoints, relative launcher). Checkpoint paths inside the app folder are
+saved relative in `config.local.json`. Verified after moving the folder, with a clean environment.
+
 ### Remaining work
 
 1. P6 — COLMAP: read a COLMAP model, load its masks as Objects, write edits back to the `.bin`

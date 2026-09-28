@@ -12,6 +12,13 @@
   - `SAM Mask Studio (dev).bat`: 최신 dev
   - `SAM Mask Studio.bat`: 안정판 v0.3.0 (이전 안정판은 태그 `v0.2.0`)
 
+## 포터블 (v0.3.1)
+- `H:\Dev\Masking\dist\SAMMaskStudio` (약 6.9GB): 폴더째로 복사해 다른 PC에서 `SAM Mask Studio.bat`로 실행합니다.
+  - 파이썬, 모든 패키지, SAM2·SAM3 모델, VC++ 런타임이 들어 있습니다. 경로는 모두 상대 경로입니다.
+- 대상 PC 조건: Windows 10/11 64비트. GPU로 돌리려면 NVIDIA와 CUDA 13 지원 드라이버가 필요하고, 없으면 CPU로 돕니다.
+- 다시 만들기: `.venv\Scripts\python.exe tools\make_portable.py H:\Dev\Masking\dist\SAMMaskStudio --force`
+- 검증: 폴더 이름을 바꾸고 개발 환경 없이 실행해, SAM2(GPU 2.9초)·SAM3 로딩(11.7초, 사람 3개 검출)과 창·폴더 열기를 확인했습니다.
+
 ## 완료
 
 ### 1단계 · 반응 속도 / 작은 UX 수정 (`v0.3-p1`)
