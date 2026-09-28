@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import List, Optional, Sequence
 
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
+from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -50,8 +50,14 @@ def later(owner: QObject, signal, *args) -> None:
 
 
 def color_icon(rgb, size: int = 12) -> QIcon:
+    """A color chip with a thin darker border, so light colors (lavender, pale yellow) still show."""
     pm = QPixmap(size, size)
-    pm.fill(QColor(*rgb))
+    color = QColor(*rgb)
+    pm.fill(color)
+    p = QPainter(pm)
+    p.setPen(color.darker(170))
+    p.drawRect(0, 0, size - 1, size - 1)
+    p.end()
     return QIcon(pm)
 
 

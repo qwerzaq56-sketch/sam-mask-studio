@@ -44,6 +44,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
+        self.setMinimumWidth(640)  # room for the checkpoint paths
         self.sam2 = QLineEdit(settings.sam2_checkpoint)
         self.sam3 = QLineEdit(settings.sam3_checkpoint)
         self.max_side = QSpinBox()
