@@ -10,3 +10,6 @@ workspace/
 *.sms/
 *_masks/
 config.local.json
+
+# Office lock files (a doc open in Word)
+~$*
