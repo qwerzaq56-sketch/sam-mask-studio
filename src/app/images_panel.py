@@ -76,6 +76,41 @@ def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
 
 
 PIN_COLOR = QColor(255, 225, 140)  # pinned tiles
+CURRENT_FILL = QColor(40, 110, 220)  # the open frame: the whole row / tile filled (white text)
+PICKED_FILL = QColor(40, 110, 220, 70)  # the other picked frames (Shift / Ctrl-click): a light tint
+
+
+def selection_fill(option, index) -> Optional[QColor]:
+    """The fill for a row / tile: the open frame, a picked one, or None.
+
+    Clears the selected state in *option*, so the style draws neither its
+    highlight nor a tinted (selected-mode) icon: the fill alone shows it.
+    """
+    view = option.widget
+    current = view is not None and view.currentIndex() == index
+    picked = bool(option.state & QStyle.StateFlag.State_Selected)
+    option.state &= ~QStyle.StateFlag.State_Selected
+    return CURRENT_FILL if current else PICKED_FILL if picked else None
+
+
+class TileDelegate(QStyledItemDelegate):
+    """The strip's tiles: the open frame's tile filled with color, picked ones tinted."""
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        fill = selection_fill(opt, index)
+        if fill is not None:
+            if opt.backgroundBrush.style() != Qt.BrushStyle.NoBrush:
+                painter.fillRect(opt.rect, opt.backgroundBrush)  # 📌 shade under a picked tile's tint
+            painter.fillRect(opt.rect, fill)
+            opt.backgroundBrush = QBrush()
+            if fill is CURRENT_FILL:
+                opt.palette.setBrush(QPalette.ColorRole.Text, QBrush(QColor(255, 255, 255)))
+        style = opt.widget.style() if opt.widget is not None else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+
 THUMB_H = 72  # thumbnail height in px
 TILE_W = 132  # tile width (the file name is elided to fit)
 
@@ -138,20 +173,22 @@ class OneLineDelegate(QStyledItemDelegate):
         raw = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         first, _, name = raw.replace(" ", "\n").partition("\n")  # "12  ★ ◎" / file name
         opt.text = ""
+        fill = selection_fill(opt, index)  # the open frame: the row filled; picked ones: tinted
         style = opt.widget.style() if opt.widget is not None else QApplication.style()
-        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)  # background, selection
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)  # background (📌)
+        if fill is not None:
+            painter.fillRect(opt.rect, fill)
         num, _, marks = first.partition("  ")
         fm = opt.fontMetrics
         digits = len(str(index.model().rowCount()))
         id_w = fm.horizontalAdvance("0" * max(2, digits))
         marks_w = max(fm.horizontalAdvance("★ ◎"), fm.horizontalAdvance(marks)) + 8  # wider only for 📌 rows
         r = opt.rect.adjusted(2, 0, -2, 0)
-        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
         group = (QPalette.ColorGroup.Active if opt.state & QStyle.StateFlag.State_Active
                  else QPalette.ColorGroup.Inactive)
         fg = index.data(Qt.ItemDataRole.ForegroundRole)
-        if selected:
-            color = opt.palette.color(group, QPalette.ColorRole.HighlightedText)
+        if fill is CURRENT_FILL:
+            color = QColor(255, 255, 255)
         elif isinstance(fg, QBrush) and fg.style() != Qt.BrushStyle.NoBrush:
             color = fg.color()
         else:
@@ -202,6 +239,7 @@ class ImagesPanel(QWidget):
         self.list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Ctrl/Shift-click picks several images; the clicked one becomes current.
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list.setItemDelegate(TileDelegate(self.list))
         self.list.currentRowChanged.connect(self._on_row)
         self.list.itemDoubleClicked.connect(lambda it: self.reference_requested.emit(self.list.row(it)))
         self.list.setToolTip(

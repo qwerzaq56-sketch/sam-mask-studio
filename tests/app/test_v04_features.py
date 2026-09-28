@@ -408,3 +408,24 @@ def test_merge_add_or_override(qapp, win):
     win.choose = lambda *a, **kw: None  # cancelled: nothing happens
     win.merge([a, b])
     assert len(p.objects) == 2
+
+
+# --- p12: the open frame is a filled row / tile ------------------------------------
+
+
+def test_open_frame_row_and_tile_are_filled(qapp, win):
+    from src.app.images_panel import CURRENT_FILL
+
+    ip = win.images_panel
+    win.names_btn.setChecked(False)  # IDs only: the row's right side is empty
+    win.go_to(2)
+    settle(qapp)
+    fl = ip.frame_list
+    img = fl.viewport().grab().toImage()
+    r = fl.visualRect(fl.model().index(2, 0))
+    assert img.pixelColor(r.right() - 3, r.center().y()) == CURRENT_FILL
+    other = fl.visualRect(fl.model().index(1, 0))
+    assert img.pixelColor(other.right() - 3, other.center().y()) != CURRENT_FILL
+    strip = ip.list.viewport().grab().toImage()
+    t = ip.list.visualItemRect(ip.list.item(2))
+    assert strip.pixelColor(t.left() + 2, t.top() + 2) == CURRENT_FILL
