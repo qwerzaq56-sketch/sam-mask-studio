@@ -230,6 +230,8 @@ class Project:
         self.revision: int = 0
         self._undo: List[tuple] = []
         self._redo: List[tuple] = []
+        self._dropped = 0  # undo steps dropped off the front (MAX_HISTORY)
+        self.actions = 0  # new changes made (undo/redo do not count)
 
     # ------------------------------------------------------------------
     # History
@@ -250,8 +252,15 @@ class Project:
         self._undo.append(self._state())
         if len(self._undo) > self.MAX_HISTORY:
             self._undo.pop(0)
+            self._dropped += 1
         self._redo.clear()
         self.revision += 1
+        self.actions += 1
+
+    @property
+    def undo_depth(self) -> int:
+        """Position in the history: +1 per change or redo, -1 per undo (never reused by trimming)."""
+        return self._dropped + len(self._undo)
 
     @property
     def can_undo(self) -> bool:

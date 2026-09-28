@@ -93,6 +93,10 @@ class Session:
         # Box region the whole-mask tool buttons are limited to (None: the whole mask).
         # UI state for the Object in Edit on this image: not saved, not undone.
         self.region: Optional[np.ndarray] = None
+        # Region changes join Ctrl+Z / Ctrl+Y: each entry remembers the project's
+        # history position, so region and project steps undo in the order they happened.
+        self._region_undo: List[Tuple[int, Optional[np.ndarray]]] = []  # (depth, region before)
+        self._region_redo: List[Tuple[int, int, Optional[np.ndarray]]] = []  # (depth, actions, region)
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -167,13 +171,13 @@ class Session:
         self.mode = Mode.NEW_OBJECT
         self.editing = None
         self.selected_point = None
-        self.region = None
+        self._reset_region()
 
     def edit(self, obj_id: int) -> None:
         if self.project.get(obj_id) is None:
             return
         if obj_id != self.editing:
-            self.region = None
+            self._reset_region()
         self.mode = Mode.EDIT
         self.editing = obj_id
         self.selected_point = None
@@ -183,7 +187,7 @@ class Session:
         self.mode = Mode.IDLE
         self.editing = None
         self.selected_point = None
-        self.region = None
+        self._reset_region()
 
     finish_editing = cancel_mode
 
@@ -330,8 +334,19 @@ class Session:
         return self._set_target(mask)
 
     def set_region(self, region: Optional[np.ndarray]) -> None:
-        """Limit the whole-mask tools to *region* (a bool mask); None or empty = everywhere."""
-        self.region = region if region is not None and region.any() else None
+        """Limit the whole-mask tools to *region* (a bool mask); None or empty = everywhere. Undoable."""
+        region = region if region is not None and region.any() else None
+        if region is None and self.region is None:
+            return
+        self._region_undo.append((self.project.undo_depth, self.region))
+        self._region_redo.clear()
+        self.region = region
+
+    def _reset_region(self) -> None:
+        """Leaving the edit target ends its region and the region's history."""
+        self.region = None
+        self._region_undo.clear()
+        self._region_redo.clear()
 
     def add_region_box(self, box: Box, subtract: bool = False) -> None:
         """Add a dragged box to the tool region (or cut it out with *subtract*)."""
@@ -458,12 +473,38 @@ class Session:
         self.sync()
         return new
 
+    @property
+    def can_undo(self) -> bool:
+        return self.project.can_undo or self._region_step_undo()
+
+    @property
+    def can_redo(self) -> bool:
+        return self.project.can_redo or self._region_step_redo()
+
+    def _region_step_undo(self) -> bool:
+        """The next undo is a region change (made after the project's current state)."""
+        return bool(self._region_undo) and self._region_undo[-1][0] == self.project.undo_depth
+
+    def _region_step_redo(self) -> bool:
+        top = self._region_redo[-1] if self._region_redo else None
+        return top is not None and top[0] == self.project.undo_depth and top[1] == self.project.actions
+
     def undo(self) -> bool:
+        if self._region_step_undo():
+            depth, before = self._region_undo.pop()
+            self._region_redo.append((depth, self.project.actions, self.region))
+            self.region = before
+            return True
         ok = self.project.undo()
         self.sync()
         return ok
 
     def redo(self) -> bool:
+        if self._region_step_redo():
+            depth, _, after = self._region_redo.pop()
+            self._region_undo.append((depth, self.region))
+            self.region = after
+            return True
         ok = self.project.redo()
         self.sync()
         return ok

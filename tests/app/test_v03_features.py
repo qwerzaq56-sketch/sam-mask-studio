@@ -321,3 +321,39 @@ def test_restore_brush_modes(qapp, win, mode, added_px, removed_px):
     assert m[50, 70] == added_px and m[30, 30] == removed_px
     if mode == "both":
         assert np.array_equal(m, prompt) and s.editing_frame().edit is None
+
+
+# --- Region Box changes are undoable, in order with the mask edits --------------
+
+
+def test_region_changes_undo_and_redo_in_order(qapp, win):
+    s = win.session
+    win.new_object()
+    s.click(30, 30)  # project step A
+    s.add_region_box((0, 0, 20, 20))  # region R1
+    t = s.editing_frame().mask.copy()
+    t[50, 70] = True
+    s.brush(t)  # project step B
+    s.add_region_box((40, 40, 60, 50))  # region R2
+    win.refresh()
+    assert win.act_undo.isEnabled()
+    win.undo()
+    assert s.region[10, 10] and not s.region[45, 50]  # R2 undone
+    win.undo()
+    assert not s.editing_frame().mask[50, 70] and s.region is not None  # B undone, R1 stays
+    win.undo()
+    assert s.region is None and s.editing_frame() is not None  # R1 undone, A stays
+    win.redo()
+    assert s.region[10, 10]
+    win.redo()
+    assert s.editing_frame().mask[50, 70]
+    win.redo()
+    assert s.region[45, 50]
+    win.properties_panel.clear_region_btn.click()
+    assert s.region is None
+    win.undo()
+    assert s.region[45, 50]  # Clear Region is undoable too
+    oid = s.editing
+    win.finish_editing()
+    win.undo()  # after leaving Edit, Ctrl+Z goes to the mask edits, not old regions
+    assert s.region is None and not s.project.get(oid).mask(s.key)[50, 70]
