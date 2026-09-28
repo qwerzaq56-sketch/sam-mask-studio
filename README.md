@@ -32,7 +32,8 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 ## 화면 구성
 
 ```text
-┌─ Open Save Undo Redo Export │ Mask Preview  Preview: Final Brush │ Outline ▢px │ Show Changes │ Settings ┐
+┌─ File  Edit  View  Go  Help                        (메뉴: 모든 명령과 단축키)                          ┐
+├─ Mask Preview  Preview: Final  Brush │ Outline ▢px │ Show Changes            (툴바: 자주 쓰는 토글) ─┤
 ├───────────┬─────────────────────┬───────────────────────────────────────────┬──────────────────────┤
 │Frame List │ Objects             │                                           │ Properties           │
 │ 1 ★ ◎ a.jpg│ ☑ person #1  🔗 12  │ Frame 1/12 · Object: ■ person #1 · Mode   │  [Mask] [Edit Layer] │
@@ -48,7 +49,9 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 - **Frame List**(왼쪽 끝)와 **Frames** 썸네일 줄(아래)은 같은 목록입니다. 현재 이미지, 선택, ◎(전파 기준), 📌(고정)가 항상 똑같이 보입니다.
 - 캔버스 위 **작업 상태 바**: 지금 프레임 · 대상 Object(출처) · 모드(Points / Paint / Auto · 도구 (Fill/Paint) / Select on Image / 작업 중 진행)를 한 줄로 보여줍니다.
-- 모든 패널은 옮기거나 띄우거나 닫을 수 있고, **View** 메뉴에서 다시 켭니다. 단축키 전체는 **Help → Keyboard Shortcuts (F1)**.
+- **메뉴 바**(File / Edit / View / Go / Help)에 모든 명령이 단축키와 함께 있습니다. Open / Save / Export / Undo / Redo / Settings는 메뉴에만,
+  작업 중 계속 켜고 끄는 보기·도구 토글만 아래 툴바에 둡니다. 설계: [`docs/menu-design.md`](docs/menu-design.md)
+- 모든 패널은 옮기거나 띄우거나 닫을 수 있고, **View → Panels**에서 다시 켭니다. 단축키 전체는 **Help → Keyboard Shortcuts (F1)**.
 
 ## 사용법
 

@@ -1034,7 +1034,9 @@ def test_frame_list_follows_the_strip_and_thumbnails_are_cached(qapp, win, tmp_p
     cache = win.session.store.root / "thumbs"
     wait_until(qapp, lambda: len(list(cache.glob("*.jpg"))) == 5, timeout=5)  # the whole folder, while idle
     wait_until(qapp, lambda: not ip._load_timer.isActive(), timeout=5)
-    toggles = win.menuBar().actions()[0].menu().actions()
+    view = next(a.menu() for a in win.menuBar().actions() if a.text().replace("&", "") == "View")
+    panels = next(a.menu() for a in view.actions() if a.menu() is not None and a.text() == "Panels")
+    toggles = panels.actions()
     assert any(a.text().replace("&", "") == "Frame List" for a in toggles)
     assert all(a.isEnabled() for a in toggles)  # each dock can be hidden / shown
     frame_list = next(a for a in toggles if a.text().replace("&", "") == "Frame List")
@@ -1061,11 +1063,11 @@ def test_frame_list_names_fold_away(qapp, win):
 
 
 def test_focus_and_goto_frames(qapp, win):
-    from PyQt6.QtGui import QKeySequence, QShortcut
+    from PyQt6.QtGui import QKeySequence
     from PyQt6.QtWidgets import QLineEdit
 
     ip = win.images_panel
-    assert any(sc.key() == QKeySequence("S") for sc in win.findChildren(QShortcut))
+    assert win.act_focus.shortcut() == QKeySequence("S")
     gotos = win._goto_fields
     assert len(gotos) == 2 and all(isinstance(g, QLineEdit) for g in gotos)  # under the list and the strip
     assert not win._list_dock.titleBarWidget().findChildren(QLineEdit)  # not in the title bar

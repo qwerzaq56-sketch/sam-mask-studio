@@ -1,7 +1,8 @@
 """Main window: wires the Session to the canvas and panels (spec 01 §5 layout).
 
-Toolbar (Open, Save, Undo, Redo, Export, Final Mask preview, Brush,
-Outline + width, Show Changes) ·
+Menu bar (File, Edit, View, Go, Help: every command and its key, see
+docs/menu-design.md) · toolbar with the often-used view / tool toggles (Mask
+Preview + mode, Brush, Outline + width, Show Changes) ·
 left Objects + Images · center canvas · right Properties · bottom
 Prompt/Detection, Propagation and Logs tabs · status bar with the mode.
 
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Callable, List, Optional
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QCursor, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QCursor, QKeySequence
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
@@ -221,9 +222,7 @@ class MainWindow(QMainWindow):
         self._list_title = DockTitleBar(list_dock, [self.marks_btn, self.names_btn])
         list_dock.setTitleBarWidget(self._list_title)
         self._list_dock = list_dock
-        view_menu = self.menuBar().addMenu("&View")
-        for d in (list_dock, left_dock, right_dock, frames_dock):
-            view_menu.addAction(d.toggleViewAction())
+        self._docks = (list_dock, left_dock, right_dock, frames_dock)  # View > Panels
         # the frame strip spans only the canvas: the side docks keep the full height
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
@@ -272,19 +271,64 @@ class MainWindow(QMainWindow):
         if shortcuts:
             a.setShortcuts([QKeySequence(s) for s in shortcuts])
         a.setToolTip(f"{tip or text} ({', '.join(shortcuts)})" if shortcuts else (tip or text))
+        a.setStatusTip(tip or text)
         a.setCheckable(checkable)
         a.triggered.connect(slot)
         self.addAction(a)
         return a
 
+    def _hint(self, menu, text: str, key: str, slot=None):
+        """A menu entry that shows a key handled elsewhere (Enter, Z held, hover keys) without binding it.
+
+        With *slot* it runs that when picked from the menu; without, it is a grayed-out note.
+        """
+        a = menu.addAction(f"{text}\t{key}")
+        if slot is None:
+            a.setEnabled(False)
+        else:
+            a.triggered.connect(slot)
+        return a
+
     def _build_actions(self) -> None:
-        self.act_open = self._action("Open", self.choose_folder, ["Ctrl+O"], "Open an image folder")
+        # --- File / Edit: less used, in the menu bar (docs/menu-design.md) -------------
+        self.act_open = self._action("&Open Folder…", self.choose_folder, ["Ctrl+O"], "Open an image folder")
         self.act_save = self._action(
-            "Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
+            "&Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
         )
-        self.act_undo = self._action("Undo", self.undo, ["Ctrl+Z"])
-        self.act_redo = self._action("Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
-        self.act_export = self._action("Export", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
+        self.act_export = self._action("&Export Final Masks…", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
+        self.act_settings = self._action("Se&ttings…", self.show_settings, tip="Checkpoints, working resolution")
+        self.act_quit = self._action("&Quit", self.close, ["Ctrl+Q"])
+        self.act_undo = self._action("&Undo", self.undo, ["Ctrl+Z"])
+        self.act_redo = self._action("&Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
+        self.act_new = self._action("&New Object from Points", self.new_object, ["N"],
+                                    "Then click (or drag a box) on the image")
+        self.act_edit = self._action("&Edit Points / Finish", self.edit_key, ["E"],
+                                     "Edit the selected Object with SAM2 points; again: finish")
+        self.act_delete = self._action("&Delete", self.delete_key, ["Delete"],
+                                       "The selected point, else the selected Objects")
+        self.act_escape = self._action("Leave Tool / Finish Editing", self.escape, ["Esc"],
+                                       "Leave the tool (drops an auto tool's result), then finish editing")
+        self.act_pick_all = self._action("Auto Tool: Pick All / None", self.a_key, ["A"],
+                                         "Fill mode -> Paint mode with everything picked; Paint mode: all / none")
+        self.act_duplicate = self._action(
+            "Duplicate (this image)", lambda: self.duplicate(self.objects_panel.selected_ids()),
+            tip="Copy the selected Objects' mask on this image only",
+        )
+        self.act_duplicate_all = self._action(
+            "Duplicate All (every linked mask)",
+            lambda: self.duplicate(self.objects_panel.selected_ids(), all_frames=True),
+            tip="Copy the selected Objects with their masks on every image",
+        )
+        self.act_copy_into = self._action(
+            "Copy A → B…", lambda: self.copy_into(self.objects_panel.selected_ids()),
+            tip="Copy the first selected Object into the second: Replace or Add",
+        )
+        self.act_merge = self._action(
+            "Merge…", lambda: self.merge(self.objects_panel.selected_ids()),
+            tip="Fuse the selected Objects: Add (union) or Override with one of them",
+        )
+
+        # --- View / tool toggles: used all the time, also on the toolbar ------------------
         self.act_final = self._action(
             "Mask Preview",
             self.toggle_final,
@@ -322,13 +366,72 @@ class MainWindow(QMainWindow):
             checkable=True,
         )
         self.act_changes.setChecked(self.settings.show_edit_changes)
-        self.act_settings = self._action("Settings", self.show_settings)
+
+        # --- Go: moving between frames and Objects ----------------------------------------
+        self.act_prev_frame = self._action("&Previous Frame", lambda: self.step(-1), ["Left", "PgUp"],
+                                           "Not while editing")
+        self.act_next_frame = self._action("&Next Frame", lambda: self.step(1), ["Right", "PgDown"],
+                                           "Not while editing")
+        self.act_prev_object = self._action("Previous Object", lambda: self.step_object(-1), ["Up"],
+                                            "The previous Object with a mask on this image (Edit follows)")
+        self.act_next_object = self._action("Next Object", lambda: self.step_object(1), ["Down"],
+                                            "The next Object with a mask on this image (Edit follows)")
+        self.act_prev_problem = self._action("Previous Problem (⚠ ✕)", lambda: self.step_problem(-1), ["["])
+        self.act_next_problem = self._action("Next Problem (⚠ ✕)", lambda: self.step_problem(1), ["]"])
+        self.act_prev_key = self._action("Previous Keyframe ★", lambda: self.step_keyframe(-1), [","])
+        self.act_next_key = self._action("Next Keyframe ★", lambda: self.step_keyframe(1), ["."])
+        self.act_go_reference = self._action("Go to Reference ◎", self.go_to_reference, ["F"],
+                                             "The propagation reference (the double-clicked image)")
+        self.act_focus = self._action("Scroll to Current Frame", self.focus_frame, ["S"],
+                                      "Scroll the Frame List and the Frames strip to the current frame")
+        self.act_shortcuts = self._action("&Keyboard Shortcuts", self.show_shortcuts, ["F1"])
+
+        # --- the menu bar: every command, with its key -----------------------------------
+        mb = self.menuBar()
+        m = mb.addMenu("&File")
+        for a in (self.act_open, self.act_save, self.act_export, None, self.act_settings, None, self.act_quit):
+            m.addSeparator() if a is None else m.addAction(a)
+        m = mb.addMenu("&Edit")
+        for a in (self.act_undo, self.act_redo, None, self.act_new, self.act_edit, self.act_delete,
+                  self.act_escape):
+            m.addSeparator() if a is None else m.addAction(a)
+        m.addSeparator()
+        tools = m.addMenu("Tools")
+        tools.addAction(self.act_brush)
+        tools.addAction(self.act_pick_all)
+        self._hint(tools, "Auto Tool: Apply && Continue", "Enter", self.reapply_tool)
+        self._hint(tools, "Leave the Active Auto Tool", "its button again")
+        objects = m.addMenu("Objects")
+        for a in (self.act_duplicate, self.act_duplicate_all, self.act_copy_into, self.act_merge):
+            objects.addAction(a)
+        m = mb.addMenu("&View")
+        for a in (self.act_final, self.act_preview_mode):
+            m.addAction(a)
+        self._hint(m, "Peek at Mask Preview", "Z (hold)")
+        for a in (self.act_outline, self.act_changes):
+            m.addAction(a)
+        m.addSeparator()
+        panels = m.addMenu("Panels")
+        for d in self._docks:
+            panels.addAction(d.toggleViewAction())
+        m = mb.addMenu("&Go")
+        for a in (self.act_prev_frame, self.act_next_frame, self.act_prev_object, self.act_next_object, None,
+                  self.act_prev_problem, self.act_next_problem, self.act_prev_key, self.act_next_key, None,
+                  self.act_go_reference):
+            m.addSeparator() if a is None else m.addAction(a)
+        self._hint(m, "Set Current Frame as Reference ◎", "Enter",
+                   lambda: self.session.key is not None and self.set_reference(self.session.index))
+        m.addAction(self.act_focus)
+        m.addSeparator()
+        self._hint(m, "Mouse over a frame list: frames", "W A S D / arrows")
+        self._hint(m, "Mouse over the Objects list: Objects", "W A S D / arrows")
+        m = mb.addMenu("&Help")
+        m.addAction(self.act_shortcuts)
+
+        # --- the toolbar: only what is toggled all the time while working ---------------------
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
-        for a in (self.act_open, self.act_save, self.act_undo, self.act_redo, self.act_export):
-            tb.addAction(a)
-        tb.addSeparator()
         tb.addAction(self.act_final)
         tb.addAction(self.act_preview_mode)
         tb.addAction(self.act_brush)
@@ -337,13 +440,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.outline_width)
         tb.addSeparator()
         tb.addAction(self.act_changes)
-        tb.addSeparator()
-        tb.addAction(self.act_settings)
         self.addToolBar(tb)
-        help_menu = self.menuBar().addMenu("&Help")
-        self.act_shortcuts = help_menu.addAction("Keyboard Shortcuts")
-        self.act_shortcuts.setShortcut(QKeySequence("F1"))
-        self.act_shortcuts.triggered.connect(self.show_shortcuts)
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
         self._list_title.set_compact(not self.settings.frame_list_names)
@@ -354,27 +451,6 @@ class MainWindow(QMainWindow):
             box.set_open(getattr(self.settings, name))
             box.toggled_open.connect(lambda on, n=name: self._remember(n, on))
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
-
-        def key(seq, slot):
-            QShortcut(QKeySequence(seq), self, slot)
-
-        key("Delete", self.delete_key)
-        key("Escape", self.escape)
-        key("N", self.new_object)
-        key("E", self.edit_key)
-        for seq in ("Left", "PgUp"):
-            key(seq, lambda: self.step(-1))
-        key("A", self.a_key)
-        for seq in ("Right", "PgDown"):
-            key(seq, lambda: self.step(1))
-        key("S", self.focus_frame)
-        key("[", lambda: self.step_problem(-1))
-        key(",", lambda: self.step_keyframe(-1))
-        key(".", lambda: self.step_keyframe(1))
-        key("F", self.go_to_reference)
-        key("]", lambda: self.step_problem(1))
-        key("Up", lambda: self.step_object(-1))
-        key("Down", lambda: self.step_object(1))
 
     def _connect(self) -> None:
         c = self.canvas
