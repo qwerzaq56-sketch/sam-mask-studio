@@ -20,12 +20,12 @@ Ctrl+wheel zooms; otherwise Shift+wheel sets the size.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QPainter, QPen
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from src.app.brush import BrushEngine
@@ -49,29 +49,77 @@ ALPHA = {
 
 @dataclass(frozen=True)
 class Overlay:
-    """One colored mask layer. ``style``: normal | edit | faint | candidate | candidate_off."""
+    """One colored mask layer. ``style``: normal | edit | faint | candidate | candidate_off | layer_*."""
 
     mask: np.ndarray
     color: Tuple[int, int, int]
     style: str = "normal"
 
 
-def compose(overlays: Sequence[Overlay], hw: Tuple[int, int]) -> np.ndarray:
-    """Blend overlay layers into one RGBA image (later layers on top, outlines on edit/candidates)."""
+# Overlays are drawn as three cached images, so changing one group (checking a
+# candidate, a brush stroke) never re-blends the others.
+GROUPS = ("objects", "edit", "candidates")
+
+
+def group_of(style: str) -> str:
+    if style in ("edit", "layer_add", "layer_sub"):
+        return "edit"
+    if style.startswith("candidate"):
+        return "candidates"
+    return "objects"
+
+
+def outline_polygons(mask: np.ndarray) -> List[QPolygonF]:
+    """Mask boundaries (outer edges and holes) as polygons through the edge pixels' centres."""
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    polys = []
+    for c in contours:
+        pts = c.reshape(-1, 2) + 0.5
+        polys.append(QPolygonF([QPointF(float(x), float(y)) for x, y in pts]))
+    return polys
+
+
+class MaskInfo:
+    """Bounding box and outline of immutable mask arrays, cached by identity."""
+
+    def __init__(self):
+        self._rects: Dict[int, Tuple[np.ndarray, Tuple[int, int, int, int]]] = {}
+        self._outlines: Dict[int, Tuple[np.ndarray, List[QPolygonF]]] = {}
+
+    def rect(self, m: np.ndarray) -> Tuple[int, int, int, int]:
+        e = self._rects.get(id(m))
+        if e is None or e[0] is not m:  # hold the array: a freed one's id can be reused
+            e = (m, cv2.boundingRect(m.view(np.uint8) if m.dtype == np.bool_ else m.astype(np.uint8)))
+            self._rects[id(m)] = e
+        return e[1]
+
+    def outline(self, m: np.ndarray) -> List[QPolygonF]:
+        e = self._outlines.get(id(m))
+        if e is None or e[0] is not m:
+            e = (m, outline_polygons(m))
+            self._outlines[id(m)] = e
+        return e[1]
+
+    def keep_only(self, masks: Iterable[np.ndarray]) -> None:
+        live = {id(m) for m in masks}
+        for d in (self._rects, self._outlines):
+            for k in [k for k in d if k not in live]:
+                del d[k]
+
+
+def compose(overlays: Sequence[Overlay], hw: Tuple[int, int], info: Optional[MaskInfo] = None) -> np.ndarray:
+    """Blend overlay fills into one RGBA image (later layers on top); outlines are drawn separately."""
+    info = info or MaskInfo()
     h, w = hw
     rgba = np.zeros((h, w, 4), np.uint8)
-    outlines = []
     for ov in overlays:
         m = ov.mask
         if m is None or m.shape != (h, w):
             continue
-        rgba[m] = (*ov.color, ALPHA.get(ov.style, 105))
-        if ov.style in ("edit", "candidate"):
-            outlines.append(ov)
-    for ov in outlines:
-        contours, _ = cv2.findContours(ov.mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        color = (255, 255, 255, 255) if ov.style == "edit" else (*ov.color, 255)
-        cv2.drawContours(rgba, contours, -1, color, 2 if ov.style == "edit" else 1)
+        x, y, bw, bh = info.rect(m)
+        if bw == 0 or bh == 0:
+            continue
+        rgba[y : y + bh, x : x + bw][m[y : y + bh, x : x + bw]] = (*ov.color, ALPHA.get(ov.style, 105))
     return rgba
 
 
@@ -101,7 +149,12 @@ class Canvas(QWidget):
         self.image: Optional[np.ndarray] = None
         self._image_q: Optional[QImage] = None
         self._overlays: List[Overlay] = []
-        self._overlay_q: Optional[QImage] = None
+        self._info = MaskInfo()
+        # group -> (signature of its overlays, blended image or None when empty)
+        self._layers: Dict[str, Tuple[tuple, Optional[QImage]]] = {}
+        self._stroke_mask: Optional[np.ndarray] = None  # the edit mask while a brush stroke is live
+        self.outline_visible = True
+        self.outline_width = 1.0  # screen px, independent of zoom
         self._final: Optional[np.ndarray] = None
         self._final_q: Optional[QImage] = None
         self.final_preview = False
@@ -138,6 +191,8 @@ class Canvas(QWidget):
             self._brush.cancel()
         self.image = image
         self._image_q = _qimage(image) if image is not None else None
+        self._layers.clear()
+        self._stroke_mask = None
         if reset_view:
             self.zoom = 1.0
             self._pan = QPointF(0, 0)
@@ -146,18 +201,32 @@ class Canvas(QWidget):
 
     def set_overlays(self, overlays: List[Overlay]) -> None:
         self._overlays = list(overlays)
+        self._info.keep_only(o.mask for o in self._overlays)
+        self._stroke_mask = None
         self._rebuild_overlay()
 
-    def _rebuild_overlay(self, replace_edit: Optional[np.ndarray] = None) -> None:
+    def _group_layers(self, group: str) -> List[Overlay]:
+        layers = [o for o in self._overlays if group_of(o.style) == group]
+        if group == "edit" and self._stroke_mask is not None:
+            # a live stroke replaces the edit fill; the layer tints would be stale
+            color = next((o.color for o in layers if o.style == "edit"), (255, 255, 255))
+            layers = [Overlay(self._stroke_mask, color, "edit")]
+        return layers
+
+    def _rebuild_overlay(self, groups: Sequence[str] = GROUPS) -> None:
+        """Re-blend the overlay groups whose layers changed."""
         if self.image is None:
-            self._overlay_q = None
+            self._layers.clear()
         else:
-            layers = self._overlays
-            if replace_edit is not None:
-                layers = [Overlay(replace_edit, o.color, o.style) if o.style == "edit" else o for o in layers]
-                if not any(o.style == "edit" for o in layers):
-                    layers.append(Overlay(replace_edit, (255, 255, 255), "edit"))
-            self._overlay_q = _qimage(compose(layers, self.image.shape[:2]))
+            hw = self.image.shape[:2]
+            for g in groups:
+                layers = self._group_layers(g)
+                sig = tuple((id(o.mask), o.color, o.style) for o in layers)
+                old = self._layers.get(g)
+                if old is not None and old[0] == sig:
+                    continue
+                img = _qimage(compose(layers, hw, self._info)) if layers else None
+                self._layers[g] = (sig, img)
         self.update()
 
     def set_final(self, mask: Optional[np.ndarray]) -> None:
@@ -197,6 +266,10 @@ class Canvas(QWidget):
         """Brush strokes are what a left drag does right now."""
         return self.mode == Mode.EDIT and (self.brush_mode or self._shift())
 
+    def _show_stroke(self, m: np.ndarray) -> None:
+        self._stroke_mask = m > 0
+        self._rebuild_overlay(("edit",))
+
     def _finish_stroke(self) -> None:
         m = self._brush.finalize_stroke()
         if m is not None:
@@ -206,6 +279,11 @@ class Canvas(QWidget):
         self.points = tuple(points)
         self.selected_point = selected
         self.box = box
+        self.update()
+
+    def set_outline(self, visible: bool, width: float) -> None:
+        self.outline_visible = bool(visible)
+        self.outline_width = max(0.5, float(width))
         self.update()
 
     def edit_mask(self) -> Optional[np.ndarray]:
@@ -295,8 +373,11 @@ class Canvas(QWidget):
             return
 
         painter.drawImage(target, self._image_q)
-        if self._overlay_q is not None:
-            painter.drawImage(target, self._overlay_q)
+        for g in GROUPS:
+            img = self._layers.get(g, ((), None))[1]
+            if img is not None:
+                painter.drawImage(target, img)
+        self._draw_outlines(painter, o, s)
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         if self.box is not None and self.mode == Mode.EDIT:
@@ -322,6 +403,32 @@ class Canvas(QWidget):
             painter.drawEllipse(self._mouse, r, r)
         if self.banner:
             self._draw_banner(painter, self.banner)
+
+    def _draw_outlines(self, painter: QPainter, origin: QPointF, scale: float) -> None:
+        """Thin outlines in screen pixels: the edited mask (white) and checked candidates (their color)."""
+        lines = []
+        for ov in self._overlays:
+            if ov.style == "candidate":
+                lines.append((self._info.outline(ov.mask), QColor(*ov.color), 1.0))
+        if self.outline_visible:
+            if self._stroke_mask is not None:
+                lines.append((outline_polygons(self._stroke_mask), QColor(255, 255, 255), self.outline_width))
+            elif self.edit_mask() is not None:
+                lines.append((self._info.outline(self.edit_mask()), QColor(255, 255, 255), self.outline_width))
+        if not lines:
+            return
+        painter.save()
+        painter.translate(origin)
+        painter.scale(scale, scale)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, scale > 1.5)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for polys, color, width in lines:
+            pen = QPen(color, width)
+            pen.setCosmetic(True)  # width in screen pixels at any zoom
+            painter.setPen(pen)
+            for poly in polys:
+                painter.drawPolygon(poly)
+        painter.restore()
 
     def _draw_box(self, painter: QPainter, box: Box, color: QColor) -> None:
         a = self.to_widget(min(box[0], box[2]), min(box[1], box[3]))
@@ -381,7 +488,7 @@ class Canvas(QWidget):
             erase = bool(mods & Qt.KeyboardModifier.ControlModifier)
             start = base.astype(np.uint8) * 255 if base is not None else None
             m = self._brush.start_stroke(x, y, 0 if erase else 255, start, (h, w), self._brush_radius())
-            self._rebuild_overlay(replace_edit=m > 0)
+            self._show_stroke(m)
             return
         if btn == Qt.MouseButton.LeftButton and self.mode == Mode.EDIT:
             hit = self._point_at(pos)
@@ -402,7 +509,7 @@ class Canvas(QWidget):
             x, y = self._clamped(pos)
             m = self._brush.continue_stroke(x, y, self._brush_radius())
             if m is not None:
-                self._rebuild_overlay(replace_edit=m > 0)
+                self._show_stroke(m)
         elif self._press is not None and self._press[1] == Qt.MouseButton.LeftButton and self.mode != Mode.IDLE:
             d = pos - self._press[0]
             if self._drag_to is not None or (d.x() ** 2 + d.y() ** 2) ** 0.5 > CLICK_SLOP:
