@@ -30,8 +30,16 @@ def allow_narrow(root: QWidget, min_chars: int = 10) -> None:
         combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         combo.setMinimumContentsLength(min_chars)
     for button in root.findChildren(QPushButton):
-        button.setMinimumWidth(0)
-        button.setSizePolicy(QSizePolicy.Policy.Ignored, button.sizePolicy().verticalPolicy())
+        shrinkable(button)
+
+
+def shrinkable(button: QWidget) -> None:
+    """Full width while there is room, clipped (never below a stub) when the column is narrow.
+
+    (``Ignored`` would let a layout squeeze it to nothing next to a stretching field.)
+    """
+    button.setMinimumWidth(24)
+    button.setSizePolicy(QSizePolicy.Policy.Preferred, button.sizePolicy().verticalPolicy())
 
 
 
