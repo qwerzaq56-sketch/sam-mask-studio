@@ -98,6 +98,10 @@
 - 새로 만든 Object가 선택되지 않던 문제(Merge 포함): 목록이 다시 그려진 뒤 선택.
 - 코드: `Project.duplicate(key=)`, `Project.copy_into`, `Project.merge(how=)`, `Session.duplicate / copy_into`, `OptionsDialog`, `MainWindow.choose`(테스트에서 교체).
 
+### 12단계 · 열린 프레임을 칸 색으로 (`v0.4-p12`)
+- Frame List 행과 Frames 타일: 열린 프레임은 칸 전체 파랑(`CURRENT_FILL`, 글자 흰색), Shift/Ctrl로 고른 다른 프레임은 옅은 파랑(`PICKED_FILL`). 스타일의 선택 강조와 썸네일 색조는 끔. 📌 칸 위에서도 보임.
+- 코드: `images_panel.py` `selection_fill`, `TileDelegate`, `OneLineDelegate.paint`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 

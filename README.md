@@ -101,6 +101,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 ### 프레임 이동
 
 - `←` / `→` (PgUp / PgDn): 이전 / 다음 이미지. 목록의 숫자는 이미지 ID(1부터)입니다.
+- 열려 있는 이미지는 Frame List 행과 Frames 타일 **전체가 파란색**으로 칠해집니다. Shift/Ctrl로 고른 다른 이미지는 옅은 파랑.
 - `S` 또는 ⌖: 현재 프레임으로 스크롤 · **Go to ID**: ID 입력 + Enter.
 - Frame List 제목줄의 `Aa`: 파일 이름을 접어서 ID와 표시만 남김(좁은 목록).
 - **프레임 상태 표시**: `★` 여기서 편집 · `✓` 전파됨 · `⚠` 의심(면적 급변) · `✕` 전파 후 빈 Mask. 색으로도 구분됩니다(파랑/기본/주황/빨강).
