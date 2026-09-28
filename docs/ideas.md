@@ -34,6 +34,18 @@
   - 기존 툴들 알고리즘을 정리해서 GPT에게 평가받고 기획서를 받아 구현 예정.
   - (메모) 알고리즘 위치: `src/core/refine.py` (fill_holes, remove_specks, grow_to_edges, grow_mask, shrink_mask).
 
+## UX 측면
+
+프레임간 이동이 좀 더 직관적이어야 할 것 같아.
+
+프레임 관련 창에 마우스오버된 상태에서는 wasd나 화살표로 이동 가능하고,
+마찬가지로 오브젝트 관리에서도 마우스오버된 상태면 가능하면 좋겠음.
+
+그렇지 않은 상태에서는 기본적으로 wasd는 미작동 + 화살표 위아래는 오브젝트, 양옆은 프레임 이동 유지.
+
+- (메모) 지금은 마우스 위치와 상관없이 `←` / `→`(PgUp / PgDn) = 프레임, `↑` / `↓` = Object 이동. WASD는 어디서도 이동에 안 쓰임(v0.3에서 A / D 이동 제거, `A`는 오토 툴 전체 선택, `D`는 Paint, `S`는 현재 프레임으로 스크롤). 마우스오버 시 WASD를 켜려면 이 키들과 겹치지 않게 정해야 함.
+
+
 ---
 
 # 구현 예정 아이디어
@@ -61,3 +73,4 @@
 - https://ar5iv.labs.arxiv.org/html/1712.09161
 
 - (메모) GPT 리뷰의 "Sky를 특수 Object 타입으로, Source: SAM3 / Sky Segmentation / Manual" 제안과 연결됨.
+
