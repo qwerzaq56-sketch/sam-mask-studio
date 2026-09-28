@@ -13,8 +13,8 @@ depends on the mode the main window sets:
               Shift+drag / Ctrl+Shift+drag do the same without turning it on.
 
 Middle-drag or Space+drag pans, the wheel zooms at the cursor, and holding Alt
-shows the Final Mask. With the Brush on, the wheel sets the brush size and
-Ctrl+wheel zooms; otherwise Shift+wheel sets the size.
+shows the Final Mask. Ctrl+wheel (or Shift+wheel) sets the brush size while
+an Object is in Edit.
 """
 
 from __future__ import annotations
@@ -555,12 +555,8 @@ class Canvas(QWidget):
         if not delta:
             return
         mods = event.modifiers()
-        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
-        if self.mode == Mode.EDIT and self.brush_mode:
-            resize = not ctrl  # Brush on: wheel = size, Ctrl+wheel = zoom
-        else:
-            resize = bool(mods & Qt.KeyboardModifier.ShiftModifier)
-        if resize:
+        sized = mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        if self.mode == Mode.EDIT and sized:  # wheel = zoom, Ctrl+wheel = brush size
             step = max(2, int(self.brush_size * 0.1))
             self.set_brush_size(self.brush_size + (step if delta > 0 else -step))
             return

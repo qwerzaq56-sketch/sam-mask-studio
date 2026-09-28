@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
             "Brush",
             self.set_brush,
             ["B"],
-            "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, wheel = size",
+            "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, Ctrl+wheel = size",
             True,
         )
         self.act_outline = self._action(
@@ -375,7 +375,7 @@ class MainWindow(QMainWindow):
         if mode == Mode.NEW_OBJECT and s.mode == Mode.IDLE:
             mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
-            mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · wheel: size · Ctrl+wheel: zoom · B: brush off"
+            mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
         self.mode_label.setText(self._busy or mode_text)
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine
