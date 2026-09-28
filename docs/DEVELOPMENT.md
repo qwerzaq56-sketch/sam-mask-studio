@@ -264,6 +264,14 @@ strokes keep the Edit Changes tints (trimmed live); the Paint-mode guide is dark
 Paint brush shortcut B -> D.
 Then: the mode buttons only switch modes; Apply & Recompute (or Enter) is the only apply-and-stay.
 
+**P3 — detections** (`v0.3-p3`)
+- Batch masking moved to its own `Batch` tab (`app/batch_panel.py`) with its own prompt.
+- Detection tab: Preview on/off; Add Each / Add as One (merged, first label's name) / Add per Prompt
+  (`Session.add_checked_detections(how)`, one undo step).
+- Canvas (not in Edit, preview on): Shift+click / drag checks candidates, Ctrl unchecks
+  (`Session.detection_at`: smallest mask under the point; `detections_in_box`: ≥ half inside).
+- `later()` timers are children of their widget (a deleted widget's signal crashed the test run).
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

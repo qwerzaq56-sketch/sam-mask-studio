@@ -216,16 +216,16 @@ def test_refine_button(win, qapp):
 
 
 def test_batch_masking_all_images(win, qapp):
-    win.detection_panel.prompt.setText("person, none")
-    win.detection_panel.threshold.setValue(0.7)
-    win.detection_panel.batch_btn.click()  # scope defaults to All images
+    win.batch_panel.prompt.setText("person, none")
+    win.batch_panel.threshold.setValue(0.7)
+    win.batch_panel.batch_btn.click()  # scope defaults to All images
     wait_until(qapp, lambda: win._busy is None)
     s = win.session
     assert [o.name for o in s.project.objects] == ["person #1"]
     person = s.project.objects[0]
     assert len(person.frames) == 5 and person.frames[s.keys[0]].mask[10, 10]
     assert not person.frames[s.keys[0]].mask[30, 10]  # 0.6 detection below threshold
-    res = win.detection_panel.results
+    res = win.batch_panel.results
     assert res.count() == 5 and res.item(2).text().startswith("✓")
     res.itemClicked.emit(res.item(3))
     assert s.index == 3

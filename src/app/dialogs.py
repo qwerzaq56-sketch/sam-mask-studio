@@ -147,6 +147,10 @@ SHORTCUTS = (
         ("Middle-drag / Space+drag", "Pan"),
         ("F1", "This list"),
     )),
+    ("Detections (current image)", (
+        ("Shift+click / Shift+drag", "Check the candidate under the cursor / inside the box"),
+        ("Ctrl+click / Ctrl+drag", "Uncheck them"),
+    )),
     ("On the image (Edit)", (
         ("Left click / Right click", "Positive / negative point"),
         ("Drag", "Box prompt (Region Box on: add a box to the region)"),

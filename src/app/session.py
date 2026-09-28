@@ -27,6 +27,7 @@ from src.core.project import (
     Source,
     Variant,
     freeze,
+    union,
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.refine import fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
@@ -698,14 +699,62 @@ class Session:
         self.detections = []
         self.detection_checked = []
 
-    def add_checked_detections(self) -> List[int]:
-        """Turn the checked Detections into Objects and close the Detection list."""
+    def add_checked_detections(self, how: str = "each") -> List[int]:
+        """Turn the checked Detections into Objects (one undo step) and close the Detection list.
+
+        ``each``: one Object per candidate · ``merged``: all of them as one Object
+        (named after the first label) · ``per_label``: one Object per prompt.
+        """
         if self.key is None:
             return []
         chosen = [d for d, c in zip(self.detections, self.detection_checked, strict=True) if c]
-        ids = self.project.add_detections(self.key, chosen)
+        if not chosen:
+            return []
+        if how == "each":
+            ids = self.project.add_detections(self.key, chosen)
+        else:
+            groups: Dict[str, List[Detection]] = {}
+            for d in chosen:
+                groups.setdefault(chosen[0].label if how == "merged" else d.label, []).append(d)
+            frames = {
+                label: {self.key: FrameState.from_mask(union(d.mask for d in dets), score=max(d.score for d in dets))}
+                for label, dets in groups.items()
+            }
+            ids = self.project.add_label_objects(frames, Source.SAM3_DETECTION)
         self.clear_detections()
         return ids
+
+    def detection_at(self, x: float, y: float) -> Optional[int]:
+        """The candidate under (x, y): the smallest one there, when several overlap."""
+        xi, yi = int(x), int(y)
+        best, best_area = None, None
+        for i, d in enumerate(self.detections):
+            if 0 <= yi < d.mask.shape[0] and 0 <= xi < d.mask.shape[1] and d.mask[yi, xi]:
+                area = int(d.mask.sum())
+                if best_area is None or area < best_area:
+                    best, best_area = i, area
+        return best
+
+    def check_detections(self, indices: Iterable[int], on: bool) -> bool:
+        """Check (or uncheck) candidates; True when anything changed."""
+        changed = False
+        for i in indices:
+            if 0 <= i < len(self.detection_checked) and self.detection_checked[i] != on:
+                self.detection_checked[i] = on
+                changed = True
+        return changed
+
+    def detections_in_box(self, box: Box) -> List[int]:
+        """Candidates with at least half of their mask inside *box* (a drag on the image)."""
+        x0, y0, x1, y1 = box
+        x0, x1 = sorted((int(x0), int(x1)))
+        y0, y1 = sorted((int(y0), int(y1)))
+        out = []
+        for i, d in enumerate(self.detections):
+            total = int(d.mask.sum())
+            if total and 2 * int(d.mask[max(0, y0) : y1 + 1, max(0, x0) : x1 + 1].sum()) >= total:
+                out.append(i)
+        return out
 
     def batch_indices(self, scope: str, start: int = 0, end: int = -1, selected: Sequence[int] = ()) -> List[int]:
         """Image indices for a batch run: ``current`` | ``all`` | ``range`` (start..end) | ``selected``."""
