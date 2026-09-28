@@ -32,7 +32,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 ## 화면 구성
 
 ```text
-┌─ Open Save Undo Redo Export │ Preview Final Mask  Brush │ Outline ▢px │ Show Changes │ Settings ─────┐
+┌─ Open Save Undo Redo Export │ Mask Preview  Preview: Final Brush │ Outline ▢px │ Show Changes │ Settings ┐
 ├───────────┬─────────────────────┬───────────────────────────────────────────┬──────────────────────┤
 │Frame List │ Objects             │                                           │ Properties           │
 │ 1 ★ ◎ a.jpg│ ☑ person #1  🔗 12  │ Frame 1/12 · Object: ■ person #1 · Mode   │  [Mask] [Edit Layer] │
@@ -101,6 +101,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
   - 목록 아래와 Frames 줄 오른쪽에 개수 요약(`★3 ✓40 ⚠2 ✕0`).
   - Frame List 제목줄의 `1`: 선택한 Object 기준으로만 표시, 그 Object의 Mask가 없는 이미지는 `–`(회색).
   - `[` / `]`: 이전 / 다음 문제 이미지(`⚠` `✕`, `1`이 켜져 있으면 `–`도)로 이동.
+- `,` / `.`: 가장 가까운 이전 / 다음 키프레임(★, 직접 편집한 = 전파 소스)으로. `F`: 전파 기준(◎, 더블클릭한 프레임)으로.
 - 썸네일은 `<폴더>.sms/thumbs/`에 캐시됩니다.
 
 ### Propagation (이미지 시퀀스)
@@ -115,8 +116,9 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 ### 표시
 
-- **Outline** (`O`) + 두께: 편집 중인 Mask의 흰 외곽선 · **Show Changes** (`F`): 손질한 부분을 초록/빨강으로 표시.
-- **Final Mask**: `X` = 켜고 끄기, `Z`를 누르고 있는 동안 보기(편집은 그대로 가능, 브러쉬 원은 초록).
+- **Outline** (`O`) + 두께: 편집 중인 Mask의 흰 외곽선 · **Show Changes** (`R`): 손질한 부분을 초록/빨강으로 표시.
+- **Mask Preview**: 흑백 마스크 보기. `X` = 켜고 끄기, `Z`를 누르고 있는 동안 보기(편집은 그대로 가능, 브러쉬 원은 초록).
+  - 옆 버튼 **Preview: Final / Object** (`V`): Final Mask(체크된 Object 전체) ↔ 선택한 Object의 Mask만.
 
 ### 저장과 Export
 
@@ -136,9 +138,10 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 | ← → / ↑ ↓ | 이미지 이동 / Object 이동 |
 | D | Paint 브러쉬 |
 | Enter / A | Auto tool 반영 후 계속 / 전체 선택 |
-| X / Z(누르고 있기) | Final Mask 토글 / 잠깐 보기 |
-| O / F | Outline / Show Changes |
+| X / Z(누르고 있기) / V | Mask Preview 토글 / 잠깐 보기 / Final ↔ 선택 Object |
+| O / R | Outline / Show Changes |
 | S / [ ] | 현재 프레임으로 스크롤 / 이전·다음 문제 이미지 |
+| , . / F | 이전·다음 키프레임(★) / 전파 기준(◎)으로 이동 |
 | 휠 / Ctrl+휠 / 가운데·Space 드래그 | 줌 / 브러쉬 크기 / 이동 |
 | F1 | 단축키 전체 목록 |
 

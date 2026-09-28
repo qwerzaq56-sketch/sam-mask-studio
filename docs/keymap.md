@@ -4,22 +4,22 @@
 
 - 앱 안의 전체 목록(F1)은 `src/app/dialogs.py`의 `SHORTCUTS`가 원본입니다. 키를 바꾸면 그 표와 이 문서를 같이 고칩니다.
 - 새 단축키 아이디어는 맨 아래 "제안"에 적습니다. 결정되면 "현재 키맵"으로 옮깁니다.
-- 기준: v0.4.0 (2026-09-29).
+- 기준: v0.4.0 + `v0.4-p8` (2026-09-29).
 
 ## 한눈에 보기 (글자 키)
 
 ```text
  Q  W  E  R  T  Y  U  I  O  P  [  ]
- ·  ·  E  ·  ·  ·  ·  ·  O  ·  [  ]        E Points 편집   O Outline   [ ] 문제 프레임
+ ·  ·  E  R  ·  ·  ·  ·  O  ·  [  ]        E Points 편집   R Show Changes   O Outline   [ ] 문제 프레임
 
   A  S  D  F  G  H  J  K  L  ;  '
-  A  S  D  F  ·  ·  ·  ·  ·  ·  ·          A 오토 툴 선택   S 스크롤   D Paint   F Show Changes
+  A  S  D  F  ·  ·  ·  ·  ·  ·  ·          A 오토 툴 선택   S 스크롤   D Paint   F 기준(◎)으로
 
    Z  X  C  V  B  N  M  ,  .  /
-   Z  X  ·  ·  ·  N  ·  ·  ·  ·            Z 잠깐 보기   X Final Mask   N New Object
+   Z  X  ·  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X Mask Preview   V Final↔Object   N New Object   , . 키프레임
 ```
 
-`·` = 비어 있음. 비어 있는 글자: **Q W R T Y U I P G H J K L C V B M** 과 **, . / ; '**, 숫자, Home / End, Tab.
+`·` = 비어 있음. 비어 있는 글자: **Q W T Y U I P G H J K L C B M** 과 **/ ; '**, 숫자, Home / End, Tab.
 
 ## 현재 키맵
 
@@ -43,6 +43,8 @@
 | ↑ / ↓ | 이 프레임에 마스크가 있는 이전 / 다음 Object (편집도 따라감) | 항상 |
 | S (또는 ⌖ 버튼) | Frame List와 Frames 줄을 **현재 프레임**으로 스크롤 | 항상 |
 | [ / ] | 이전 / 다음 문제 프레임(⚠ ✕, `1` 켜면 `–`도) | 항상 |
+| , / . | 가장 가까운 이전 / 다음 키프레임(★ = 직접 편집한, 전파 소스). `1` 켜면 선택한 Object의 ★만 | 항상 |
+| F | 전파 기준(◎, 더블클릭한 프레임)으로 이동 | 항상 |
 | 더블클릭 (프레임) | 전파 기준(◎)으로 지정, 다시 하면 해제 | 목록 |
 | Shift / Ctrl+클릭 (프레임) | 여러 프레임 선택(전파 Selection 범위) | 목록 |
 
@@ -50,10 +52,11 @@
 
 | 키 | 동작 |
 |---|---|
-| Z (누르고 있기) | Final Mask 잠깐 보기 |
-| X | Final Mask 보기 켜기 / 끄기 |
+| Z (누르고 있기) | Mask Preview 잠깐 보기 |
+| X | Mask Preview(흑백) 켜기 / 끄기 |
+| V | Mask Preview 대상 전환: Final Mask ↔ 선택한 Object (툴바 `Preview: Final / Object` 버튼) |
 | O | Outline 켜기 / 끄기 |
-| F | Show Changes(에딧 레이어 초록 / 빨강) 켜기 / 끄기 |
+| R | Show Changes(에딧 레이어 초록 / 빨강) 켜기 / 끄기 |
 | 휠 / 가운데 드래그 · Space+드래그 | 확대·축소 / 이동 |
 | F1 | 단축키 전체 목록 |
 
@@ -81,7 +84,9 @@
 
 | 제안 키 | 동작 | 출처 / 메모 |
 |---|---|---|
-| **, / .** | 현재 프레임에서 가장 가까운 이전 / 다음 **키프레임**(★, 직접 편집한 = 전파 소스 프레임)으로 이동 | 사용자 아이디어. `[ ]`는 문제 프레임이 쓰고 있어서 `, .` 추천. Frame List `1`이 켜져 있으면 선택한 Object의 ★만. |
-| **R** | **전파 기준(◎, 더블클릭한 프레임)으로 이동** | 사용자 아이디어. `F`는 Show Changes가 쓰고 있어서 `R` 추천. `S`는 지금처럼 "현재 프레임으로 스크롤"로 남김. |
 | W A S D / 화살표 (마우스 올린 창 기준) | Frame List · Frames 줄 위: 프레임 이동, Objects 목록 위: Object 이동. 다른 곳에서는 지금 동작 그대로 | 사용자 아이디어(`ideas.md` UX 측면). `S`가 목록 위에서 "아래로"가 되는 점만 정하면 됨. |
 | Home / End | 첫 / 마지막 프레임 | 후보 |
+
+## 변경 기록
+
+- `v0.4-p8`: `,` / `.` 키프레임 이동, `F` 기준(◎)으로 이동 추가, Show Changes `F` → `R`, Final Mask 미리보기 → Mask Preview + `V` 대상 전환.

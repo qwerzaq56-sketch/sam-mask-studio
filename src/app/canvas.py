@@ -193,6 +193,7 @@ class Canvas(QWidget):
         self.outline_width = 1.0  # screen px, independent of zoom
         self._final: Optional[np.ndarray] = None
         self._final_q: Optional[QImage] = None
+        self._final_label = "FINAL MASK"
         self.final_preview = False
         self.mode = Mode.IDLE
         self.banner = ""
@@ -303,8 +304,12 @@ class Canvas(QWidget):
                 self._layers[g] = (sig, img)
         self.update()
 
-    def set_final(self, mask: Optional[np.ndarray]) -> None:
+    def set_final(self, mask: Optional[np.ndarray], label: str = "FINAL MASK") -> None:
+        """The Mask Preview's mask (*label*: what it is, on the banner)."""
+        if mask is self._final and label == self._final_label:
+            return  # unchanged (masks are immutable): keep the built image
         self._final = mask
+        self._final_label = label
         self._final_q = None  # built lazily when shown
         self.update()
 
@@ -507,7 +512,7 @@ class Canvas(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
             painter.drawEllipse(self._mouse, r, r)
-        banner = "  ·  ".join(t for t in ("FINAL MASK PREVIEW" if self.showing_final else "", self.banner) if t)
+        banner = "  ·  ".join(t for t in (f"MASK PREVIEW · {self._final_label}" if self.showing_final else "", self.banner) if t)
         if banner:
             self._draw_banner(painter, banner)
 

@@ -33,6 +33,7 @@ class Settings:
     marks_one_object: bool = False  # frame marks for the shown Object only (else every Object)
     tool_settings_open: bool = True  # Properties > Edit Layer: the Settings section unfolded
     layer_section_open: bool = True  # Properties > Edit Layer: the Layer section unfolded
+    preview_object: bool = False  # Mask Preview shows the selected Object's mask (else the Final Mask)
 
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":

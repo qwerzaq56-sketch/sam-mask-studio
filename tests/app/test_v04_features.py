@@ -216,3 +216,53 @@ def test_empty_states_and_steady_panel_widths(qapp, win):
     assert not pp.tabs.isHidden()
     assert [d.width() for d in win.findChildren(QDockWidget)] == widths  # a long work bar never pushes docks
     assert win.canvas.banner == ""
+
+
+# --- p8: , / . keyframes, F reference, R Show Changes, V Mask Preview mode ---------
+
+
+def test_keyframe_and_reference_keys(qapp, win):
+    import dataclasses
+
+    from src.core.project import FrameStatus
+
+    ids = make_objects(win, 1)  # ★ on image 0
+    s = win.session
+    p = s.project
+    fs = p.get(ids[0]).frame(s.keys[0])
+    p.set_frame(ids[0], s.keys[3], fs)  # ★ on 3
+    p.set_frame(ids[0], s.keys[2], dataclasses.replace(fs, status=FrameStatus.PROPAGATED))  # ✓ is not a keyframe
+    win.refresh()
+    win.step_keyframe(1)
+    assert s.index == 3
+    win.step_keyframe(1)  # none later: stays
+    assert s.index == 3
+    win.step_keyframe(-1)
+    assert s.index == 0
+    win.go_to_reference()  # no reference yet: stays
+    assert s.index == 0
+    win.set_reference(4)
+    win.go_to(1)
+    win.go_to_reference()
+    assert s.index == 4
+    assert win.act_changes.shortcut().toString() == "R"
+
+
+def test_mask_preview_final_or_object(qapp, win):
+    import numpy as np
+
+    ids = make_objects(win, 2)
+    s = win.session
+    assert win.act_final.text() == "Mask Preview"
+    assert win.act_preview_mode.shortcut().toString() == "V"
+    final = s.project.final_mask(s.key)
+    assert np.array_equal(win.canvas._final, final) and win.canvas._final_label == "FINAL MASK"
+    win.objects_panel.select_ids([ids[0]])
+    win.refresh()
+    win.act_preview_mode.trigger()
+    assert win.settings.preview_object and win.act_preview_mode.text() == "Preview: Object"
+    one = s.project.get(ids[0])
+    assert win.canvas._final is one.mask(s.key) and win.canvas._final_label == one.name
+    assert not np.array_equal(win.canvas._final, final)  # the other Object is left out
+    win.act_preview_mode.trigger()
+    assert not win.settings.preview_object and win.canvas._final_label == "FINAL MASK"

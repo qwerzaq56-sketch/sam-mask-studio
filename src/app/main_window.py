@@ -56,7 +56,7 @@ from src.app.session import Mode, Session
 from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
-from src.core.project import Source
+from src.core.project import FrameStatus, Source
 from src.core.propagation import Direction, PropagationPlan
 from src.core.storage import check_export, default_export_dir
 from src.logging_config import get_logger
@@ -279,12 +279,15 @@ class MainWindow(QMainWindow):
         self.act_redo = self._action("Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
         self.act_export = self._action("Export", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
         self.act_final = self._action(
-            "Preview Final Mask",
+            "Mask Preview",
             self.toggle_final,
             ["X"],
-            "Show the Final Mask (hold Z to peek; editing keeps working)",
+            "Show the mask in black and white (hold Z to peek; editing keeps working)",
             True,
         )
+        # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
+        self.act_preview_mode = self._action("", self.toggle_preview_mode, ["V"])
+        self._show_preview_mode()
         self.act_brush = self._action(
             "Brush",
             self.set_brush,
@@ -307,7 +310,7 @@ class MainWindow(QMainWindow):
         self.act_changes = self._action(
             "Show Changes",
             self.set_show_changes,
-            ["F"],
+            ["R"],
             tip="Tint what the edit layer added (green) and removed (red)",
             checkable=True,
         )
@@ -320,6 +323,7 @@ class MainWindow(QMainWindow):
             tb.addAction(a)
         tb.addSeparator()
         tb.addAction(self.act_final)
+        tb.addAction(self.act_preview_mode)
         tb.addAction(self.act_brush)
         tb.addSeparator()
         tb.addAction(self.act_outline)
@@ -358,6 +362,9 @@ class MainWindow(QMainWindow):
             key(seq, lambda: self.step(1))
         key("S", self.focus_frame)
         key("[", lambda: self.step_problem(-1))
+        key(",", lambda: self.step_keyframe(-1))
+        key(".", lambda: self.step_keyframe(1))
+        key("F", self.go_to_reference)
         key("]", lambda: self.step_problem(1))
         key("Up", lambda: self.step_object(-1))
         key("Down", lambda: self.step_object(1))
@@ -482,7 +489,6 @@ class MainWindow(QMainWindow):
         busy = self._busy is not None
 
         self._update_overlays()
-        self.canvas.set_final(project.final_mask(key) if key else None)
 
         fs = s.editing_frame()
         self.canvas.set_prompts(fs.points if fs else (), s.selected_point, fs.box if fs else None)
@@ -608,6 +614,7 @@ class MainWindow(QMainWindow):
         """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""
         s = self.session
         key = s.key
+        self._update_preview_mask()
         overlays: List[Overlay] = []
         edit_layer = None
         for o in s.project.objects:
@@ -1223,6 +1230,67 @@ class MainWindow(QMainWindow):
 
     def toggle_final(self, on: bool) -> None:
         self.canvas.set_final_preview(on)
+
+    def toggle_preview_mode(self) -> None:
+        """V: Mask Preview shows the Final Mask <-> the selected Object's mask."""
+        self.settings.preview_object = not self.settings.preview_object
+        self.settings.save(self.settings_path)
+        self._show_preview_mode()
+        self._update_preview_mask()
+        self.canvas.update()
+
+    def _show_preview_mode(self) -> None:
+        one = self.settings.preview_object
+        self.act_preview_mode.setText("Preview: Object" if one else "Preview: Final")
+        self.act_preview_mode.setToolTip(
+            "Mask Preview shows the selected Object's mask (V: switch to the Final Mask)" if one
+            else "Mask Preview shows the Final Mask, every checked Object (V: switch to the selected Object)"
+        )
+
+    def _update_preview_mask(self) -> None:
+        """The mask Mask Preview shows: the Final Mask, or the selected / edited Object's mask."""
+        s = self.session
+        key = s.key
+        if key is None:
+            self.canvas.set_final(None)
+        elif not self.settings.preview_object:
+            self.canvas.set_final(s.project.final_mask(key), "FINAL MASK")
+        else:
+            oid = self.shown_object_id()
+            o = s.project.get(oid) if oid is not None else None
+            self.canvas.set_final(o.mask(key) if o is not None else None,
+                                  o.name if o is not None else "NO OBJECT SELECTED")
+
+    def step_keyframe(self, step: int) -> None:
+        """, / .: the nearest earlier / later keyframe (★: a mask edited there, a propagation source).
+
+        With the Frame List's one-Object marks on, only the selected Object's ★ count.
+        """
+        s = self.session
+        if s.key is None:
+            return
+        only = self.marks_object()
+        keys = set()
+        for o in s.project.objects:
+            if only is not None and o.id != only:
+                continue
+            keys.update(k for k, fs in o.frames.items() if fs.mask is not None and fs.status == FrameStatus.MANUAL)
+        idx = [i for i, k in enumerate(s.keys) if k in keys]
+        target = (max((i for i in idx if i < s.index), default=None) if step < 0
+                  else min((i for i in idx if i > s.index), default=None))
+        if target is None:
+            self.log(f"No keyframe (★) {'before' if step < 0 else 'after'} this image")
+            return
+        self.go_to(target)
+        self.focus_frame()
+
+    def go_to_reference(self) -> None:
+        """F: the propagation reference (◎, the double-clicked image)."""
+        if self._reference is None:
+            self.log("No reference yet: double-click an image to make it the reference (◎)")
+            return
+        self.go_to(self._reference)
+        self.focus_frame()
 
     # ------------------------------------------------------------------
     # SAM3 detection
