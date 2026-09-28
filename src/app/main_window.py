@@ -542,19 +542,6 @@ class MainWindow(QMainWindow):
                 ):
                     projection = "erp"
             n = self.session.open_folder(folder, projection, self.settings.erp_max_side)
-            if (
-                info["saved"] == "perspective"
-                and info["looks_erp"]
-                and self.ask(
-                    "360° panorama?",
-                    "This project was saved as normal images, but the images are 2:1 — they look like "
-                    "equirectangular (ERP) 360° panoramas.\n\nSwitch this project to ERP (360°) mode? Existing "
-                    "Objects, masks and points are kept (resized to the ERP working size). Undo history is cleared.",
-                    "Switch to ERP (360°)",
-                )
-            ):
-                frames = self.session.convert_to_erp(self.settings.erp_max_side)
-                self.log(f"Switched to ERP (360°) mode — {frames} Object frame(s) resized")
         except (OSError, ValueError) as e:
             self.warn(str(e))
             return False

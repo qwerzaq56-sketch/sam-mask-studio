@@ -30,28 +30,6 @@ def test_open_as_erp_and_projection_is_kept(erp_session, tmp_path):
     assert s2.erp and s2.max_side == 512 and s2.image.shape[:2] == (256, 512)
 
 
-def test_convert_existing_perspective_project_to_erp(tmp_path):
-    make_images(tmp_path / "old", n=2, hw=(300, 600))
-    s = Session(FakeEngine(), max_side=128)
-    s.open_folder(tmp_path / "old", "perspective")  # made before ERP mode existed
-    assert not s.erp and s.image.shape[:2] == (64, 128)
-    s.click(64, 32)
-    s.finish_editing()
-    oid = s.project.objects[0].id
-    s.save(force=True)
-    s2 = Session(FakeEngine(), max_side=128)
-    info = s2.folder_info(tmp_path / "old")
-    assert info["saved"] == "perspective" and info["looks_erp"]
-    s2.open_folder(tmp_path / "old")
-    assert s2.convert_to_erp(512) == 1
-    assert s2.erp and s2.image.shape[:2] == (256, 512)
-    fs = s2.project.get(oid).frame(s2.key)
-    assert fs.mask.shape == (256, 512) and fs.mask[128, 256] and fs.points[0].x == pytest.approx(256)
-    s3 = Session(FakeEngine())
-    s3.open_folder(tmp_path / "old")  # reopening keeps ERP and the masks
-    assert s3.erp and s3.project.get(oid).mask(s3.key).shape == (256, 512)
-
-
 def test_normal_folder_is_not_erp(tmp_path):
     make_images(tmp_path / "flat", n=1, hw=(60, 80))
     assert Session.folder_info(tmp_path / "flat")["looks_erp"] is False
