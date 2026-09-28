@@ -149,11 +149,17 @@ class MainWindow(QMainWindow):
         left_dock = self._dock("Objects / Prompt / Propagation", left, Qt.DockWidgetArea.LeftDockWidgetArea)
         right_dock = self._dock("Properties", self.properties_panel, Qt.DockWidgetArea.RightDockWidgetArea)
         frames_dock = self._dock("Frames", self.images_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        # the one-line frame list: a narrow column left of the Objects (same model / selection as the strip)
+        list_dock = self._dock("Frame List", self.images_panel.frame_list, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self.splitDockWidget(list_dock, left_dock, Qt.Orientation.Horizontal)
+        view_menu = self.menuBar().addMenu("&View")
+        for d in (list_dock, left_dock, right_dock, frames_dock):
+            view_menu.addAction(d.toggleViewAction())
         # the frame strip spans only the canvas: the side docks keep the full height
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
-        self.resizeDocks([left_dock, right_dock], [400, 400], Qt.Orientation.Horizontal)
-        self.resizeDocks([frames_dock], [150], Qt.Orientation.Vertical)
+        self._dock_sizes = ([list_dock, left_dock, right_dock], [210, 380, 380], [frames_dock], [150])
+        self._size_docks()
 
         self.mode_label = QLabel()
         self.image_label = QLabel()
@@ -162,6 +168,17 @@ class MainWindow(QMainWindow):
         sb.addWidget(self.mode_label, 1)
         sb.addPermanentWidget(self.image_label)
         sb.addPermanentWidget(self.model_label)
+
+    def _size_docks(self) -> None:
+        h_docks, h_sizes, v_docks, v_sizes = self._dock_sizes
+        self.resizeDocks(h_docks, h_sizes, Qt.Orientation.Horizontal)
+        self.resizeDocks(v_docks, v_sizes, Qt.Orientation.Vertical)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_docks_sized", False):  # sizes set before the first show can be lost
+            self._docks_sized = True
+            QTimer.singleShot(0, self._size_docks)
 
     def _dock(self, title: str, widget, area) -> QDockWidget:
         d = QDockWidget(title, self)
@@ -440,7 +457,8 @@ class MainWindow(QMainWindow):
         self.act_save.setEnabled(has_folder)
         self.act_export.setEnabled(has_folder and not busy)
         self.act_brush.setEnabled(s.mode == Mode.EDIT and not busy)
-        for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel):
+        for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel,
+                  self.images_panel.frame_list):
             w.setEnabled(has_folder and not busy)
         self.detection_panel.setEnabled(has_folder)
         self.detection_panel.set_busy(busy)
@@ -540,7 +558,9 @@ class MainWindow(QMainWindow):
             return False
         self.settings.last_dir = str(folder)
         self.settings.save(self.settings_path)
-        self.images_panel.set_images(self.session.keys, self.session.paths)
+        self.images_panel.set_images(
+            self.session.keys, self.session.paths, self.session.store.root / "thumbs" if self.session.store else None
+        )
         self.propagation_panel.set_images(self.session.keys)
         self._reference, self._pinned, self._last_prop, self._prop_queue = None, None, None, []
         self.propagation_panel.set_resumable(False)
@@ -1190,8 +1210,11 @@ class MainWindow(QMainWindow):
         ref = self._reference if self._reference is not None else s.index
         if scope == "all":
             plan = PropagationPlan(0, len(s.keys) - 1, ref, direction)
-        elif scope == "selection":
-            picked = self._pinned if self._pinned is not None else self.images_panel.selected_rows()
+        elif scope in ("selection", "custom"):
+            if scope == "custom":
+                picked = self.propagation_panel.custom_ids
+            else:
+                picked = self._pinned if self._pinned is not None else self.images_panel.selected_rows()
             if not [i for i in picked if i != ref]:
                 self.warn("Select the images to propagate to in the Images list (Shift/Ctrl-click), or pin them.")
                 return

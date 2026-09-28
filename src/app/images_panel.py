@@ -1,11 +1,16 @@
-"""The frames: a horizontal strip of thumbnails along the bottom of the window.
+"""The frames: a thumbnail strip along the bottom, and a one-line-per-image list.
+
+Both views show the same model with one selection model, so the current
+image, the picked images, ◎ and 📌 are always the same in both.
+The strip:
 
 Each tile shows the image, its 1-based ID, its status mark (spec 02 §13: ✕
 failed, ⚠ warning, ★ manual, ✓ propagated), ◎ for the propagation reference
 and 📌 when pinned, and the file name. Click opens an image, Shift/Ctrl-click
 picks several (batch masking, the propagation Selection), double-click makes
-it the propagation reference. Thumbnails are read a few at a time on the UI
-thread (JPEGs decoded at 1/8 size), only for the tiles in view; no threads.
+it the propagation reference. Thumbnails are cached on disk (in the project's
+sidecar folder) and read on the UI thread in ~8 ms slices, the tiles in view
+first, then the rest of the folder while idle; no threads.
 """
 
 from __future__ import annotations
@@ -17,7 +22,14 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QIcon, QImage, QPixmap
-from PyQt6.QtWidgets import QAbstractItemView, QListView, QListWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QListView,
+    QListWidget,
+    QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.core.project import FrameStatus, Project
 
@@ -45,9 +57,7 @@ TILE_W = 132  # tile width (the file name is elided to fit)
 
 
 def read_thumbnail(path: Path, height: int = THUMB_H) -> Optional[np.ndarray]:
-    """A small RGB array of *path* (JPEG decoded at reduced size when possible); None if unreadable.
-
-    """
+    """A small RGB array of *path* (JPEG decoded at reduced size when possible); None if unreadable."""
     data = np.fromfile(str(path), dtype=np.uint8)
     img = cv2.imdecode(data, cv2.IMREAD_REDUCED_COLOR_8) if data.size else None
     if img is None or img.size == 0:
@@ -56,6 +66,43 @@ def read_thumbnail(path: Path, height: int = THUMB_H) -> Optional[np.ndarray]:
     tw = max(1, int(w * height / h))
     small = cv2.cvtColor(cv2.resize(img, (tw, height), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
     return np.ascontiguousarray(small)
+
+
+def cached_thumbnail(path: Path, cache: Optional[Path]) -> Optional[np.ndarray]:
+    """read_thumbnail through a disk cache (``<cache>/<name>.jpg``, rebuilt when the image is newer)."""
+    if cache is not None:
+        c = cache / f"{path.name}.jpg"
+        try:
+            if c.is_file() and c.stat().st_mtime >= path.stat().st_mtime:
+                img = cv2.imdecode(np.fromfile(str(c), dtype=np.uint8), cv2.IMREAD_COLOR)
+                if img is not None:
+                    return np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        except OSError:
+            pass
+    img = read_thumbnail(path)
+    if img is not None and cache is not None:
+        try:
+            cache.mkdir(parents=True, exist_ok=True)
+            ok, buf = cv2.imencode(".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if ok:
+                buf.tofile(str(cache / f"{path.name}.jpg"))
+        except OSError:
+            pass  # a read-only folder just means no cache
+    return img
+
+
+class OneLineDelegate(QStyledItemDelegate):
+    """The vertical frame list: ``12  ★ ◎ 📌  name`` on one line, no thumbnail."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # Qt has already turned the line break into a line separator (U+2028)
+        option.text = option.text.replace(" ", "   ").replace("\n", "   ")
+        option.icon = QIcon()
+        option.features &= ~option.ViewItemFeature.HasDecoration
+
+    def sizeHint(self, option, index):
+        return QSize(option.rect.width(), option.fontMetrics.height() + 6)
 
 
 class ImagesPanel(QWidget):
@@ -72,6 +119,7 @@ class ImagesPanel(QWidget):
         self._marks: Dict[str, str] = {}
         self._loaded: Set[int] = set()  # rows whose thumbnail is set (or queued)
         self._pending: List[int] = []  # rows to read, nearest first
+        self._cache: Optional[Path] = None  # thumbnail cache folder
 
         self.list = QListWidget()
         self.list.setViewMode(QListView.ViewMode.IconMode)
@@ -99,10 +147,22 @@ class ImagesPanel(QWidget):
         self._visible_timer.setSingleShot(True)
         self._visible_timer.setInterval(30)
         self._visible_timer.timeout.connect(self._load_visible)
-        # one thumbnail per tick, so the window stays responsive while they load
+        # thumbnails in ~8 ms slices, so the window stays responsive while they load
         self._load_timer = QTimer(self)
         self._load_timer.setInterval(1)
-        self._load_timer.timeout.connect(self._load_one)
+        self._load_timer.timeout.connect(self._load_some)
+
+        # The vertical list: the strip's own model and selection, one line per image.
+        self.frame_list = QListView()
+        self.frame_list.setModel(self.list.model())
+        self.frame_list.setSelectionModel(self.list.selectionModel())
+        self.frame_list.setItemDelegate(OneLineDelegate(self.frame_list))
+        self.frame_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.frame_list.setUniformItemSizes(True)
+        self.frame_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.frame_list.doubleClicked.connect(lambda ix: self.reference_requested.emit(ix.row()))
+        self.frame_list.setToolTip(self.list.toolTip())
+        self.frame_list.setMinimumWidth(170)  # ID, marks and most of the file name
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.list)
@@ -110,9 +170,12 @@ class ImagesPanel(QWidget):
 
     # ------------------------------------------------------------------
 
-    def set_images(self, keys: Sequence[str], paths: Optional[Sequence[Path]] = None) -> None:
+    def set_images(
+        self, keys: Sequence[str], paths: Optional[Sequence[Path]] = None, cache: Optional[Path] = None
+    ) -> None:
         self._keys = list(keys)
         self._paths = list(paths) if paths is not None else []
+        self._cache = cache
         self._loaded.clear()
         self._pending.clear()
         self._updating = True
@@ -172,6 +235,7 @@ class ImagesPanel(QWidget):
         it = self.list.item(index)
         if it is not None:
             self.list.scrollToItem(it, QAbstractItemView.ScrollHint.PositionAtCenter)
+            self.frame_list.scrollTo(self.list.indexFromItem(it), QAbstractItemView.ScrollHint.EnsureVisible)
         self._visible_timer.start()
 
     def selected_rows(self) -> list:
@@ -214,20 +278,33 @@ class ImagesPanel(QWidget):
         if self._pending and not self._load_timer.isActive():
             self._load_timer.start()
 
-    def _load_one(self) -> None:
+    SLICE_S = 0.008  # UI-thread time per timer tick
+
+    def _load_some(self) -> None:
+        """Read thumbnails for ~8 ms: the tiles in view first, then the rest (nearest the current first)."""
+        import time
+
         if not self._pending:
-            self._load_timer.stop()
-            return
-        row = self._pending.pop(0)
-        try:
-            img = read_thumbnail(self._paths[row])
-        except Exception:  # a broken file only loses its thumbnail
-            img = None
-        it = self.list.item(row)
-        if img is not None and it is not None:
-            h, w = img.shape[:2]
-            qi = QImage(img.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
-            it.setIcon(QIcon(QPixmap.fromImage(qi)))
+            rest = [r for r in range(len(self._paths)) if r not in self._loaded]
+            if not rest:
+                self._load_timer.stop()
+                return
+            cur = max(0, self.list.currentRow())
+            rest.sort(key=lambda r: abs(r - cur))  # idle: prefetch the whole folder
+            self._loaded.update(rest)
+            self._pending = rest
+        end = time.perf_counter() + self.SLICE_S
+        while self._pending and time.perf_counter() < end:
+            row = self._pending.pop(0)
+            try:
+                img = cached_thumbnail(self._paths[row], self._cache)
+            except Exception:  # a broken file only loses its thumbnail
+                img = None
+            it = self.list.item(row)
+            if img is not None and it is not None:
+                h, w = img.shape[:2]
+                qi = QImage(img.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
+                it.setIcon(QIcon(QPixmap.fromImage(qi)))
 
     def shutdown(self) -> None:
         self._load_timer.stop()

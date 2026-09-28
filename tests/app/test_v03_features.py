@@ -988,11 +988,47 @@ def test_id_ranges_and_range_scope_by_ids(qapp, win):
     s.click(30, 30)
     win.finish_editing()
     pp.scope.setCurrentIndex(pp.scope.findData("range"))
-    assert pp.range_edit.text() == "1 ~ 5" and pp.ref_hint.text().startswith("Double-click")
-    pp.range_edit.setText("2 ~ 4")  # IDs 2..4 = images 1..3, reference 2 (ID 3)
+    assert (pp.start_edit.text(), pp.end_edit.text()) == ("1", "5") and pp.ref_hint.text().startswith("Double")
+    pp.start_edit.setText("4")  # IDs 2..4 = images 1..3 (either order), reference 2 (ID 3)
+    pp.end_edit.setText("2")
     pp.run_btn.click()
     wait_until(qapp, lambda: win._busy is None)
     assert set(s.project.objects[0].frames) == {s.keys[1], s.keys[2], s.keys[3]}
-    pp.range_edit.setText("9 ~ 12")
+    pp.end_edit.setText("12")
     pp.run_btn.click()
     assert "1 to 5" in pp.phase.text()  # an out-of-range ID is reported, nothing runs
+
+    from src.core.propagation import parse_id_list
+
+    assert parse_id_list("1-4, 35 ,23", 40) == [0, 1, 2, 3, 22, 34]
+    with pytest.raises(ValueError):
+        parse_id_list("1-4, 99", 40)
+    pp.scope.setCurrentIndex(pp.scope.findData("custom"))
+    pp.custom_edit.setText("5, 1")  # IDs 1 and 5 around the reference (ID 3)
+    win.ask = lambda *a: True
+    pp.run_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    assert {s.keys[0], s.keys[4]} <= set(s.project.objects[0].frames)
+
+
+
+def test_frame_list_follows_the_strip_and_thumbnails_are_cached(qapp, win, tmp_path):
+    from PyQt6.QtCore import QItemSelectionModel
+
+    ip = win.images_panel
+    fl = ip.frame_list
+    assert fl.model() is ip.list.model() and fl.selectionModel() is ip.list.selectionModel()
+    # picking in the list shows in the strip, and the list rows are one line
+    fl.selectionModel().select(fl.model().index(3, 0), QItemSelectionModel.SelectionFlag.Select)
+    assert 3 in ip.selected_rows()
+    fl.setCurrentIndex(fl.model().index(2, 0))
+    qapp.processEvents()
+    assert win.session.index == 2  # the list navigates too
+    fl.doubleClicked.emit(fl.model().index(4, 0))
+    assert win._reference == 4
+    assert fl.sizeHintForRow(0) < 40  # one text line, no thumbnail
+    # thumbnails: all read while idle, and cached next to the project
+    cache = win.session.store.root / "thumbs"
+    wait_until(qapp, lambda: len(list(cache.glob("*.jpg"))) == 5, timeout=5)  # the whole folder, while idle
+    wait_until(qapp, lambda: not ip._load_timer.isActive(), timeout=5)
+    assert any(a.text().replace("&", "") == "Frame List" for a in win.menuBar().actions()[0].menu().actions())
