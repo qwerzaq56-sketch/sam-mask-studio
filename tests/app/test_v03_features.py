@@ -562,3 +562,27 @@ def test_brush_circle_is_green_over_the_final_mask(qapp, win):
     r = win.canvas.brush_size / 2
     greens = [img.pixelColor(int(100 + r * c), int(100 + r * s)) for c, s in ((1, 0), (0, 1), (-1, 0), (0, -1))]
     assert any(c.green() > 150 and c.red() < 150 for c in greens)
+
+
+def test_alt_turns_the_brush_circle_and_region_box_red(qapp, win, monkeypatch):
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtWidgets import QApplication
+
+    win.new_object()
+    win.session.click(30, 30)
+    win.refresh()
+    win.act_brush.trigger()
+    win.canvas._mouse = QPointF(100, 100)
+    r = win.canvas.brush_size / 2
+
+    def circle_colors():
+        import math
+
+        img = win.canvas.grab().toImage()
+        return [img.pixelColor(round(100 + r * math.cos(a / 18 * math.pi)), round(100 + r * math.sin(a / 18 * math.pi)))
+                for a in range(36)]
+
+    reddish = lambda cs: sum(c.red() > c.green() + 80 for c in cs)  # noqa: E731
+    assert reddish(circle_colors()) == 0
+    monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.KeyboardModifier.AltModifier))
+    assert reddish(circle_colors()) >= 5

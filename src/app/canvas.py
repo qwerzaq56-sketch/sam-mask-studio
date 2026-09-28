@@ -73,6 +73,7 @@ GROUPS = ("objects", "edit", "region", "candidates")
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
 UNPICK_STROKE_COLOR = (255, 60, 60)  # Alt: the stroke takes picks back out
+ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is held
 
 
 def group_of(style: str) -> str:
@@ -461,7 +462,8 @@ class Canvas(QWidget):
         if self._drag_to is not None and self._press is not None and not self._brush.is_drawing:
             x0, y0 = self.to_image(self._press[0])
             x1, y1 = self.to_image(self._drag_to)
-            self._draw_box(painter, (x0, y0, x1, y1), QColor(255, 255, 255))
+            removing = self.mode == Mode.EDIT and self.region_mode and self._alt()  # Alt: the box cuts the region
+            self._draw_box(painter, (x0, y0, x1, y1), QColor(*ALT_COLOR) if removing else QColor(255, 255, 255))
         if self.mode == Mode.EDIT:
             for i, pt in enumerate(self.points):
                 q = self.to_widget(pt.x, pt.y)
@@ -473,9 +475,13 @@ class Canvas(QWidget):
                 painter.setBrush(QColor(40, 200, 60) if pt.positive else QColor(230, 40, 40))
                 painter.drawEllipse(q, POINT_RADIUS, POINT_RADIUS)
         if self._mouse is not None and self._brush_on():
-            # white on the photo; green over the black-and-white Final Mask, where white disappears
-            color = QColor(60, 230, 90) if self.showing_final else QColor(255, 255, 255)
-            painter.setPen(QPen(color, 1.5 if self.showing_final else 1, Qt.PenStyle.DashLine))
+            # white on the photo; green over the black-and-white Final Mask, where white disappears;
+            # red while Alt is held (the stroke subtracts / unpicks)
+            if self._alt():
+                color = QColor(*ALT_COLOR)
+            else:
+                color = QColor(60, 230, 90) if self.showing_final else QColor(255, 255, 255)
+            painter.setPen(QPen(color, 1.5 if self.showing_final or self._alt() else 1, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
             painter.drawEllipse(self._mouse, r, r)
@@ -538,6 +544,10 @@ class Canvas(QWidget):
     @staticmethod
     def _ctrl() -> bool:
         return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+
+    @staticmethod
+    def _alt() -> bool:
+        return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier)
 
     def _update_cursor(self) -> None:
         if self.mode == Mode.EDIT and self.brush_mode:
@@ -686,7 +696,9 @@ class Canvas(QWidget):
 
     def keyPressEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
+        if k == Qt.Key.Key_Alt:
+            self.update()  # the brush circle / region box turns red
+        elif k == Qt.Key.Key_Space and not event.isAutoRepeat():
             self._space_held = True
             self.setCursor(Qt.CursorShape.OpenHandCursor)
         elif k == Qt.Key.Key_Shift:
@@ -696,7 +708,9 @@ class Canvas(QWidget):
 
     def keyReleaseEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
+        if k == Qt.Key.Key_Alt:
+            self.update()
+        elif k == Qt.Key.Key_Space and not event.isAutoRepeat():
             self._space_held = False
             self._update_cursor()
         elif k == Qt.Key.Key_Shift:
