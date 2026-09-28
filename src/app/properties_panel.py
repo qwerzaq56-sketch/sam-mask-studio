@@ -15,6 +15,8 @@ from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -32,6 +34,12 @@ from src.app.objects_panel import later
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
+BRUSH_TOOLS = (
+    ("paint", "Paint", "Drag = add, Ctrl+drag = subtract (B)"),
+    ("fill_holes", "Fill Holes", "Holes are filled where you paint (up to the hole area below)"),
+    ("remove_specks", "Remove Specks", "Specks are removed where you paint (up to the area below)"),
+    ("object_fill", "Object Fill", "The mask grows to the object's edges where you paint"),
+)
 POINT_ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -70,11 +78,11 @@ class PropertiesPanel(QWidget):
     clear_points_requested = pyqtSignal()
     clear_box_requested = pyqtSignal()
     finish_requested = pyqtSignal()
-    brush_toggled = pyqtSignal(bool)
+    brush_tool_selected = pyqtSignal(str)  # "" = brush off, else a BRUSH_TOOLS name
     fill_holes_requested = pyqtSignal(int)  # max hole area in working-resolution px
     remove_specks_requested = pyqtSignal(int)  # max speck area
     object_fill_requested = pyqtSignal(int, int)  # max growth in px, sensitivity 0-100
-    paint_region_toggled = pyqtSignal(bool)  # brush strokes paint the tool region
+    region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
     apply_layer_requested = pyqtSignal()
     delete_layer_requested = pyqtSignal()
@@ -119,56 +127,81 @@ class PropertiesPanel(QWidget):
         pl.addLayout(row)
 
         # --- edit layer (hand edits on top of the prompt-based mask)
-        self.brush_btn = QPushButton("Brush")
-        self.brush_btn.setCheckable(True)
-        self.brush_btn.setToolTip(
-            "Brush editing (B): drag = add, Ctrl+drag = subtract, Ctrl+wheel = size, wheel = zoom"
-        )
-        self.brush_btn.toggled.connect(self._on_brush)
+        # Brush tools: each paints its effect live, only where the stroke passes.
+        self.tool_btns = {}
+        tools = QGridLayout()
+        for n, (name, text, tip) in enumerate(BRUSH_TOOLS):
+            b = QPushButton(text)
+            b.setCheckable(True)
+            b.setToolTip(tip + " — Ctrl+wheel = size, wheel = zoom")
+            b.clicked.connect(lambda on, t=name: self.brush_tool_selected.emit(t if on else ""))
+            tools.addWidget(b, n // 2, n % 2)
+            self.tool_btns[name] = b
+        self.brush_btn = self.tool_btns["paint"]
         self.brush_size = QLabel("")
         self.brush_size.setStyleSheet("color: gray;")
-        self.region_btn = QPushButton("Paint Region")
-        self.region_btn.setCheckable(True)
-        self.region_btn.setToolTip(
-            "Brush strokes paint a region (cyan) instead of the mask; the tools below then act\n"
-            "only inside it. Ctrl+drag erases the region. Without a region they act everywhere."
-        )
-        self.region_btn.toggled.connect(self.paint_region_toggled)
-        self.clear_region_btn = QPushButton("Clear Region")
-        self.clear_region_btn.clicked.connect(self.clear_region_requested)
-        self.scope_label = QLabel("")
-        self.scope_label.setStyleSheet("color: gray;")
+        tbox = QGroupBox("Brush tools")
+        tl = QVBoxLayout(tbox)
+        tl.addLayout(tools)
+        tl.addWidget(self.brush_size)
+
+        # Settings shared by the brushes and the whole-mask buttons.
         self.refine_area = QSpinBox()
         self.refine_area.setRange(1, 1_000_000)
         self.refine_area.setValue(200)
         self.refine_area.setSuffix(" px")
         self.refine_area.setToolTip("Holes / separate specks up to this area are filled / removed")
-        self.fill_btn = QPushButton("Fill Holes")
-        self.fill_btn.setToolTip("Fill holes enclosed by the mask, up to the area on the left")
-        self.fill_btn.clicked.connect(lambda: self.fill_holes_requested.emit(int(self.refine_area.value())))
-        self.specks_btn = QPushButton("Remove Specks")
-        self.specks_btn.setToolTip("Remove separate small pieces, up to the area on the left (the main piece stays)")
-        self.specks_btn.clicked.connect(lambda: self.remove_specks_requested.emit(int(self.refine_area.value())))
         self.grow = QSpinBox()
         self.grow.setRange(1, 500)
         self.grow.setValue(20)
         self.grow.setSuffix(" px")
         self.grow.setToolTip("How far Object Fill may grow the mask")
-        self.object_fill_btn = QPushButton("Object Fill")
-        self.object_fill_btn.setToolTip(
-            "Grow the mask outward to the object's edges in the image (never shrinks it)"
-        )
         self.sensitivity = QSpinBox()
         self.sensitivity.setRange(0, 100)
         self.sensitivity.setValue(50)
-        self.sensitivity.setPrefix("sens ")
         self.sensitivity.setToolTip(
             "Object Fill sensitivity: higher grows further into colors like the object's,\n"
             "lower stops sooner (50 = grow where the color is more object than background)"
         )
+        sbox = QGroupBox("Settings")
+        sf = QFormLayout(sbox)
+        sf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        sf.addRow("Area", self.refine_area)  # holes / specks
+        sf.addRow("Grow", self.grow)  # Object Fill
+        sf.addRow("Sensitivity", self.sensitivity)  # Object Fill
+
+        # The same tools at once on the whole mask, or inside the region.
+        self.fill_btn = QPushButton("Fill Holes")
+        self.fill_btn.setToolTip("Fill holes enclosed by the mask, up to the hole area")
+        self.fill_btn.clicked.connect(lambda: self.fill_holes_requested.emit(int(self.refine_area.value())))
+        self.specks_btn = QPushButton("Remove Specks")
+        self.specks_btn.setToolTip("Remove separate small pieces, up to the area (the main piece stays)")
+        self.specks_btn.clicked.connect(lambda: self.remove_specks_requested.emit(int(self.refine_area.value())))
+        self.object_fill_btn = QPushButton("Object Fill")
+        self.object_fill_btn.setToolTip("Grow the mask outward to the object's edges in the image (never shrinks it)")
         self.object_fill_btn.clicked.connect(
             lambda: self.object_fill_requested.emit(int(self.grow.value()), int(self.sensitivity.value()))
         )
+        self.region_btn = QPushButton("Region Box")
+        self.region_btn.setCheckable(True)
+        self.region_btn.setToolTip(
+            "Drag boxes on the image to set the region (cyan) the buttons above act in;\n"
+            "Ctrl+drag removes a box from it. Without a region they act on the whole mask."
+        )
+        self.region_btn.toggled.connect(self._on_region_mode)
+        self.clear_region_btn = QPushButton("Clear Region")
+        self.clear_region_btn.clicked.connect(self.clear_region_requested)
+        self.scope_label = QLabel("")
+        self.scope_label.setStyleSheet("color: gray;")
+        abox = QGroupBox("Apply at once")
+        ag = QGridLayout(abox)
+        ag.addWidget(self.fill_btn, 0, 0)
+        ag.addWidget(self.specks_btn, 0, 1)
+        ag.addWidget(self.object_fill_btn, 1, 0, 1, 2)
+        ag.addWidget(self.region_btn, 2, 0)
+        ag.addWidget(self.clear_region_btn, 2, 1)
+        ag.addWidget(self.scope_label, 3, 0, 1, 2)
+
         self.layer_label = QLabel("Layer: none")
         self.apply_layer_btn = QPushButton("Apply Layer")
         self.apply_layer_btn.setToolTip("Make the edited mask the main mask (points are cleared; new points refine it)")
@@ -176,32 +209,11 @@ class PropertiesPanel(QWidget):
         self.delete_layer_btn = QPushButton("Delete Layer")
         self.delete_layer_btn.setToolTip("Discard the hand edits and go back to the point/prompt mask")
         self.delete_layer_btn.clicked.connect(self.delete_layer_requested)
-        lbox = QGroupBox("Edit layer")
-        ll = QVBoxLayout(lbox)
-        r1 = QHBoxLayout()
-        r1.addWidget(self.brush_btn)
-        r1.addWidget(self.brush_size, 1)
-        rr = QHBoxLayout()
-        rr.addWidget(self.region_btn)
-        rr.addWidget(self.clear_region_btn)
-        r2 = QHBoxLayout()
-        r2.addWidget(self.refine_area)
-        r2.addWidget(self.fill_btn, 1)
-        r2.addWidget(self.specks_btn, 1)
-        rg = QHBoxLayout()
-        rg.addWidget(self.grow)
-        rg.addWidget(self.sensitivity)
-        rg.addWidget(self.object_fill_btn, 1)
-        r3 = QHBoxLayout()
-        r3.addWidget(self.apply_layer_btn)
-        r3.addWidget(self.delete_layer_btn)
-        ll.addLayout(r1)
-        ll.addLayout(rr)
-        ll.addWidget(self.scope_label)
-        ll.addLayout(r2)
-        ll.addLayout(rg)
-        ll.addWidget(self.layer_label)
-        ll.addLayout(r3)
+        lbox = QGroupBox("Layer")
+        ll = QGridLayout(lbox)
+        ll.addWidget(self.layer_label, 0, 0, 1, 2)
+        ll.addWidget(self.apply_layer_btn, 1, 0)
+        ll.addWidget(self.delete_layer_btn, 1, 1)
 
         self.finish_btn = QPushButton("Finish Editing")
         self.finish_btn.setToolTip("Esc")
@@ -216,7 +228,8 @@ class PropertiesPanel(QWidget):
         layer_page = QWidget()
         el = QVBoxLayout(layer_page)
         el.setContentsMargins(0, 0, 0, 0)
-        el.addWidget(lbox)
+        for box in (tbox, sbox, abox, lbox):
+            el.addWidget(box)
         el.addStretch(1)
         self.tabs = QTabWidget()
         self.mask_tab = self.tabs.addTab(_scrolled(mask_page), "Mask")
@@ -294,50 +307,63 @@ class PropertiesPanel(QWidget):
         self.layer_label.setText(
             f"Layer: +{layer.added:,} px / −{layer.removed:,} px" if layer is not None else "Layer: none"
         )
-        self.brush_btn.setEnabled(editing)
-        if not editing:
-            self.set_brush(False)  # the window turns the canvas brush off itself
         has_mask = editing and frame is not None and frame.mask is not None
+        self.brush_btn.setEnabled(editing)
+        for name, b in self.tool_btns.items():
+            if name != "paint":
+                b.setEnabled(has_mask)
+        if not editing:
+            self.set_brush_tool("")  # the window turns the canvas brush off itself
+            self.set_region_mode(False)
         for b in (self.fill_btn, self.specks_btn, self.object_fill_btn):
             b.setEnabled(has_mask)
-        self.refine_area.setEnabled(editing)
-        self.grow.setEnabled(editing)
-        self.sensitivity.setEnabled(editing)
-        self.region_btn.setEnabled(editing)
-        if not editing:
-            self.set_paint_region(False)
+        for w in (self.refine_area, self.grow, self.sensitivity, self.region_btn):
+            w.setEnabled(editing)
         self.apply_layer_btn.setEnabled(editing and layer is not None)
         self.delete_layer_btn.setEnabled(editing and layer is not None)
         self.finish_btn.setEnabled(editing or new_mode)
         self.finish_btn.setText("Cancel New Object" if new_mode else "Finish Editing")
         self._updating = False
 
-    def set_brush(self, on: bool) -> None:
-        """Reflect the brush state without re-emitting (and show the Edit Layer tab when it turns on)."""
-        if on and not self.brush_btn.isChecked():
+    def set_brush_tool(self, tool: str) -> None:
+        """Reflect the brush tool ("" = off) without re-emitting; a tool turning on shows this tab."""
+        if tool and not any(b.isChecked() for b in self.tool_btns.values()):
             self.tabs.setCurrentIndex(self.layer_tab)
-        self.brush_btn.blockSignals(True)
-        self.brush_btn.setChecked(on)
-        self.brush_btn.blockSignals(False)
+        for name, b in self.tool_btns.items():
+            b.blockSignals(True)
+            b.setChecked(name == tool)
+            b.blockSignals(False)
 
-    def set_paint_region(self, on: bool) -> None:
-        """Reflect the region-painting state without re-emitting."""
+    def set_brush(self, on: bool) -> None:
+        self.set_brush_tool("paint" if on else "")
+
+    def set_region_mode(self, on: bool) -> None:
+        """Reflect the region-box mode without re-emitting."""
         self.region_btn.blockSignals(True)
         self.region_btn.setChecked(on)
         self.region_btn.blockSignals(False)
+
+    def tool_settings(self) -> dict:
+        return {
+            "max_area": int(self.refine_area.value()),
+            "max_grow": int(self.grow.value()),
+            "sensitivity": int(self.sensitivity.value()),
+        }
 
     def set_region(self, region: Optional[np.ndarray]) -> None:
         has = region is not None
         self.clear_region_btn.setEnabled(has)
         self.scope_label.setText(
-            f"Tools act inside the region ({int(region.sum()):,} px)" if has else "Tools act on the whole mask"
+            f"Buttons act inside the region ({int(region.sum()):,} px)" if has else "Buttons act on the whole mask"
         )
 
     def set_brush_size(self, px: int) -> None:
         self.brush_size.setText(f"size {px}px · Ctrl+wheel to change")
 
-    def _on_brush(self, on: bool) -> None:
-        self.brush_toggled.emit(on)
+    def _on_region_mode(self, on: bool) -> None:
+        if on:
+            self.tabs.setCurrentIndex(self.layer_tab)
+        self.region_mode_toggled.emit(on)
 
     def _on_variant(self, row: int) -> None:
         if not self._updating and row >= 0:
