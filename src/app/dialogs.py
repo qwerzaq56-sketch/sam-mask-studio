@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
+    QGroupBox,
+    QRadioButton,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -77,6 +80,44 @@ class SettingsDialog(QDialog):
         settings.sam2_checkpoint = self.sam2.text().strip()
         settings.sam3_checkpoint = self.sam3.text().strip()
         settings.max_side = self.max_side.value()
+
+
+class OptionsDialog(QDialog):
+    """A question with one or more groups of radio choices (Merge, Copy into).
+
+    *groups*: ``(label, choices, default index)``; ``choice()`` is the picked
+    index of each group.
+    """
+
+    def __init__(self, title: str, text: str, groups: Sequence[Tuple[str, Sequence[str], int]],
+                 ok: str = "OK", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(380)
+        lay = QVBoxLayout(self)
+        intro = QLabel(text)
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+        self._groups: List[QButtonGroup] = []
+        for label, choices, default in groups:
+            box = QGroupBox(label)
+            bl = QVBoxLayout(box)
+            group = QButtonGroup(box)
+            for i, choice in enumerate(choices):
+                rb = QRadioButton(choice)
+                rb.setChecked(i == default)
+                group.addButton(rb, i)
+                bl.addWidget(rb)
+            self._groups.append(group)
+            lay.addWidget(box)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(ok)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+
+    def choice(self) -> List[int]:
+        return [g.checkedId() for g in self._groups]
 
 
 class ExportDialog(QDialog):
@@ -193,6 +234,8 @@ SHORTCUTS = (
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
         ("Enter", "Auto tool: Apply & Continue (Fill: all, Paint: the picks)"),
         ("The active auto tool again", "Leave it, dropping its result (like Esc)"),
+        ("Objects buttons / Edit > Objects", "Duplicate: this image's mask · Duplicate All: every linked mask · "
+                                             "Copy A → B: Replace / Add · Merge: Add / Override with A / B"),
     )),
     ("Images", (
         ("Right / PgDown", "Next image (not while editing)"),

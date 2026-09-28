@@ -28,6 +28,7 @@ def win(qapp, folder, tmp_path):
         settings_path=tmp_path / "config.json",
     )
     w.ask = lambda *a: True
+    w.choose = lambda title, text, groups, ok="OK": [g[2] for g in groups]  # the defaults
     w.warn = w.log
     w.resize(1200, 800)
     w.show()

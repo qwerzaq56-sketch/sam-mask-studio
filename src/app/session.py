@@ -639,10 +639,27 @@ class Session:
         self.project.remove_objects(ids)
         self.sync()
 
-    def merge(self, ids: Sequence[int]) -> Optional[int]:
-        new = self.project.merge(ids)
+    def merge(self, ids: Sequence[int], how: str = "add") -> Optional[int]:
+        """``add``: union per image · ``override``: the first id's mask wins where both have one."""
+        new = self.project.merge(ids, how=how)
         self.sync()
         return new
+
+    def duplicate(self, ids: Iterable[int], all_frames: bool = False) -> List[int]:
+        """Copy Objects: only their mask on the current image, or (*all_frames*) every linked mask."""
+        if not all_frames and self.key is None:
+            return []
+        new = self.project.duplicate(ids, None if all_frames else self.key)
+        self.sync()
+        return new
+
+    def copy_into(self, src: int, dst: int, replace: bool, all_frames: bool = False) -> List[str]:
+        """Copy Object *src* into *dst* (Replace or Add) on the current image, or on all of *src*'s images."""
+        if not all_frames and self.key is None:
+            return []
+        changed = self.project.copy_into(src, dst, replace, None if all_frames else [self.key])
+        self.sync()
+        return changed
 
     @property
     def can_undo(self) -> bool:

@@ -386,40 +386,93 @@ class Project:
         self._checkpoint()
         self._replace(dataclasses.replace(obj, included=included))
 
-    def duplicate(self, obj_ids: Iterable[int]) -> List[int]:
-        """Copy Objects (frames, prompts, variants); the copies are independent."""
+    def duplicate(self, obj_ids: Iterable[int], key: Optional[str] = None) -> List[int]:
+        """Copy Objects (frames, prompts, variants); the copies are independent.
+
+        With *key* only that image's frame is copied, and Objects without a
+        mask there are skipped; without it every linked frame is copied.
+        """
         src = [o for o in self.objects if o.id in set(obj_ids)]
+        if key is not None:
+            src = [o for o in src if o.mask(key) is not None]
         if not src:
             return []
         self._checkpoint()
         new_ids = []
         for o in src:
-            copy = self._alloc(f"{o.name} (copy)", Source.DUPLICATE, dict(o.frames))
+            frames = {key: o.frames[key]} if key is not None else dict(o.frames)
+            copy = self._alloc(f"{o.name} (copy)", Source.DUPLICATE, frames)
             copy = dataclasses.replace(copy, included=o.included)
             self.objects.insert(self._index(o.id) + 1, copy)
             new_ids.append(copy.id)
         return new_ids
 
-    def merge(self, obj_ids: Sequence[int], name: Optional[str] = None) -> Optional[int]:
-        """Union two or more Objects frame by frame into one new Object.
+    @staticmethod
+    def _added(frames: Sequence[FrameState]) -> Optional[FrameState]:
+        """One frame holding the union of *frames*' masks (★ if any of them was edited by hand)."""
+        m = union(fs.mask for fs in frames)
+        if m is None:
+            return None
+        manual = any(fs.status == FrameStatus.MANUAL for fs in frames)
+        return FrameState.from_mask(m, status=FrameStatus.MANUAL if manual else FrameStatus.PROPAGATED)
 
-        On every image where any of them has a mask, the merged Object gets the
-        union of the masks that exist there. The originals are removed. It is
-        named after the first id in *obj_ids* (the first one the user picked).
+    def copy_into(self, src_id: int, dst_id: int, replace: bool, keys: Optional[Iterable[str]] = None) -> List[str]:
+        """Copy Object *src*'s masks into Object *dst*; returns the image keys changed.
+
+        Only images where *src* has a mask are touched (*keys* narrows them,
+        e.g. to the current image). ``replace``: *dst*'s frame becomes a copy
+        of *src*'s (prompts included); else the two masks are added (union).
+        *dst*'s other images keep their masks.
+        """
+        src, dst = self.get(src_id), self.get(dst_id)
+        if src is None or dst is None or src is dst:
+            return []
+        wanted = set(keys) if keys is not None else None
+        changed = [
+            k for k in self.image_keys
+            if src.mask(k) is not None and (wanted is None or k in wanted)
+        ]
+        if not changed:
+            return []
+        self._checkpoint()
+        frames = dict(dst.frames)
+        for k in changed:
+            old = frames.get(k)
+            if replace or old is None or old.mask is None:
+                frames[k] = src.frames[k]
+            else:
+                frames[k] = self._added([old, src.frames[k]])
+        self._replace(dataclasses.replace(dst, frames=frames))
+        return changed
+
+    MERGE_ADD = "add"  # every image: the union of the masks there
+    MERGE_OVERRIDE = "override"  # every image: the mask of the first id in the order that has one
+
+    def merge(self, obj_ids: Sequence[int], name: Optional[str] = None, how: str = MERGE_ADD) -> Optional[int]:
+        """Fuse two or more Objects frame by frame into one new Object.
+
+        ``add``: on every image where any of them has a mask, the merged Object
+        gets the union of the masks there. ``override``: it gets the frame of
+        the first Object in *obj_ids* that has one there (kept as it is, with
+        its prompts), so the earlier Objects win where they overlap. The
+        originals are removed. It is named after the first id in *obj_ids*
+        (the first one the user picked, or the winner of an override).
         """
         chosen = [o for o in self.objects if o.id in set(obj_ids)]
         if len(chosen) < 2:
             return None
+        order = [o for o in (self.get(i) for i in dict.fromkeys(obj_ids)) if o is not None]
         self._checkpoint()
         keys = [k for k in self.image_keys if any(k in o.frames for o in chosen)]
         frames: Dict[str, FrameState] = {}
         for k in keys:
-            m = union(o.mask(k) for o in chosen)
-            if m is None:
-                continue
-            manual = any(k in o.frames and o.frames[k].status == FrameStatus.MANUAL for o in chosen)
-            frames[k] = FrameState.from_mask(m, status=FrameStatus.MANUAL if manual else FrameStatus.PROPAGATED)
-        first = next(o for o in (self.get(i) for i in obj_ids) if o is not None)
+            if how == self.MERGE_OVERRIDE:
+                fs = next((o.frames[k] for o in order if o.mask(k) is not None), None)
+            else:
+                fs = self._added([o.frames[k] for o in chosen if o.mask(k) is not None])
+            if fs is not None:
+                frames[k] = fs
+        first = order[0]
         merged = self._alloc(name or first.name, Source.MERGED, frames)
         merged = dataclasses.replace(merged, included=any(o.included for o in chosen))
         at = min(self._index(o.id) for o in chosen)
