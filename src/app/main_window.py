@@ -225,6 +225,7 @@ class MainWindow(QMainWindow):
 
     def _size_docks(self) -> None:
         h_docks, h_sizes, v_docks, v_sizes = self._dock_sizes
+        h_sizes = [self._list_width(), *h_sizes[1:]]  # the Frame List starts folded or not, as last time
         self.resizeDocks(h_docks, h_sizes, Qt.Orientation.Horizontal)
         self.resizeDocks(v_docks, v_sizes, Qt.Orientation.Vertical)
 
@@ -935,10 +936,16 @@ class MainWindow(QMainWindow):
         self.focus_frame()
         self.canvas.setFocus()
 
+    def _list_width(self, names: Optional[bool] = None) -> int:
+        """The Frame List column width: with the file names, or folded to the IDs and marks."""
+        if names is None:
+            names = self.images_panel.names_visible
+        return 210 if names else 80
+
     def set_frame_names(self, on: bool) -> None:
         """Frame List: file names on, or folded to the IDs and marks (the column narrows)."""
         self.images_panel.set_names_visible(on)
-        self.resizeDocks([self._list_dock], [210 if on else 80], Qt.Orientation.Horizontal)
+        self.resizeDocks([self._list_dock], [self._list_width(on)], Qt.Orientation.Horizontal)
         self.settings.frame_list_names = bool(on)
         self.settings.save(self.settings_path)
 

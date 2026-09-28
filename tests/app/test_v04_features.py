@@ -136,3 +136,32 @@ def test_edit_layer_sections_fold_and_remember(qapp, win):
     assert pp.layer_box.is_open() and not pp.layer_box.body.isHidden()
     pp.settings_box.setTitle("Grow settings")
     assert pp.settings_box.title() == "Grow settings"
+
+
+# --- fix: a folded Frame List starts narrow ---------------------------------------
+
+
+def test_folded_frame_list_starts_narrow(qapp, folder, tmp_path):
+    import time
+
+    from src.app.main_window import MainWindow
+    from src.app.settings import Settings
+    from tests.app.test_gui import FakeEngine, fake_propagate
+
+    w = MainWindow(
+        settings=Settings(sam2_checkpoint=str(tmp_path / "none.pt"), frame_list_names=False),
+        engine=FakeEngine(),
+        propagate_fn=fake_propagate,
+        settings_path=tmp_path / "config.json",
+    )
+    w.resize(1200, 800)
+    w.show()
+    for _ in range(20):
+        qapp.processEvents()
+        time.sleep(0.01)
+    try:
+        assert not w.names_btn.isChecked()
+        assert w._list_dock.width() < 150
+    finally:
+        w._autosave.stop()
+        w.close()

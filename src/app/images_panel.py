@@ -256,6 +256,7 @@ class ImagesPanel(QWidget):
         label = QLabel()
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setMinimumWidth(10)
+        label.setWordWrap(True)  # a folded Frame List: two lines instead of clipping
         self._summaries.append(label)
         self._summarize()
         return label
