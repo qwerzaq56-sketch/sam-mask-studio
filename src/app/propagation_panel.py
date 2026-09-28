@@ -30,8 +30,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.app.ui_util import allow_narrow
 from src.core.project import FrameStatus
-from src.core.propagation import Direction, PropagationPlan, format_ids, parse_id_range
+from src.core.propagation import Direction, PropagationPlan, format_ids, parse_id, parse_id_list
 
 INDEX_ROLE = Qt.ItemDataRole.UserRole
 REFERENCE = "reference"
@@ -56,6 +57,7 @@ def chain(keys: Sequence[str], indices: Sequence[int], current: int, limit: int 
 SCOPES = (
     ("selection", "Selection (Images list)"),
     ("range", "Range (Start ~ End)"),
+    ("custom", "Custom (IDs: 1-4, 35, 23)"),
     ("all", "All images"),
 )
 
@@ -85,7 +87,7 @@ class PropagationPanel(QWidget):
             self.scope.addItem(text, value)
         self.scope.setToolTip(
             "Selection: the images picked in the Images list (Shift/Ctrl-click), or the pinned ones\n"
-            "Range: Start ~ End · All images: the whole folder"
+            "Range: Start ~ End · Custom: IDs and ID ranges, e.g. 1-4, 35, 23 · All images: the whole folder"
         )
         self.scope.currentIndexChanged.connect(self._scope_changed)
         self.pin_btn = QPushButton("📌 Pin")
@@ -97,9 +99,23 @@ class PropagationPanel(QWidget):
         pin_row = QHBoxLayout()
         pin_row.addWidget(self.pin_btn)
         pin_row.addWidget(self.pin_label, 1)
-        self.range_edit = QLineEdit()
-        self.range_edit.setPlaceholderText("e.g. 5 ~ 45")
-        self.range_edit.setToolTip("Image IDs (the numbers in the Images list), e.g. 5 ~ 45")
+        self.start_edit = QLineEdit()
+        self.end_edit = QLineEdit()
+        for e, tip in ((self.start_edit, "First image ID"), (self.end_edit, "Last image ID")):
+            e.setToolTip(tip + " (the numbers in the frame list)")
+            e.setMaximumWidth(80)
+        self.range_row = QWidget()  # Start [ ]  End [ ]
+        rr = QHBoxLayout(self.range_row)
+        rr.setContentsMargins(0, 0, 0, 0)
+        rr.addWidget(QLabel("Start"))
+        rr.addWidget(self.start_edit)
+        rr.addWidget(QLabel("End"))
+        rr.addWidget(self.end_edit)
+        rr.addStretch(1)
+        self.custom_edit = QLineEdit()
+        self.custom_edit.setPlaceholderText("e.g. 1-4, 35, 23")
+        self.custom_edit.setToolTip("Image IDs and ID ranges, in any order")
+        self.custom_ids: List[int] = []  # the last Custom scope parsed (0-based)
         self.ref_hint = QLabel("Double-click an image in the Images list to use it as the reference")
         self.ref_hint.setStyleSheet("color: gray;")
         self.ref_hint.setWordWrap(True)
@@ -118,7 +134,8 @@ class PropagationPanel(QWidget):
         form.addRow("", self.ref_hint)
         form.addRow("Scope", self.scope)
         form.addRow("", pin_row)
-        form.addRow("Range (IDs)", self.range_edit)
+        form.addRow("Range (IDs)", self.range_row)
+        form.addRow("IDs", self.custom_edit)
         form.addRow("Direction", drow)
         self._form = form
 
@@ -160,7 +177,7 @@ class PropagationPanel(QWidget):
         obox, fbox = QGroupBox("Objects"), QGroupBox("Frames (click to open)")
         QVBoxLayout(obox).addWidget(self.objects)
         QVBoxLayout(fbox).addWidget(self.frames)
-        lists = QSplitter(Qt.Orientation.Horizontal)
+        lists = QSplitter(Qt.Orientation.Vertical)  # stacked: the panel is a narrow column
         lists.addWidget(obox)
         lists.addWidget(fbox)
 
@@ -173,12 +190,14 @@ class PropagationPanel(QWidget):
         lay.addWidget(lists, 1)
         self._reset_bars()
         self._scope_changed()
+        allow_narrow(self)  # it shares the left column with the Objects
 
     # ------------------------------------------------------------------
 
     def set_images(self, keys: Sequence[str]) -> None:
         self._keys = list(keys)
-        self.range_edit.setText(f"1 ~ {len(keys)}" if keys else "")
+        self.start_edit.setText("1" if keys else "")
+        self.end_edit.setText(str(len(keys)) if keys else "")
         self.frames.clear()
         self.objects.clear()
         self._rows.clear()
@@ -204,7 +223,8 @@ class PropagationPanel(QWidget):
 
     def _scope_changed(self, *_):
         scope = self.scope_value()
-        self._form.setRowVisible(self.range_edit, scope == "range")
+        self._form.setRowVisible(self.range_row, scope == "range")
+        self._form.setRowVisible(self.custom_edit, scope == "custom")
         self.pin_btn.setVisible(scope == "selection")
         self.pin_label.setVisible(scope == "selection")
 
@@ -213,12 +233,15 @@ class PropagationPanel(QWidget):
 
     def _run(self) -> None:
         start, end = 0, max(0, len(self._keys) - 1)
-        if self.scope_value() == "range":
-            try:
-                start, end = parse_id_range(self.range_edit.text(), len(self._keys))
-            except ValueError as e:
-                self.phase.setText(str(e))
-                return
+        n = len(self._keys)
+        try:
+            if self.scope_value() == "range":
+                start, end = sorted((parse_id(self.start_edit.text(), n), parse_id(self.end_edit.text(), n)))
+            elif self.scope_value() == "custom":
+                self.custom_ids = parse_id_list(self.custom_edit.text(), n)
+        except ValueError as e:
+            self.phase.setText(str(e))
+            return
         self.propagate_requested.emit(start, end, self.direction(), self.scope_value())
 
     def set_resumable(self, on: bool) -> None:
@@ -228,7 +251,7 @@ class PropagationPanel(QWidget):
         self.run_btn.setEnabled(not running)
         self.stop_btn.setEnabled(running)
         self.cancel_btn.setEnabled(running)
-        for w in (self.range_edit, self.scope, self.pin_btn, *self.dirs.buttons()):
+        for w in (self.start_edit, self.end_edit, self.custom_edit, self.scope, self.pin_btn, *self.dirs.buttons()):
             w.setEnabled(not running)
         if running:
             self.resume_btn.setEnabled(False)

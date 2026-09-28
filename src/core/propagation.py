@@ -133,3 +133,28 @@ def format_ids(indices) -> str:
     if run:
         out.append(f"{run[0]}–{run[-1]}" if len(run) > 1 else str(run[0]))
     return ", ".join(out)
+
+
+def parse_id_list(text: str, count: int) -> List[int]:
+    """``"1-4, 35, 23"`` (1-based IDs and ID ranges, any order) -> sorted 0-based indices.
+
+    Raises ValueError with a readable message.
+    """
+    out = set()
+    for part in text.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        a, b = parse_id_range(part, count)
+        out.update(range(a, b + 1))
+    if not out:
+        raise ValueError(f"Type image IDs, e.g. 1-4, 35, 23 (1 ~ {count})")
+    return sorted(out)
+
+
+def parse_id(text: str, count: int) -> int:
+    """One 1-based image ID -> 0-based index."""
+    t = text.strip()
+    if not t.isdigit() or not 1 <= int(t) <= count:
+        raise ValueError(f"Image IDs go from 1 to {count}")
+    return int(t) - 1

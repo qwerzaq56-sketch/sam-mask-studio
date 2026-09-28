@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.objects_panel import color_icon
+from src.app.ui_util import allow_narrow
 from src.core.project import Detection
 from src.core.prompts import split_labels
 
@@ -113,6 +114,7 @@ class DetectionPanel(QWidget):
         lay.addLayout(row)
         lay.addLayout(row2)
         self.set_detections([], [])
+        allow_narrow(self)  # it shares the left column with the Objects
 
     # ------------------------------------------------------------------
     # Prompt

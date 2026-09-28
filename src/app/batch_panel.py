@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.app.ui_util import allow_narrow
 from src.core.prompts import split_labels
 
 INDEX_ROLE = Qt.ItemDataRole.UserRole
@@ -112,6 +113,7 @@ class BatchPanel(QWidget):
         lay.addWidget(self.status)
         lay.addWidget(self.results, 1)
         self._scope_changed()
+        allow_narrow(self)  # it shares the left column with the Objects
 
     def labels(self) -> List[str]:
         return split_labels(self.prompt.text())

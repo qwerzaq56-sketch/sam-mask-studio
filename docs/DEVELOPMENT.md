@@ -296,6 +296,12 @@ the first Object" rule is gone (`Session.effective_mode` == `mode`).
 - Left dock: Objects over the Prompt / Batch / Propagation / Logs tabs (panels restacked for the
   narrow column); the side docks own the bottom corners so the strip spans only the canvas.
 
+**P5c** (`v0.3-p5c`): a one-line `Frame List` dock (a QListView on the strip's own model and
+selection model, `OneLineDelegate`) left of the Objects column; View menu with the docks' toggle
+actions; Range as Start / End fields and a `Custom (IDs)` scope (`parse_id_list`); thumbnails
+cached in `<images>.sms/thumbs/` and read in ~8 ms slices (visible first, then the whole folder);
+`ui_util.allow_narrow` lets the left-column panels shrink.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
