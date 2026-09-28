@@ -453,7 +453,7 @@ class MainWindow(QMainWindow):
     def go_to(self, index: int) -> None:
         if self._busy or index is None:
             return
-        self.save()
+        self.save(background=True)
         try:
             moved = self.session.go_to(index)
         except ValueError as e:
@@ -472,7 +472,8 @@ class MainWindow(QMainWindow):
 
         Autosave runs in the background (the first save after a batch or a
         propagation can be thousands of masks); explicit saves, navigation and
-        closing write directly, after any background save has finished.
+        closing write directly, after any background save has finished;
+        moving to another image saves in the background too.
         """
         self._autosave.stop()
         store = self.session.store

@@ -314,7 +314,8 @@ def test_navigation_and_autosave_reload(win, qapp, folder, tmp_path):
     click(win, 30, 30)
     win.step(1)
     assert win.session.index == 1 and win.session.mode == Mode.IDLE
-    assert (sidecar_dir(folder) / "project.json").is_file()  # flushed on image change
+    win._save_task.wait()  # written in the background on image change
+    assert (sidecar_dir(folder) / "project.json").is_file()
     marks = [win.images_panel.list.item(i).text()[0] for i in range(2)]
     assert marks == ["★", " "]
     win.run_export(ExportOptions(out_dir=tmp_path / "out"))
