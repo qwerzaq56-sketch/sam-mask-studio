@@ -167,7 +167,7 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Object Fill sensitivity (0-100): band pixels join when log p(object color) − log p(background
   color) from GrabCut's learned GMMs exceeds (50 − s)/8, smoothed and kept connected. Real
   photo check (mask eroded 10 px): s 20/50/80 → 78/93/96 % recovered, 1.6/3.6/9 % spill.
-- **Tool brushes** (what the user meant by "paint versions"): Paint / Fill Holes / Remove
+- **Tool brushes** (what the user meant by "paint versions"; P2.2: area on drag, run on release): Paint / Fill Holes / Remove
   Specks / Object Fill. A tool stroke shows the tool's full-mask result (computed at the press,
   `Session.tool_result`) only where the stroke passes, live; release commits it to the layer.
 - Paint Region → **Region Box**: drag boxes to set the region (Ctrl+drag removes a box); the

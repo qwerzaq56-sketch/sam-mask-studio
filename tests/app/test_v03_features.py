@@ -252,8 +252,10 @@ def test_tool_brush_applies_only_where_painted(qapp, win):
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
     win.canvas.set_brush_size(8)
     QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
-    assert win.canvas._stroke_mask[35, 35] and not win.canvas._stroke_mask[25, 25]  # live preview
+    assert win.canvas._tool_area[35, 35] and not win.canvas._tool_area[25, 25]  # the area is shown...
+    assert not s.editing_frame().mask[35, 35]  # ...but nothing runs until the release
     QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
+    assert win.canvas._tool_area is None
     qapp.processEvents()
     m = s.editing_frame().mask
     assert m[35, 35] and not m[25, 25]

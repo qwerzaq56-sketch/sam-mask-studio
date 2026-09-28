@@ -234,7 +234,7 @@ class MainWindow(QMainWindow):
         c.object_picked.connect(self.on_object_picked)
         c.brush_finished.connect(self.on_brush)
         c.region_box.connect(self.on_region_box)
-        c.tool_target_fn = self._tool_target
+        c.tool_stroke.connect(self.on_tool_stroke)
         c.brush_size_changed.connect(lambda px: self.properties_panel.set_brush_size(px))
 
         o = self.objects_panel
@@ -400,8 +400,8 @@ class MainWindow(QMainWindow):
             mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
             if self.canvas.brush_tool != "paint":
                 mode_text = (
-                    f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — paint where the tool should act"
-                    " · Ctrl+wheel: size · wheel: zoom"
+                    f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — drag over the area,"
+                    " release to apply · Ctrl+wheel: size · wheel: zoom"
                 )
         if s.mode == Mode.EDIT and self.canvas.region_mode:
             mode_text = "REGION BOX — drag: add a box to the region · Ctrl+drag: remove a box"
@@ -658,11 +658,15 @@ class MainWindow(QMainWindow):
         self.session.add_region_box((x0, y0, x1, y1), subtract)
         self.refresh()
 
-    def _tool_target(self, tool: str):
-        """For a tool brush stroke: the edited mask with *tool* applied everywhere."""
+    def on_tool_stroke(self, tool: str, area) -> None:
+        """A tool brush was released: run the tool once, inside the brushed area."""
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            return self.session.tool_result(tool, **self.properties_panel.tool_settings())
+            settings = self.properties_panel.tool_settings()
+            self._layer(
+                lambda: self.session.tool_stroke(tool, area, **settings),
+                f"{tool.replace('_', ' ').title()} applied in the brushed area",
+            )
         finally:
             QApplication.restoreOverrideCursor()
 
