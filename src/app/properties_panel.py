@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.objects_panel import later
+from src.app.ui_util import CollapsibleBox
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
@@ -334,8 +335,9 @@ class PropertiesPanel(QWidget):
             (("Amount", self.amount),), "How many pixels Grow widens / Shrink narrows the mask (shared)."
         ))
         self.preview_label = note("")
-        self.settings_box = QGroupBox("Settings")
-        sl = QVBoxLayout(self.settings_box)
+        self.settings_box = CollapsibleBox("Settings")  # foldable: its state is kept in the settings
+        sl = QVBoxLayout(self.settings_box.body)
+        sl.setContentsMargins(0, 0, 0, 0)
         sl.addWidget(self.settings_stack)
         sl.addWidget(self.preview_label)
         self.settings_box.setVisible(False)
@@ -347,8 +349,9 @@ class PropertiesPanel(QWidget):
         self.delete_layer_btn = QPushButton("Delete Layer")
         self.delete_layer_btn.setToolTip("Discard the hand edits and go back to the point/prompt mask")
         self.delete_layer_btn.clicked.connect(self.delete_layer_requested)
-        lbox = QGroupBox("Layer")
-        ll = QGridLayout(lbox)
+        lbox = self.layer_box = CollapsibleBox("Layer")
+        ll = QGridLayout(lbox.body)
+        ll.setContentsMargins(0, 0, 0, 0)
         ll.addWidget(self.layer_label, 0, 0, 1, 2)
         ll.addWidget(self.apply_layer_btn, 1, 0)
         ll.addWidget(self.delete_layer_btn, 1, 1)

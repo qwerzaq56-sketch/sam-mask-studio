@@ -80,6 +80,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
     그 외(Esc, 다른 도구, 툴 버튼 다시 누르기)는 반영하지 않고 나감.
   - **Region Box**: 드래그로 범위를 정하면 그 안에서만 동작(`Alt`+드래그 = 빼기). 모든 조작은 Undo 가능.
 - **Apply Layer**: 손질을 확정해 기본 Mask로 만듦 · **Delete Layer**: 손질을 전부 버림.
+- 도구 **Settings**와 **Layer** 섹션은 제목의 ▾ / ▸로 접을 수 있고, 접힌 상태는 기억됩니다.
 
 ### Object 관리
 
