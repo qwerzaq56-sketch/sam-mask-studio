@@ -102,6 +102,13 @@
 - Frame List 행과 Frames 타일: 열린 프레임은 칸 전체 파랑(`CURRENT_FILL`, 글자 흰색), Shift/Ctrl로 고른 다른 프레임은 옅은 파랑(`PICKED_FILL`). 스타일의 선택 강조와 썸네일 색조는 끔. 📌 칸 위에서도 보임.
 - 코드: `images_panel.py` `selection_fill`, `TileDelegate`, `OneLineDelegate.paint`.
 
+### 13단계 · 마우스 위치 기준 이동 키 (`v0.4-p13`)
+- 마우스가 Frame List / Frames 줄 위: `W A ↑ ←` = 이전 프레임, `S D ↓ →` = 다음 프레임. Objects 목록 위: 같은 키로 이전 / 다음 Object 행(Show all 행 포함, 편집도 따라감).
+- 목록 위에서 `S`는 "다음"(스크롤 아님). 스크롤은 ⌖ 버튼, 또는 목록 밖에서 `S`.
+- 그 밖의 곳은 그대로: `←` `→` 프레임, `↑` `↓` Object, `A` 오토 툴 전체 선택, `D` Paint, `S` 스크롤, `W` 없음.
+- 수식키가 있으면(Shift / Ctrl+화살표 = 목록 여러 칸 선택) 가로채지 않음. 입력칸에 커서가 있으면 가로채지 않음. 편집 중 프레임 이동은 지금처럼 막힘.
+- 구현: `MainWindow.eventFilter`가 `ShortcutOverride`를 받아 메뉴 단축키보다 먼저 처리(`_hover_step`, `_hover_zone`, `HOVER_KEYS`).
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 
