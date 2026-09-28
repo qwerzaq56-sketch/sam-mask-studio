@@ -571,8 +571,8 @@ def test_grow_shrink_tools_share_amount_and_a_toggles_picks(qapp, win):
     assert not s.auto_taken().any()
     idx = s.index
     win.escape()
-    win.a_key()  # with no auto tool, A is the previous image again
-    assert s.index == max(0, idx - 1)
+    win.a_key()  # with no auto tool, A does nothing (A / D never change image)
+    assert s.index == idx
 
 
 def test_brush_circle_is_green_over_the_final_mask(qapp, win):

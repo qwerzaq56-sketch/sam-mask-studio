@@ -134,8 +134,8 @@ SHORTCUTS = (
         ("Auto tool button again", "Apply its result once more (the tool stays on)"),
     )),
     ("Images", (
-        ("D / Right / PgDown", "Next image"),
-        ("A / Left / PgUp", "Previous image (A in an auto tool's Paint mode: pick all / none)"),
+        ("Right / PgDown", "Next image"),
+        ("Left / PgUp", "Previous image"),
     )),
     ("View", (
         ("Z (hold)", "Show the Final Mask while held"),
@@ -150,6 +150,7 @@ SHORTCUTS = (
         ("Drag", "Box prompt (Region Box on: add a box to the region)"),
         ("B", "Paint brush on / off"),
         ("Drag with a brush", "Paint: add · Restore: undo edits · auto tool Paint mode: pick"),
+        ("A", "Auto tool Paint mode: pick all / none"),
         ("Alt+drag", "Paint: subtract · auto tool Paint mode: unpick · Region Box: remove a box"),
         ("Shift+drag", "Paint without turning the brush on"),
         ("Ctrl+wheel / Shift+wheel", "Brush size"),

@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
         for seq in ("Left", "PgUp"):
             key(seq, lambda: self.step(-1))
         key("A", self.a_key)
-        for seq in ("Right", "D", "PgDown"):
+        for seq in ("Right", "PgDown"):
             key(seq, lambda: self.step(1))
 
     def _connect(self) -> None:
@@ -762,13 +762,10 @@ class MainWindow(QMainWindow):
         self._auto_gen += 1  # drop a computation still running
 
     def a_key(self) -> None:
-        """A: in an auto tool's Paint mode pick all / none of the result, otherwise the previous image."""
+        """A: in an auto tool's Paint mode pick all / none of the result (A / D never change image)."""
         s = self.session
-        if s.auto_tool is not None and s.auto_mode == "paint":
-            if s.pick_all():
-                self._update_overlays()
-            return
-        self.step(-1)
+        if s.auto_tool is not None and s.auto_mode == "paint" and s.pick_all():
+            self._update_overlays()
 
     def reapply_tool(self) -> None:
         """Write the auto tool's result in (Fill: all of it, Paint: the picks) and show the next one."""
