@@ -1050,7 +1050,6 @@ def test_frame_list_names_fold_away(qapp, win):
         __import__("PyQt6.QtWidgets", fromlist=["QStyleOptionViewItem"]).QStyleOptionViewItem()
     )
     assert opt_text().strip() == "1"  # only the ID (and marks)
-    assert win._list_goto.isHidden()  # folded: no Go-to field widening the narrow column
     assert ip.frame_list.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     win.names_btn.click()
     assert "frame_000.png" in opt_text()
@@ -1064,9 +1063,9 @@ def test_focus_and_goto_frames(qapp, win):
 
     ip = win.images_panel
     assert any(sc.key() == QKeySequence("S") for sc in win.findChildren(QShortcut))
-    gotos = [w for w in win._list_dock.titleBarWidget().findChildren(QLineEdit)]
-    gotos += [w for w in ip.parentWidget().titleBarWidget().findChildren(QLineEdit)]
-    assert len(gotos) == 2  # one in each frame dock
+    gotos = win._goto_fields
+    assert len(gotos) == 2 and all(isinstance(g, QLineEdit) for g in gotos)  # under the list and the strip
+    assert not win._list_dock.titleBarWidget().findChildren(QLineEdit)  # not in the title bar
     gotos[1].setText("4")
     gotos[1].returnPressed.emit()
     assert win.session.index == 3 and gotos[1].text() == ""
