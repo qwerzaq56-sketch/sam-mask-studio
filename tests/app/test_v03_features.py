@@ -170,52 +170,84 @@ def test_refine_tools_are_separate_and_grow_to_edges():
     assert half[100, 150] and not half[100, 50]
 
 
-def test_region_box_limits_the_tools(qapp, win):
-    import numpy as np
-
-    from tests.app.test_gui import canvas_pos
-
+def holes_object(win):
+    """An Object in Edit whose mask has a 1-px hole at (25, 25) and one at (35, 35)."""
     s = win.session
     win.new_object()
-    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 30, 30))
+    s.click(30, 30)
     t = s.editing_frame().mask.copy()
-    t[25, 25] = t[35, 35] = False  # two holes, one on each side
+    t[25, 25] = t[35, 35] = False
     s.brush(t)
     win.refresh()
-    win.act_brush.trigger()
-    win.properties_panel.region_btn.click()  # region boxes: turns the brush off
-    assert win.canvas.region_mode and not win.canvas.brush_mode
+    return s
+
+
+def test_region_box_limits_the_fill(qapp, win):
+    from tests.app.test_gui import canvas_pos
+
+    s = holes_object(win)
+    p = win.properties_panel
+    p.refine_area.setValue(5)
+    p.region_btn.click()
+    assert win.canvas.region_mode
     QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 31, 31))
     QTest.mouseMove(win.canvas, canvas_pos(win, 45, 45))
     QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 45, 45))
-    qapp.processEvents()
     assert s.region is not None and s.region[35, 35] and not s.region[25, 25]
     QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 40, 40))
     QTest.mouseMove(win.canvas, canvas_pos(win, 45, 45))
-    QTest.mouseRelease(
-        win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, canvas_pos(win, 45, 45)
-    )
-    assert s.region[35, 35] and not s.region[42, 42]  # Ctrl+drag cut a box out
-    assert s.editing_frame().mask.sum() == t.sum() and len(s.editing_frame().points) == 1  # no SAM2 box
-    win.properties_panel.refine_area.setValue(5)
-    win.properties_panel.fill_btn.click()
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, canvas_pos(win, 45, 45))
+    assert s.region[35, 35] and not s.region[42, 42]  # Alt+drag cut a box out
+    assert len(s.editing_frame().points) == 1  # region drags never make a SAM2 box
+
+    p.mode_fill_btn.click()
+    p.tool_btns["fill_holes"].click()  # Fill: applied at once, inside the region
     m = s.editing_frame().mask
-    assert m[35, 35] and not m[25, 25]  # only the hole inside the region
-    win.properties_panel.clear_region_btn.click()
-    assert s.region is None and "whole mask" in win.properties_panel.scope_label.text()
-    win.properties_panel.fill_btn.click()
-    assert s.editing_frame().mask[25, 25]
+    assert m[35, 35] and not m[25, 25]
+    p.clear_region_btn.click()  # the live Fill follows the region
+    assert s.region is None and "whole mask" in p.scope_label.text()
+    assert s.editing_frame().mask[25, 25] and s.editing_frame().mask[35, 35]
     win.finish_editing()
     assert not win.canvas.region_mode and s.region is None
 
 
-def test_object_fill_button(qapp, win):
+def test_fill_mode_is_live_and_one_undo_step(qapp, win):
+    s = win.session
+    win.new_object()
+    s.click(30, 30)
+    t = s.editing_frame().mask.copy()
+    t[25, 25] = False  # 1 px hole
+    t[34:36, 34:36] = False  # 4 px hole
+    s.brush(t)
+    win.refresh()
+    p = win.properties_panel
+    p.refine_area.setValue(1)
+    p.mode_fill_btn.click()
+    p.tool_btns["fill_holes"].click()
+    m = s.editing_frame().mask
+    assert m[25, 25] and not m[35, 35]
+    assert "Changed: +1 px" in p.preview_label.text()
+    p.refine_area.setValue(10)  # moving a setting updates the result...
+    wait_until(qapp, lambda: s.editing_frame().mask[35, 35])
+    assert "+5 px" in p.preview_label.text()
+    p.tool_btns["fill_holes"].click()  # leaving the tool: nothing to confirm, the result stays
+    assert s.editing_frame().mask[35, 35]
+    win.undo()  # ...and the whole live Fill is one undo step
+    m = s.editing_frame().mask
+    assert not m[25, 25] and not m[35, 35]
+
+
+def test_object_fill_computes_in_the_background(qapp, win):
     s = win.session
     win.new_object()
     s.click(40, 30)
     before = s.editing_frame().mask.sum()
     win.refresh()
-    win.properties_panel.object_fill_btn.click()
+    p = win.properties_panel
+    p.mode_fill_btn.click()
+    p.tool_btns["object_fill"].click()
+    assert not p.settings_box.isHidden() and "Object Fill" in p.settings_box.title()
+    wait_until(qapp, lambda: "Computing" not in p.preview_label.text() and p.preview_label.text() != "")
     assert s.editing_frame().mask.sum() >= before  # never shrinks (a flat test image may not grow)
 
 
@@ -236,32 +268,29 @@ def test_merge_uses_first_selected_name(qapp, win):
     assert [o.name for o in win.session.project.objects] == ["Tripod"]
 
 
-def test_tool_brush_applies_only_where_painted(qapp, win):
+def test_brush_mode_shows_a_guide_and_paints_it_in(qapp, win):
     from tests.app.test_gui import canvas_pos
 
-    s = win.session
-    win.new_object()
-    s.click(30, 30)
-    t = s.editing_frame().mask.copy()
-    t[25, 25] = t[35, 35] = False
-    s.brush(t)
-    win.refresh()
+    s = holes_object(win)
     p = win.properties_panel
     p.refine_area.setValue(5)
+    assert p.mode == "brush"  # the default
     p.tool_btns["fill_holes"].click()
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
+    guide = [o for o in win.canvas._overlays if o.style == "guide"]
+    assert guide and guide[0].mask[25, 25] and guide[0].mask[35, 35]  # both holes, in gray
+    assert not s.editing_frame().mask[35, 35]  # nothing applied yet
     win.canvas.set_brush_size(8)
     QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
-    assert win.canvas._tool_area[35, 35] and not win.canvas._tool_area[25, 25]  # the area is shown...
-    assert not s.editing_frame().mask[35, 35]  # ...but nothing runs until the release
     QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
-    assert win.canvas._tool_area is None
     qapp.processEvents()
     m = s.editing_frame().mask
-    assert m[35, 35] and not m[25, 25]
-    p.tool_btns["fill_holes"].click()  # clicking the active tool turns the brush off
-    assert not win.canvas.brush_mode
-    win.act_brush.trigger()  # B = Paint
+    assert m[35, 35] and not m[25, 25]  # only where painted
+    guide = [o for o in win.canvas._overlays if o.style == "guide"]
+    assert guide[0].mask[25, 25] and not guide[0].mask[35, 35]  # the rest stays gray
+    p.tool_btns["fill_holes"].click()  # leaving the tool drops the guide
+    assert not win.canvas.brush_mode and not [o for o in win.canvas._overlays if o.style == "guide"]
+    win.act_brush.trigger()  # B = Add / Subtract
     assert win.canvas.brush_tool == "paint" and p.brush_btn.isChecked()
 
 

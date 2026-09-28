@@ -11,7 +11,7 @@ from typing import Optional
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -25,7 +25,9 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSpinBox,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -35,19 +37,16 @@ from src.app.objects_panel import later
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
-BRUSH_TOOLS = (
-    ("paint", "Paint", "Drag = add, Alt+drag = subtract (B)"),
-    ("restore", "Restore", "Drag over an area; on release the edit layer's changes there are undone (see below)"),
-    ("fill_holes", "Fill Holes", "Drag over an area; on release its holes are filled (up to the area below)"),
-    ("remove_specks", "Remove Specks", "Drag over an area; on release its specks are removed"),
-    ("object_fill", "Object Fill", "Drag over an area; on release the mask grows to the object's edges there"),
-)
-TOOL_CELLS = {  # grid row, column; the Restore options sit beside Restore
-    "paint": (0, 0),
-    "object_fill": (0, 1),
-    "fill_holes": (1, 0),
-    "remove_specks": (1, 1),
-    "restore": (2, 0),
+# Direct brushes act as you paint; auto tools compute a result that is shown live
+# and either filled in at once (Fill mode) or painted in (Brush mode).
+DIRECT_TOOLS = ("paint", "restore")
+AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks")
+TOOL_TEXT = {
+    "paint": ("Add / Subtract", "Drag = add, Alt+drag = subtract (B)"),
+    "restore": ("Restore", "Drag over an area; on release the edit layer's changes there are undone"),
+    "object_fill": ("Object Fill", "Grow the mask to the object's edges in the image"),
+    "fill_holes": ("Fill Holes", "Fill holes enclosed by the mask"),
+    "remove_specks": ("Remove Specks", "Remove separate small pieces (the main piece stays)"),
 }
 RESTORE_MODES = (
     ("added", "Add"),  # undo what the edit layer added
@@ -92,10 +91,9 @@ class PropertiesPanel(QWidget):
     clear_points_requested = pyqtSignal()
     clear_box_requested = pyqtSignal()
     finish_requested = pyqtSignal()
-    brush_tool_selected = pyqtSignal(str)  # "" = brush off, else a BRUSH_TOOLS name
-    fill_holes_requested = pyqtSignal(int)  # max hole area in working-resolution px
-    remove_specks_requested = pyqtSignal(int)  # max speck area
-    object_fill_requested = pyqtSignal(int, int)  # max growth in px, sensitivity 0-100
+    brush_tool_selected = pyqtSignal(str)  # "" = no tool, else a DIRECT_TOOLS / AUTO_TOOLS name
+    auto_mode_changed = pyqtSignal(str)  # "brush" | "fill"
+    auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
     apply_layer_requested = pyqtSignal()
@@ -104,6 +102,7 @@ class PropertiesPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._updating = False
+        self._tool = ""
         self.title = QLabel("No Object selected")
         self.title.setWordWrap(True)
         self.hint = QLabel(
@@ -141,16 +140,25 @@ class PropertiesPanel(QWidget):
         pl.addLayout(row)
 
         # --- edit layer (hand edits on top of the prompt-based mask)
-        # Brush tools: Paint edits directly; the others mark an area and run on release.
         self.tool_btns = {}
-        tools = QGridLayout()
-        for n, (name, text, tip) in enumerate(BRUSH_TOOLS):
+
+        def tool_button(name: str) -> QPushButton:
+            text, tip = TOOL_TEXT[name]
             b = QPushButton(text)
             b.setCheckable(True)
-            b.setToolTip(tip + " — Ctrl+wheel = size, wheel = zoom")
+            b.setToolTip(tip + " — Ctrl+wheel = brush size, wheel = zoom")
             b.clicked.connect(lambda on, t=name: self.brush_tool_selected.emit(t if on else ""))
-            tools.addWidget(b, *TOOL_CELLS[name])
             self.tool_btns[name] = b
+            return b
+
+        def note(text: str) -> QLabel:
+            lb = QLabel(text)
+            lb.setStyleSheet("color: gray;")
+            lb.setWordWrap(True)
+            return lb
+
+        # Brush: acts as you paint.
+        self.brush_btn = tool_button("paint")
         self.restore_mode = QComboBox()
         for value, text in RESTORE_MODES:
             self.restore_mode.addItem(text, value)
@@ -158,82 +166,95 @@ class PropertiesPanel(QWidget):
         self.restore_mode.setToolTip(
             "What the Restore brush undoes: Add = what was painted on, Subtract = what was erased, Both"
         )
-        tools.addWidget(self.restore_mode, 2, 1)
-        self.brush_btn = self.tool_btns["paint"]
-        self.brush_size = QLabel("")
-        self.brush_size.setStyleSheet("color: gray;")
-        tbox = QGroupBox("Brush tools")
-        tl = QVBoxLayout(tbox)
-        tl.addLayout(tools)
-        tl.addWidget(self.brush_size)
+        self.brush_size = note("")
+        tbox = QGroupBox("Brush")
+        tg = QGridLayout(tbox)
+        tg.addWidget(self.brush_btn, 0, 0, 1, 2)
+        tg.addWidget(tool_button("restore"), 1, 0)
+        tg.addWidget(self.restore_mode, 1, 1)
+        tg.addWidget(self.brush_size, 2, 0, 1, 2)
 
-        # Settings shared by the brushes and the whole-mask buttons.
+        # Auto tools: a live result, filled in at once or painted in.
+        self.mode_brush_btn = QPushButton("Brush")
+        self.mode_fill_btn = QPushButton("Fill")
+        for b, value, tip in (
+            (self.mode_brush_btn, "brush", "The result is shown in gray; paint where you want it"),
+            (self.mode_fill_btn, "fill", "The result is applied at once (inside the region, if any);\n"
+                                         "moving a setting updates it — Ctrl+Z undoes it in one step"),
+        ):
+            b.setCheckable(True)
+            b.setToolTip(tip)
+            b.clicked.connect(lambda _on, v=value: self._set_mode(v, emit=True))
+        self.region_btn = QPushButton("Region Box")
+        self.region_btn.setCheckable(True)
+        self.region_btn.setToolTip(
+            "Drag boxes on the image to limit the auto tools to a region (cyan);\n"
+            "Alt+drag removes a box. Without a region they act on the whole mask."
+        )
+        self.region_btn.toggled.connect(self._on_region_mode)
+        self.clear_region_btn = QPushButton("Clear")
+        self.clear_region_btn.clicked.connect(self.clear_region_requested)
+        self.scope_label = note("")
+        abox = QGroupBox("Auto tools")
+        ag = QGridLayout(abox)
+        ag.addWidget(tool_button("object_fill"), 0, 0, 1, 3)
+        ag.addWidget(tool_button("fill_holes"), 1, 0, 1, 2)
+        ag.addWidget(tool_button("remove_specks"), 1, 2)
+        ag.addWidget(QLabel("Mode"), 2, 0)
+        ag.addWidget(self.mode_brush_btn, 2, 1)
+        ag.addWidget(self.mode_fill_btn, 2, 2)
+        ag.addWidget(QLabel("Region"), 3, 0)
+        ag.addWidget(self.region_btn, 3, 1)
+        ag.addWidget(self.clear_region_btn, 3, 2)
+        ag.addWidget(self.scope_label, 4, 0, 1, 3)
+        self.mode = "brush"
+        self._set_mode("brush")
+
+        # Settings of the selected auto tool; any change is reported once it settles.
+        self._settings_timer = QTimer(self)
+        self._settings_timer.setSingleShot(True)
+        self._settings_timer.setInterval(120)
+        self._settings_timer.timeout.connect(self.auto_settings_changed)
         self.refine_area = QSpinBox()
         self.refine_area.setRange(1, 1_000_000)
         self.refine_area.setValue(200)
         self.refine_area.setSuffix(" px")
-        self.refine_area.setToolTip("Holes / separate specks up to this area are filled / removed")
         self.grow = QSpinBox()
         self.grow.setRange(1, 500)
         self.grow.setValue(20)
         self.grow.setSuffix(" px")
-        self.grow.setToolTip("How far Object Fill may grow the mask")
-        self.sensitivity = QSpinBox()
+        self.sensitivity = QSlider(Qt.Orientation.Horizontal)
         self.sensitivity.setRange(0, 100)
         self.sensitivity.setValue(50)
-        self.sensitivity.setToolTip(
-            "Object Fill sensitivity: higher grows further into colors like the object's,\n"
-            "lower stops sooner (50 = grow where the color is more object than background)"
-        )
-        # One settings box per tool, so it is clear which value drives what.
-        def note(text: str) -> QLabel:
-            lb = QLabel(text)
-            lb.setStyleSheet("color: gray;")
-            lb.setWordWrap(True)
-            return lb
-
-        hbox = QGroupBox("Fill Holes / Remove Specks")
-        hf = QFormLayout(hbox)
-        hf.addRow("Max size", self.refine_area)
-        hf.addRow(note("Only holes / specks up to this many pixels are filled / removed."))
-        obox = QGroupBox("Object Fill")
-        of = QFormLayout(obox)
-        of.addRow("Max grow", self.grow)
-        of.addRow("Sensitivity", self.sensitivity)
-        of.addRow(note("Max grow: how far the mask may spread. Sensitivity: higher spreads further "
+        self.sensitivity_value = QLabel("50")
+        self.sensitivity.valueChanged.connect(lambda v: self.sensitivity_value.setText(str(v)))
+        for w in (self.refine_area, self.grow, self.sensitivity):
+            w.valueChanged.connect(lambda _v: self._settings_timer.start())
+        size_page = QWidget()
+        sf = QFormLayout(size_page)
+        sf.setContentsMargins(0, 0, 0, 0)
+        sf.addRow("Max size", self.refine_area)
+        sf.addRow(note("Only holes / specks up to this many pixels."))
+        fill_page = QWidget()
+        ff = QFormLayout(fill_page)
+        ff.setContentsMargins(0, 0, 0, 0)
+        ff.addRow("Max grow", self.grow)
+        sens = QHBoxLayout()
+        sens.addWidget(self.sensitivity, 1)
+        sens.addWidget(self.sensitivity_value)
+        ff.addRow("Sensitivity", sens)
+        ff.addRow(note("Max grow: how far the mask may spread. Sensitivity: higher spreads further "
                        "into colors like the object's, lower stops sooner."))
-
-        # The same tools at once on the whole mask, or inside the region.
-        self.fill_btn = QPushButton("Fill Holes")
-        self.fill_btn.setToolTip("Fill holes enclosed by the mask, up to the hole area")
-        self.fill_btn.clicked.connect(lambda: self.fill_holes_requested.emit(int(self.refine_area.value())))
-        self.specks_btn = QPushButton("Remove Specks")
-        self.specks_btn.setToolTip("Remove separate small pieces, up to the area (the main piece stays)")
-        self.specks_btn.clicked.connect(lambda: self.remove_specks_requested.emit(int(self.refine_area.value())))
-        self.object_fill_btn = QPushButton("Object Fill")
-        self.object_fill_btn.setToolTip("Grow the mask outward to the object's edges in the image (never shrinks it)")
-        self.object_fill_btn.clicked.connect(
-            lambda: self.object_fill_requested.emit(int(self.grow.value()), int(self.sensitivity.value()))
-        )
-        self.region_btn = QPushButton("Region Box")
-        self.region_btn.setCheckable(True)
-        self.region_btn.setToolTip(
-            "Drag boxes on the image to set the region (cyan) the buttons above act in;\n"
-            "Alt+drag removes a box from it. Without a region they act on the whole mask."
-        )
-        self.region_btn.toggled.connect(self._on_region_mode)
-        self.clear_region_btn = QPushButton("Clear Region")
-        self.clear_region_btn.clicked.connect(self.clear_region_requested)
-        self.scope_label = QLabel("")
-        self.scope_label.setStyleSheet("color: gray;")
-        abox = QGroupBox("Apply at once")
-        ag = QGridLayout(abox)
-        ag.addWidget(self.object_fill_btn, 0, 0, 1, 2)
-        ag.addWidget(self.fill_btn, 1, 0)
-        ag.addWidget(self.specks_btn, 1, 1)
-        ag.addWidget(self.region_btn, 2, 0)
-        ag.addWidget(self.clear_region_btn, 2, 1)
-        ag.addWidget(self.scope_label, 3, 0, 1, 2)
+        self.settings_stack = QStackedWidget()
+        self._pages = {"object_fill": self.settings_stack.addWidget(fill_page)}
+        size_index = self.settings_stack.addWidget(size_page)
+        self._pages.update(fill_holes=size_index, remove_specks=size_index)
+        self.preview_label = note("")
+        self.settings_box = QGroupBox("Settings")
+        sl = QVBoxLayout(self.settings_box)
+        sl.addWidget(self.settings_stack)
+        sl.addWidget(self.preview_label)
+        self.settings_box.setVisible(False)
 
         self.layer_label = QLabel("Layer: none")
         self.apply_layer_btn = QPushButton("Apply Layer")
@@ -261,7 +282,7 @@ class PropertiesPanel(QWidget):
         layer_page = QWidget()
         el = QVBoxLayout(layer_page)
         el.setContentsMargins(0, 0, 0, 0)
-        for box in (tbox, hbox, obox, abox, lbox):
+        for box in (tbox, abox, self.settings_box, lbox):
             el.addWidget(box)
         el.addStretch(1)
         self.tabs = QTabWidget()
@@ -344,15 +365,13 @@ class PropertiesPanel(QWidget):
         self.brush_btn.setEnabled(editing)
         for name, b in self.tool_btns.items():
             if name == "restore":
-                b.setEnabled(editing and frame is not None and frame.edit is not None)
+                b.setEnabled(editing and frame is not None and frame.edit is not None or b.isChecked())
             elif name != "paint":
-                b.setEnabled(has_mask)
+                b.setEnabled(has_mask or b.isChecked())
         if not editing:
             self.set_brush_tool("")  # the window turns the canvas brush off itself
             self.set_region_mode(False)
-        for b in (self.fill_btn, self.specks_btn, self.object_fill_btn):
-            b.setEnabled(has_mask)
-        for w in (self.refine_area, self.grow, self.sensitivity, self.region_btn):
+        for w in (self.mode_brush_btn, self.mode_fill_btn, self.region_btn):
             w.setEnabled(editing)
         self.apply_layer_btn.setEnabled(editing and layer is not None)
         self.delete_layer_btn.setEnabled(editing and layer is not None)
@@ -361,16 +380,31 @@ class PropertiesPanel(QWidget):
         self._updating = False
 
     def set_brush_tool(self, tool: str) -> None:
-        """Reflect the brush tool ("" = off) without re-emitting; a tool turning on shows this tab."""
-        if tool and not any(b.isChecked() for b in self.tool_btns.values()):
+        """Reflect the tool ("" = none) without re-emitting; picking one shows this tab."""
+        if tool and tool != self._tool:
             self.tabs.setCurrentIndex(self.layer_tab)
+        self._tool = tool
         for name, b in self.tool_btns.items():
             b.blockSignals(True)
             b.setChecked(name == tool)
             b.blockSignals(False)
+        auto = tool in AUTO_TOOLS
+        self.settings_box.setVisible(auto)
+        if auto:
+            self.settings_stack.setCurrentIndex(self._pages[tool])
+            self.settings_box.setTitle(f"{TOOL_TEXT[tool][0]} settings")
+        else:
+            self.preview_label.setText("")
 
     def set_brush(self, on: bool) -> None:
         self.set_brush_tool("paint" if on else "")
+
+    def _set_mode(self, mode: str, emit: bool = False) -> None:
+        self.mode = mode
+        self.mode_brush_btn.setChecked(mode == "brush")
+        self.mode_fill_btn.setChecked(mode == "fill")
+        if emit:
+            self.auto_mode_changed.emit(mode)
 
     def set_region_mode(self, on: bool) -> None:
         """Reflect the region-box mode without re-emitting."""
@@ -386,11 +420,20 @@ class PropertiesPanel(QWidget):
             "restore": self.restore_mode.currentData(),
         }
 
+    def set_preview(self, added: int, removed: int, busy: bool = False) -> None:
+        """What the auto tool changes (Fill) or would change where painted (Brush)."""
+        if busy:
+            self.preview_label.setText("Computing…")
+            return
+        verb = "Changed" if self.mode == "fill" else "Available"
+        self.preview_label.setText(f"{verb}: +{added:,} px / −{removed:,} px")
+
     def set_region(self, region: Optional[np.ndarray]) -> None:
         has = region is not None
         self.clear_region_btn.setEnabled(has)
         self.scope_label.setText(
-            f"Buttons act inside the region ({int(region.sum()):,} px)" if has else "Buttons act on the whole mask"
+            f"Auto tools act inside the region ({int(region.sum()):,} px)" if has
+            else "Auto tools act on the whole mask"
         )
 
     def set_brush_size(self, px: int) -> None:

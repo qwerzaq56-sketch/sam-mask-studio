@@ -51,6 +51,7 @@ ALPHA = {
     "layer_add": 150,  # pixels the edit layer forces on
     "layer_sub": 110,  # pixels the edit layer forces off
     "region": 70,  # where the edit-layer tools act
+    "guide": 150,  # an auto tool's result, not painted in yet (Brush mode)
 }
 
 
@@ -75,7 +76,7 @@ def group_of(style: str) -> str:
         return "edit"
     if style.startswith("candidate"):
         return "candidates"
-    if style == "region":
+    if style in ("region", "guide"):
         return "region"
     return "objects"
 
@@ -242,7 +243,9 @@ class Canvas(QWidget):
 
     def _group_layers(self, group: str) -> List[Overlay]:
         if group == "region":
-            layers = [Overlay(self._region, REGION_COLOR, "region")] if self._region is not None else []
+            layers = [o for o in self._overlays if o.style == "guide"]
+            if self._region is not None:
+                layers.append(Overlay(self._region, REGION_COLOR, "region"))
             if self._tool_area is not None:
                 layers.append(Overlay(self._tool_area, TOOL_STROKE_COLOR, "region"))
             return layers
@@ -304,7 +307,7 @@ class Canvas(QWidget):
 
     def _brush_on(self) -> bool:
         """Brush strokes are what a left drag does right now."""
-        return self.mode == Mode.EDIT and (self.brush_mode or self._shift())
+        return self.mode == Mode.EDIT and not self.region_mode and (self.brush_mode or self._shift())
 
     def _show_stroke(self, m: np.ndarray) -> None:
         if self._tool_stroke:

@@ -183,6 +183,21 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   removed / both (= the prompt mask) inside the brushed area.
 - Toolbar: separator after Outline + width.
 
+**P2.6 — auto tools without a confirm step** (`v0.3-p2.6`)
+- Edit Layer tab: **Brush** (Add / Subtract, Restore + Add/Subtract/Both) acts as you paint;
+  **Auto tools** (Object Fill, Fill Holes, Remove Specks) share a Mode (Brush | Fill) and the
+  Region; a Settings box shows only the selected auto tool's parameters (Sensitivity is a slider).
+- Picking an auto tool computes its result at once (Object Fill in a Task; stale results are
+  dropped by a generation counter; results are cached per tool/settings/base mask).
+- **Fill** writes the result into the mask right away (inside the region). Moving a setting or
+  the region *amends that same undo step* (`Project.amend_frame`) as long as nothing else
+  changed since (`Session._fill_live`: same Object/image/tool, `project.actions` and
+  `undo_depth` unchanged), so there is nothing to confirm and Ctrl+Z removes the whole Fill.
+  Changes since entering the tool are tinted green/red.
+- **Brush** shows the result as a gray guide; strokes paint it in (inside the region).
+- Leaving the tool, switching tools or Esc only drops the tint/guide.
+- The Apply-at-once buttons are gone (Fill mode replaces them).
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
