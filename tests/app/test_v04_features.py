@@ -162,6 +162,9 @@ def test_folded_frame_list_starts_narrow(qapp, folder, tmp_path):
     try:
         assert not w.names_btn.isChecked()
         assert w._list_dock.width() < 150
+        assert w._list_summary.isHidden()  # folded: no wrapped counts (the strip keeps them)
+        w.names_btn.setChecked(True)
+        assert not w._list_summary.isHidden() and not w._list_summary.wordWrap()
     finally:
         w._autosave.stop()
         w.close()
