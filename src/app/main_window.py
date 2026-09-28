@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Callable, List, Optional
 
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QCursor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
@@ -74,6 +74,13 @@ SOURCE_SHORT = {  # how an Object was made, in the work bar
     Source.SAM2_BOX: "SAM2 box",
     Source.MERGED: "merged",
     Source.DUPLICATE: "copy",
+}
+
+
+# Keys that move while the mouse is over a list (see MainWindow.eventFilter): -1 = back, +1 = on
+HOVER_KEYS = {
+    Qt.Key.Key_W: -1, Qt.Key.Key_A: -1, Qt.Key.Key_Up: -1, Qt.Key.Key_Left: -1,
+    Qt.Key.Key_S: 1, Qt.Key.Key_D: 1, Qt.Key.Key_Down: 1, Qt.Key.Key_Right: 1,
 }
 
 
@@ -767,6 +774,18 @@ class MainWindow(QMainWindow):
         """App-wide: Z held (no modifiers, not in a text box) shows the Final Mask; the wheel
         over a slider / number box scrolls the panel instead of changing the value."""
         t = event.type()
+        if t in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+            hover = self._hover_step(event)
+            if hover is not None:
+                if t == QEvent.Type.ShortcutOverride:
+                    event.accept()  # not the menu shortcut (A, D, S, arrows): the key press comes here instead
+                    return True
+                zone, delta = hover
+                if zone == "frames":
+                    self.step(delta)
+                else:
+                    self.step_object(delta, self.objects_panel.listed_ids())
+                return True
         if (
             t == QEvent.Type.KeyPress
             and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
@@ -810,6 +829,36 @@ class MainWindow(QMainWindow):
                 QApplication.sendEvent(area.verticalScrollBar(), event)  # the panel scrolls instead
             return True
         return super().eventFilter(obj, event)
+
+    def _hover_zone(self) -> Optional[str]:
+        """The list under the mouse: ``frames`` (Frame List, Frames strip), ``objects`` or None."""
+        return self._zone_of(QApplication.widgetAt(QCursor.pos()))
+
+    def _zone_of(self, w) -> Optional[str]:
+        ip = self.images_panel
+        while w is not None:
+            if w is ip.frame_list or w is ip.list:
+                return "frames"
+            if w is self.objects_panel.tree:
+                return "objects"
+            w = w.parentWidget()
+        return None
+
+    def _hover_step(self, event) -> Optional[tuple]:
+        """With the mouse over a list, W A S D and the arrows move in it: (zone, -1 | +1); else None.
+
+        Only plain keys (Shift / Ctrl+arrows keep extending the list selection),
+        never while typing, and elsewhere A, D, S and the arrows keep their usual meaning.
+        """
+        delta = HOVER_KEYS.get(event.key())
+        if delta is None or event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier:
+            return None
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit)):
+            return None
+        if not self.isActiveWindow():
+            return None
+        zone = self._hover_zone()
+        return (zone, delta) if zone is not None else None
 
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
@@ -1148,13 +1197,17 @@ class MainWindow(QMainWindow):
                 break  # empty space keeps the selection (the Objects panel's empty space clears it)
         self.refresh()
 
-    def step_object(self, delta: int) -> None:
-        """Up / Down: the previous / next Object with a mask on this image (Edit follows it)."""
+    def step_object(self, delta: int, ids: Optional[List[int]] = None) -> None:
+        """Up / Down: the previous / next Object with a mask on this image (Edit follows it).
+
+        *ids*: the Objects to step through instead (hovering the list: its rows, Show all included).
+        """
         s = self.session
         key = s.key
         if key is None or self._busy:
             return
-        ids = [o.id for o in s.project.objects if o.mask(key) is not None]
+        if ids is None:
+            ids = [o.id for o in s.project.objects if o.mask(key) is not None]
         oid = self.objects_panel.move_selection(ids, delta)
         if oid is None:
             return

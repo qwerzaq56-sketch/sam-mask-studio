@@ -97,10 +97,13 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
     **Override with A**(겹치는 이미지는 A의 Mask, A 이름) / **Override with B**(B의 Mask, B 이름). 한쪽에만 있는 이미지는 그 Mask를 그대로.
   - **Delete**. 모두 Undo 한 번으로 되돌아갑니다.
 - `↑` / `↓`: 이 이미지에 Mask가 있는 이전/다음 Object로 이동(편집 중이면 편집 대상도 따라감).
+- 마우스를 **Objects 목록 위에** 두면 `W` `A` `↑` `←` = 이전 행, `S` `D` `↓` `→` = 다음 행(Show all로 보이는 행 포함).
 
 ### 프레임 이동
 
 - `←` / `→` (PgUp / PgDn): 이전 / 다음 이미지. 목록의 숫자는 이미지 ID(1부터)입니다.
+- 마우스를 **Frame List나 Frames 줄 위에** 두면 `W` `A` `↑` `←` = 이전, `S` `D` `↓` `→` = 다음 이미지.
+  (목록 위에서는 `S`도 "다음"이고, 다른 곳에서는 `A` = 오토 툴 전체 선택, `D` = Paint, `S` = 스크롤 그대로.)
 - 열려 있는 이미지는 Frame List 행과 Frames 타일 **전체가 파란색**으로 칠해집니다. Shift/Ctrl로 고른 다른 이미지는 옅은 파랑.
 - `S` 또는 ⌖: 현재 프레임으로 스크롤 · **Go to ID**: ID 입력 + Enter.
 - Frame List 제목줄의 `Aa`: 파일 이름을 접어서 ID와 표시만 남김(좁은 목록).
@@ -143,6 +146,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 | Ctrl+Z / Ctrl+Y | Undo / Redo |
 | N / E / Esc | New Object / Points 편집 시작·종료 / 도구 → 편집 종료 |
 | ← → / ↑ ↓ | 이미지 이동 / Object 이동 |
+| W A S D / 화살표 (목록 위에 마우스) | Frame List·Frames 줄: 이미지 이동 · Objects 목록: Object 이동 |
 | D | Paint 브러쉬 |
 | Enter / A | Auto tool 반영 후 계속 / 전체 선택 |
 | X / Z(누르고 있기) / V | Mask Preview 토글 / 잠깐 보기 / Final ↔ 선택 Object |

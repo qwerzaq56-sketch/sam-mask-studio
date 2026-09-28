@@ -429,3 +429,66 @@ def test_open_frame_row_and_tile_are_filled(qapp, win):
     strip = ip.list.viewport().grab().toImage()
     t = ip.list.visualItemRect(ip.list.item(2))
     assert strip.pixelColor(t.left() + 2, t.top() + 2) == CURRENT_FILL
+
+
+# --- p13: hover keys (W A S D / arrows move in the list under the mouse) --------------
+
+
+def _key(win, key, zone):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    win._hover_zone = lambda: zone
+    over = QKeyEvent(QEvent.Type.ShortcutOverride, key, Qt.KeyboardModifier.NoModifier)
+    press = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
+    handled = win.eventFilter(win.canvas, over)
+    if handled:
+        assert over.isAccepted()  # so the menu shortcut (A, D, S, arrows) does not fire
+        assert win.eventFilter(win.canvas, press)
+    return handled
+
+
+def test_hover_keys_move_in_the_list_under_the_mouse(qapp, win):
+    from PyQt6.QtCore import Qt
+
+    ids = make_objects(win, 3)
+    s = win.session
+    win.activateWindow()
+    win.canvas.setFocus()
+    qapp.processEvents()
+    assert win._zone_of(win.images_panel.frame_list.viewport()) == "frames"
+    assert win._zone_of(win.images_panel.list.viewport()) == "frames"
+    assert win._zone_of(win.objects_panel.tree.viewport()) == "objects"
+    assert win._zone_of(win.canvas) is None and win._zone_of(win._goto_fields[0]) is None
+    for key, want in ((Qt.Key.Key_D, 1), (Qt.Key.Key_S, 2), (Qt.Key.Key_Right, 3), (Qt.Key.Key_W, 2),
+                      (Qt.Key.Key_A, 1), (Qt.Key.Key_Up, 0)):
+        assert _key(win, key, "frames")
+        assert s.index == want
+    win.objects_panel.select_ids([ids[0]])
+    assert _key(win, Qt.Key.Key_S, "objects")
+    assert win.objects_panel.selected_ids() == [ids[1]]
+    assert _key(win, Qt.Key.Key_D, "objects") and win.objects_panel.selected_ids() == [ids[2]]
+    assert _key(win, Qt.Key.Key_W, "objects") and win.objects_panel.selected_ids() == [ids[1]]
+    assert s.index == 0  # the frame stays
+    # elsewhere: not taken, so A / D / S and the arrows keep their menu shortcuts
+    assert not _key(win, Qt.Key.Key_D, None) and not _key(win, Qt.Key.Key_Right, None)
+    assert not _key(win, Qt.Key.Key_W, None)
+
+
+def test_hover_keys_through_the_real_key_path(qapp, win):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    make_objects(win, 1)
+    s = win.session
+    win.activateWindow()
+    win.canvas.setFocus()
+    qapp.processEvents()
+    win._hover_zone = lambda: "frames"
+    QTest.keyClick(win.canvas, Qt.Key.Key_D)  # over a list: next frame, not the Paint brush
+    assert s.index == 1 and not win.act_brush.isChecked()
+    win._hover_zone = lambda: None
+    QTest.keyClick(win.canvas, Qt.Key.Key_Right)  # elsewhere: the arrows as before
+    assert s.index == 2
+    QTest.keyClick(win.canvas, Qt.Key.Key_W)  # ...and W does nothing
+    assert s.index == 2
