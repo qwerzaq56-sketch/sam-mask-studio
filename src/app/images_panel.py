@@ -167,6 +167,8 @@ class ImagesPanel(QWidget):
         self.frame_list.doubleClicked.connect(lambda ix: self.reference_requested.emit(ix.row()))
         self.frame_list.setToolTip(self.list.toolTip())
         self.frame_list.setMinimumWidth(170)  # ID, marks and most of the file name
+        # names are elided, never scrolled sideways (no horizontal bar, folded or not)
+        self.frame_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.list)
@@ -251,6 +253,15 @@ class ImagesPanel(QWidget):
         if it is not None:
             self.list.scrollToItem(it, QAbstractItemView.ScrollHint.PositionAtCenter)
             self.frame_list.scrollTo(self.list.indexFromItem(it), QAbstractItemView.ScrollHint.EnsureVisible)
+        self._visible_timer.start()
+
+    def focus_current(self) -> None:
+        """Scroll both views to the current frame (centered in the strip and the list)."""
+        it = self.list.item(self.list.currentRow())
+        if it is None:
+            return
+        self.list.scrollToItem(it, QAbstractItemView.ScrollHint.PositionAtCenter)
+        self.frame_list.scrollTo(self.list.indexFromItem(it), QAbstractItemView.ScrollHint.PositionAtCenter)
         self._visible_timer.start()
 
     def selected_rows(self) -> list:
