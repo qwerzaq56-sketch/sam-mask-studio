@@ -50,9 +50,9 @@ TOOL_CELLS = {  # grid row, column; the Restore options sit beside Restore
     "restore": (2, 0),
 }
 RESTORE_MODES = (
-    ("both", "Added + removed"),
-    ("added", "Remove added"),
-    ("removed", "Bring back removed"),
+    ("added", "Add"),  # undo what the edit layer added
+    ("removed", "Subtract"),  # undo what it subtracted
+    ("both", "Both"),
 )
 POINT_ROLE = Qt.ItemDataRole.UserRole
 
@@ -154,7 +154,10 @@ class PropertiesPanel(QWidget):
         self.restore_mode = QComboBox()
         for value, text in RESTORE_MODES:
             self.restore_mode.addItem(text, value)
-        self.restore_mode.setToolTip("What the Restore brush brings back to the point/prompt mask")
+        self.restore_mode.setCurrentIndex(self.restore_mode.findData("both"))
+        self.restore_mode.setToolTip(
+            "What the Restore brush undoes: Add = what was painted on, Subtract = what was erased, Both"
+        )
         tools.addWidget(self.restore_mode, 2, 1)
         self.brush_btn = self.tool_btns["paint"]
         self.brush_size = QLabel("")
