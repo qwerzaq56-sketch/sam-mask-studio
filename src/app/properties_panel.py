@@ -179,8 +179,8 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn = QPushButton("Fill")
         for b, value, tip in (
             (self.mode_brush_btn, "brush", "The result is shown in gray; paint where you want it"),
-            (self.mode_fill_btn, "fill", "The result is applied at once (inside the region, if any);\n"
-                                         "moving a setting updates it — Ctrl+Z undoes it in one step"),
+            (self.mode_fill_btn, "fill", "The result is previewed in green/red (inside the region, if any)\n"
+                                         "and written in when you leave the tool; Esc drops it"),
         ):
             b.setCheckable(True)
             b.setToolTip(tip)
@@ -425,7 +425,7 @@ class PropertiesPanel(QWidget):
         if busy:
             self.preview_label.setText("Computing…")
             return
-        verb = "Changed" if self.mode == "fill" else "Available"
+        verb = "Will apply" if self.mode == "fill" else "Available"
         self.preview_label.setText(f"{verb}: +{added:,} px / −{removed:,} px")
 
     def set_region(self, region: Optional[np.ndarray]) -> None:

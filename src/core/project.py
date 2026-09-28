@@ -444,16 +444,6 @@ class Project:
             frames[key] = frame
         self._replace(dataclasses.replace(obj, frames=frames))
 
-    def amend_frame(self, obj_id: int, key: str, frame: FrameState) -> None:
-        """Replace a frame *within the last undo step* (no new step): for a live-updated result."""
-        obj = self.get(obj_id)
-        if obj is None:
-            return
-        frames = dict(obj.frames)
-        frames[key] = frame
-        self._replace(dataclasses.replace(obj, frames=frames))
-        self.revision += 1
-
     def set_frames(self, updates: Dict[int, Dict[str, FrameState]]) -> None:
         """Apply many frame updates across Objects as one undo step (propagation)."""
         if not updates:
