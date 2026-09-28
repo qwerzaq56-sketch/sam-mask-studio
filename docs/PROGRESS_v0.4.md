@@ -34,8 +34,13 @@
   - 파일 이름 충돌(`{stem}.png`에서 `a.jpg`와 `a.png` 같은 경우). 이름 방식을 바꾸면 다시 검사.
 - 문제 이미지 목록: 더블클릭하면 창을 닫고 그 이미지로 이동. 문제가 없으면 목록은 숨김.
 
+### 4단계 · Properties 섹션 접기 (`v0.4-p4`)
+- Edit Layer 탭의 도구 **Settings**와 **Layer** 섹션: 제목이 ▾ / ▸ 버튼이 되어 접고 펼칩니다.
+- 접힌 상태는 설정(`tool_settings_open`, `layer_section_open`)에 저장되어 다음 실행에도 유지.
+- 버튼 배치(Brush / Auto tools)는 그대로. 공용 위젯: `src/app/ui_util.py` `CollapsibleBox`.
+
 ## 진행 예정
-- 4단계 · Properties 접기: Edit Layer 탭의 Settings / Layer 섹션 접기(상태 기억)
+- 없음 (v0.4 리뷰 반영 1~4단계 완료). 릴리스(`main` 병합, `v0.4.0` 태그)는 확인 후 진행.
 
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과

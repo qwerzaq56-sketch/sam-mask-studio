@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from typing import Sequence
 
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
     QStyle,
     QToolButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -29,6 +32,53 @@ def allow_narrow(root: QWidget, min_chars: int = 10) -> None:
     for button in root.findChildren(QPushButton):
         button.setMinimumWidth(0)
         button.setSizePolicy(QSizePolicy.Policy.Ignored, button.sizePolicy().verticalPolicy())
+
+
+
+class CollapsibleBox(QGroupBox):
+    """A group box whose title is a ▾ / ▸ button that folds its contents away.
+
+    Put the contents in ``box.body`` (a plain widget; give it a layout).
+    ``title()`` / ``setTitle()`` work on the button, so it stands in for a QGroupBox.
+    """
+
+    toggled_open = pyqtSignal(bool)
+
+    def __init__(self, title: str = "", parent=None):
+        super().__init__(parent)
+        self.header = QToolButton()
+        self.header.setCheckable(True)
+        self.header.setChecked(True)
+        self.header.setAutoRaise(True)
+        self.header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.header.setArrowType(Qt.ArrowType.DownArrow)
+        self.header.setStyleSheet("QToolButton { border: none; font-weight: 600; }")
+        self.header.setToolTip("Fold / unfold this section")
+        self.header.toggled.connect(self._toggled)
+        self.body = QWidget()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 2, 6, 6)
+        lay.setSpacing(2)
+        lay.addWidget(self.header, 0, Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(self.body)
+        self.setTitle(title)
+
+    def title(self) -> str:
+        return self.header.text()
+
+    def setTitle(self, title: str) -> None:
+        self.header.setText(title)
+
+    def is_open(self) -> bool:
+        return self.header.isChecked()
+
+    def set_open(self, on: bool) -> None:
+        self.header.setChecked(bool(on))
+
+    def _toggled(self, on: bool) -> None:
+        self.header.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
+        self.body.setVisible(on)
+        self.toggled_open.emit(on)
 
 
 class DockTitleBar(QWidget):

@@ -323,6 +323,10 @@ class MainWindow(QMainWindow):
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
         self.marks_btn.setChecked(self.settings.marks_one_object)
+        pp = self.properties_panel  # the foldable Edit Layer sections remember their state
+        for box, name in ((pp.settings_box, "tool_settings_open"), (pp.layer_box, "layer_section_open")):
+            box.set_open(getattr(self.settings, name))
+            box.toggled_open.connect(lambda on, n=name: self._remember(n, on))
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
@@ -936,6 +940,10 @@ class MainWindow(QMainWindow):
         self.images_panel.set_names_visible(on)
         self.resizeDocks([self._list_dock], [210 if on else 80], Qt.Orientation.Horizontal)
         self.settings.frame_list_names = bool(on)
+        self.settings.save(self.settings_path)
+
+    def _remember(self, name: str, value) -> None:
+        setattr(self.settings, name, value)
         self.settings.save(self.settings_path)
 
     def marks_object(self) -> Optional[int]:

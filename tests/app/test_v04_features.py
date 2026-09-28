@@ -119,3 +119,20 @@ def test_export_dialog_shows_the_check_and_opens_a_problem(qapp, win):
     assert "<b>5</b> file(s)" in dlg.summary.text()
     dlg._open_problem(dlg.problems.item(1))
     assert dlg.goto == s.keys[2]
+
+
+# --- p4: foldable Settings / Layer sections -------------------------------------
+
+
+def test_edit_layer_sections_fold_and_remember(qapp, win):
+    from src.app.settings import Settings
+
+    pp = win.properties_panel
+    assert pp.layer_box.is_open() and pp.settings_box.is_open()
+    pp.layer_box.header.click()
+    assert not pp.layer_box.is_open() and pp.layer_box.body.isHidden()
+    assert Settings.load(win.settings_path).layer_section_open is False
+    pp.layer_box.header.click()
+    assert pp.layer_box.is_open() and not pp.layer_box.body.isHidden()
+    pp.settings_box.setTitle("Grow settings")
+    assert pp.settings_box.title() == "Grow settings"
