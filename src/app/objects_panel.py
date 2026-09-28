@@ -15,6 +15,7 @@ from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -29,6 +30,7 @@ from PyQt6.QtWidgets import (
 from src.core.project import MaskObject
 
 ID_ROLE = Qt.ItemDataRole.UserRole
+COLUMNS = 5  # name · linked (🔗 n) · Edit · × · ···
 VARIANT_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
@@ -71,10 +73,11 @@ class ObjectsPanel(QWidget):
         self._editing: Optional[int] = None
         self._updating = False
         self._shape: tuple = ()
+        self._key: Optional[str] = None
         self._order: List[int] = []  # selected ids, oldest first
 
         self.tree = QTreeWidget()
-        self.tree.setColumnCount(4)
+        self.tree.setColumnCount(COLUMNS)
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(False)
         self.tree.setIndentation(14)
@@ -84,9 +87,8 @@ class ObjectsPanel(QWidget):
         )
         header = self.tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        for col in range(1, COLUMNS):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(False)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.itemSelectionChanged.connect(self._on_selection)
@@ -107,8 +109,19 @@ class ObjectsPanel(QWidget):
         ops = QHBoxLayout()
         for b in (self.merge_btn, self.dup_btn, self.del_btn):
             ops.addWidget(b)
+        # Only the Objects with a mask on this image by default; Show all lists every Object.
+        self.show_all = QCheckBox("Show all Objects")
+        self.show_all.setToolTip("Also list Objects that have no mask on this image")
+        self.show_all.toggled.connect(lambda _on: self.set_objects(self._objects, self._key, self._editing))
+        self.shown_label = QLabel("")
+        self.shown_label.setStyleSheet("color: gray;")
+        head = QHBoxLayout()
+        head.addWidget(self.show_all)
+        head.addStretch(1)
+        head.addWidget(self.shown_label)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
+        lay.addLayout(head)
         lay.addWidget(self.tree, 1)
         lay.addWidget(self.new_btn)
         lay.addWidget(QLabel("Selected Objects"))
@@ -124,22 +137,30 @@ class ObjectsPanel(QWidget):
         rows) stays the same. Rebuilding would delete the row buttons, and a
         click whose press selects a row would then lose its release.
         """
+        self._objects = list(objects)
+        self._key = key
+        self._editing = editing
+        shown = [o for o in objects if self._listed(o, key, editing)]
+        hidden = len(objects) - len(shown)
+        self.shown_label.setText(f"{len(shown)} of {len(objects)} shown" if hidden else "")
         shape = (
-            tuple((o.id, self._variant_count(o, key)) for o in objects),
+            tuple((o.id, self._variant_count(o, key)) for o in shown),
             editing,
         )
-        self._objects = list(objects)
-        self._editing = editing
         self._updating = True
         self.tree.blockSignals(True)
         if shape != self._shape:
-            self._rebuild(objects, key, editing)
+            self._rebuild(shown, key, editing)
             self._shape = shape
-        for i, o in enumerate(objects):
+        for i, o in enumerate(shown):
             self._fill(self.tree.topLevelItem(i), o, key, editing)
         self.tree.blockSignals(False)
         self._updating = False
         self._update_buttons()
+
+    def _listed(self, o: MaskObject, key: Optional[str], editing: Optional[int]) -> bool:
+        """Listed: it has a mask on this image, it is being edited, or Show all is on."""
+        return self.show_all.isChecked() or o.id == editing or (key is not None and o.mask(key) is not None)
 
     @staticmethod
     def _variant_count(o: MaskObject, key: Optional[str]) -> int:
@@ -155,9 +176,9 @@ class ObjectsPanel(QWidget):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEditable)
             self.tree.addTopLevelItem(item)
             item.setSelected(o.id in keep)
-            self.tree.setItemWidget(item, 1, self._edit_button(o.id, o.id == editing))
-            self.tree.setItemWidget(item, 2, self._delete_button(o.id))
-            self.tree.setItemWidget(item, 3, self._more_button(o.id))
+            self.tree.setItemWidget(item, 2, self._edit_button(o.id, o.id == editing))
+            self.tree.setItemWidget(item, 3, self._delete_button(o.id))
+            self.tree.setItemWidget(item, 4, self._more_button(o.id))
             for i in range(self._variant_count(o, key)):
                 child = QTreeWidgetItem(item)
                 child.setData(0, ID_ROLE, o.id)
@@ -177,6 +198,11 @@ class ObjectsPanel(QWidget):
         has = key is not None and o.mask(key) is not None
         n = sum(1 for fs in o.frames.values() if fs.mask is not None)
         item.setToolTip(0, f"{o.source.value} · masks on {n} image(s)" + ("" if has else " · none on this image"))
+        # linked: the same Object on several images (propagated, batch, ...)
+        link = f"🔗 {n}" if n > 1 else ""
+        if item.text(1) != link:
+            item.setText(1, link)
+            item.setToolTip(1, f"Linked: masks on {n} images" if link else "")
         item.setForeground(0, QBrush() if has else QBrush(QColor(140, 140, 140)))
         f = QFont()
         f.setBold(o.id == editing)
