@@ -36,9 +36,9 @@ from src.core.project import FrameState, MaskObject
 THUMB = 56
 BRUSH_TOOLS = (
     ("paint", "Paint", "Drag = add, Ctrl+drag = subtract (B)"),
-    ("fill_holes", "Fill Holes", "Holes are filled where you paint (up to the hole area below)"),
-    ("remove_specks", "Remove Specks", "Specks are removed where you paint (up to the area below)"),
-    ("object_fill", "Object Fill", "The mask grows to the object's edges where you paint"),
+    ("fill_holes", "Fill Holes", "Drag over an area; on release its holes are filled (up to the area below)"),
+    ("remove_specks", "Remove Specks", "Drag over an area; on release its specks are removed"),
+    ("object_fill", "Object Fill", "Drag over an area; on release the mask grows to the object's edges there"),
 )
 POINT_ROLE = Qt.ItemDataRole.UserRole
 
@@ -127,7 +127,7 @@ class PropertiesPanel(QWidget):
         pl.addLayout(row)
 
         # --- edit layer (hand edits on top of the prompt-based mask)
-        # Brush tools: each paints its effect live, only where the stroke passes.
+        # Brush tools: Paint edits directly; the others mark an area and run on release.
         self.tool_btns = {}
         tools = QGridLayout()
         for n, (name, text, tip) in enumerate(BRUSH_TOOLS):

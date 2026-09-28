@@ -365,6 +365,14 @@ class Session:
             return grow_to_edges(self.image, m, max_grow, sensitivity) if self.image is not None else None
         raise ValueError(f"Unknown tool: {tool}")
 
+    def tool_stroke(self, tool: str, area: np.ndarray, **settings) -> bool:
+        """A tool brush stroke: apply *tool* only inside the brushed *area*."""
+        target = self.tool_result(tool, **settings)
+        fs = self.editing_frame()
+        if target is None or fs is None or not area.any():
+            return False
+        return self._set_target(within(area, fs.mask, target))
+
     def _tool(self, tool: str, **settings) -> bool:
         """Apply a tool to the edited frame (inside the region, if any) as part of the edit layer."""
         target = self.tool_result(tool, **settings)
