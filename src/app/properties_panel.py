@@ -154,6 +154,7 @@ class PropertiesPanel(QWidget):
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
     auto_apply_requested = pyqtSignal()  # write the auto tool's result in and leave the tool
+    auto_recompute_requested = pyqtSignal()  # write it in, stay, compute the next one
     apply_layer_requested = pyqtSignal()
     delete_layer_requested = pyqtSignal()
 
@@ -239,10 +240,8 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn = QPushButton("Fill")
         self.mode_paint_btn = QPushButton("Paint")
         for b, value, tip in (
-            (self.mode_fill_btn, "fill", "Take the whole result (inside the region, if any).\n"
-                                         "Click again (or Enter) to apply it and compute the next one"),
-            (self.mode_paint_btn, "paint", "Pick parts of the result with the brush; Alt+drag unpicks.\n"
-                                           "Click again (or Enter) to apply the picks"),
+            (self.mode_fill_btn, "fill", "Take the whole result (inside the region, if any)"),
+            (self.mode_paint_btn, "paint", "Pick parts of the result with the brush; Alt+drag unpicks"),
         ):
             b.setCheckable(True)
             b.setToolTip(tip)
@@ -264,8 +263,8 @@ class PropertiesPanel(QWidget):
         self.apply_auto_btn.clicked.connect(self.auto_apply_requested)
         self.apply_auto_btn.setEnabled(False)
         self.recompute_btn = QPushButton("Apply && Recompute")
-        self.recompute_btn.setToolTip("Write the result in and compute the next one (= the active mode again, or Enter)")
-        self.recompute_btn.clicked.connect(lambda: self._set_mode(self.mode, emit=True))
+        self.recompute_btn.setToolTip("Write the result in and compute the next one (Enter)")
+        self.recompute_btn.clicked.connect(self.auto_recompute_requested)
         self.recompute_btn.setEnabled(False)
         abox = QGroupBox("Auto tools")
         av = QVBoxLayout(abox)
@@ -491,11 +490,11 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn.setChecked(mode == "fill")
         self.mode_paint_btn.setChecked(mode == "paint")
         self.mode_hint.setText(
-            "Fill: the result is shown in magenta (added) / purple (removed). Fill again or Enter applies it "
+            "Fill: the result is shown in magenta (added) / purple (removed). Apply & Recompute or Enter applies it "
             "(and again for more); A switches to Paint with everything picked. Leaving the tool drops it."
             if mode == "fill"
             else "Paint: drag over the gray to pick it (magenta / purple), Alt+drag to unpick, A picks all / none. "
-            "Paint again or Enter applies the picks; leaving the tool drops them."
+            "Apply & Recompute or Enter applies the picks; leaving the tool drops them."
         )
         if emit:
             self.auto_mode_changed.emit(mode)

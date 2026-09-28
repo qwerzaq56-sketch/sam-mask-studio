@@ -208,7 +208,7 @@ def test_region_box_limits_the_fill(qapp, win):
     assert s.region is None and "whole mask" in p.scope_label.text()
     added, _ = s.auto_changes()
     assert added[25, 25] and added[35, 35]
-    p.mode_fill_btn.click()  # Fill again applies it
+    p.recompute_btn.click()  # Apply & Recompute
     oid = s.project.objects[0].id
     assert s.project.get(oid).mask(s.key)[25, 25]
     win.finish_editing()
@@ -239,7 +239,7 @@ def test_fill_preview_is_applied_by_fill_again(qapp, win):
     p.tool_btns["fill_holes"].click()
     p.tool_btns["fill_holes"].click()  # clicking the tool again changes nothing
     assert not s.editing_frame().mask[25, 25] and s.auto_tool == "fill_holes"
-    p.mode_fill_btn.click()  # Fill again applies it and stays in the tool
+    p.recompute_btn.click()  # Apply & Recompute
     m = s.editing_frame().mask
     assert m[25, 25] and m[35, 35] and s.auto_tool == "fill_holes" and p.tool_btns["fill_holes"].isChecked()
     win.undo()  # one undo step
@@ -262,7 +262,7 @@ def test_each_apply_adds_one_more_and_leaving_drops(qapp, win):
     p.amount.setValue(2)
     area0 = s.editing_frame().mask.sum()
     p.tool_btns["grow"].click()
-    p.mode_fill_btn.click()  # apply once
+    p.recompute_btn.click()  # Apply & Recompute
     win.activateWindow()
     enter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
     assert win.eventFilter(win.canvas, enter)  # Enter = apply once more
@@ -360,7 +360,7 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     stroke(25, 25)
     stroke(25, 25, Qt.KeyboardModifier.AltModifier)  # Alt+drag unpicks: back to gray
     assert styles()["guide"][25, 25] and not styles()["auto_add"][25, 25]
-    p.mode_paint_btn.click()  # Paint again writes the picks in
+    p.recompute_btn.click()  # Apply & Recompute
     m = s.editing_frame().mask
     assert m[35, 35] and not m[25, 25]
     win.act_brush.trigger()  # B = Paint
@@ -662,7 +662,7 @@ def test_paint_mode_picks_are_undoable(qapp, win):
     win.undo()
     assert taken()[35, 35] and not taken()[25, 25]
 
-    p.mode_paint_btn.click()  # apply: now Ctrl+Z undoes the application
+    p.recompute_btn.click()  # Apply & Recompute
     assert s.editing_frame().mask[35, 35]
     win.undo()
     assert not s.editing_frame().mask[35, 35] and not s.auto_taken().any()
@@ -745,3 +745,16 @@ def test_apply_row_restore_tints_and_d_for_paint(qapp, win):
     assert tints and not tints[0].mask[50, 70]  # restored under the brush: no longer green
     QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
     win.act_changes.trigger()
+
+
+def test_mode_buttons_only_switch(qapp, win):
+    s = holes_object(win)
+    p = win.properties_panel
+    p.fill_area.setValue(5)
+    p.tool_btns["fill_holes"].click()
+    p.mode_fill_btn.click()  # the active mode again: nothing is applied
+    assert not s.editing_frame().mask[25, 25] and s.auto_mode == "fill" and p.mode_fill_btn.isChecked()
+    p.mode_paint_btn.click()
+    p.mode_paint_btn.click()
+    assert not s.editing_frame().mask[25, 25] and s.auto_mode == "paint" and p.mode_paint_btn.isChecked()
+    p.mode_fill_btn.click()

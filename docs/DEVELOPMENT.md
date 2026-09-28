@@ -262,6 +262,7 @@ Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
 **P2.14** (`v0.3-p2.14`): Apply & Recompute / Apply & Close row under the mode buttons; Restore
 strokes keep the Edit Changes tints (trimmed live); the Paint-mode guide is dark gray, alpha 210;
 Paint brush shortcut B -> D.
+Then: the mode buttons only switch modes; Apply & Recompute (or Enter) is the only apply-and-stay.
 
 ### Remaining work
 

@@ -211,7 +211,7 @@ def test_refine_button(win, qapp):
     win.properties_panel.fill_area.setValue(10)
     win.properties_panel.mode_fill_btn.click()
     win.properties_panel.tool_btns["fill_holes"].click()  # Fill mode: a preview...
-    win.properties_panel.mode_fill_btn.click()  # ...applied by Fill again
+    win.properties_panel.recompute_btn.click()  # ...applied by Apply & Recompute
     assert s.editing_frame().mask[30, 30]
 
 

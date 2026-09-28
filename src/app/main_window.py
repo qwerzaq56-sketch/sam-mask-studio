@@ -287,6 +287,7 @@ class MainWindow(QMainWindow):
         p.brush_tool_selected.connect(self.set_brush_tool)
         p.auto_mode_changed.connect(self.set_auto_mode)
         p.auto_apply_requested.connect(self.apply_and_leave_tool)
+        p.auto_recompute_requested.connect(self.reapply_tool)
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
         p.clear_region_requested.connect(lambda: self.on_region(None))
@@ -594,7 +595,7 @@ class MainWindow(QMainWindow):
             and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
             and self.isActiveWindow()
         ):
-            self.reapply_tool()  # Enter = the active mode button again
+            self.reapply_tool()  # Enter = Apply & Recompute
             return True
         if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
@@ -763,11 +764,9 @@ class MainWindow(QMainWindow):
         self._auto_refresh()
 
     def set_auto_mode(self, mode: str) -> None:
-        """Fill <-> Paint with the tool on (same result; Paint shows the unpicked parts in gray).
-        Clicking the mode already in use applies the result and computes the next one."""
-        if mode == self.session.auto_mode and self.session.auto_tool is not None:
-            self.reapply_tool()
-            return
+        """Fill <-> Paint with the tool on (same result; Paint shows the unpicked parts in gray)."""
+        if mode == self.session.auto_mode:
+            return  # the mode already in use: nothing to switch
         self.session.set_auto_mode(mode)
         if self.session.auto_tool:
             self.canvas.set_brush_mode(mode == "paint")
