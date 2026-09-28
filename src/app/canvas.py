@@ -95,6 +95,8 @@ class Canvas(QWidget):
     brush_finished = pyqtSignal(object)  # bool mask
     zoom_changed = pyqtSignal(float)
     brush_size_changed = pyqtSignal(int)
+    look_dragged = pyqtSignal(float, float)  # perspective view: rotate by screen px (dx, dy)
+    fov_wheel = pyqtSignal(int)  # perspective view: wheel delta to change the field of view
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -123,6 +125,9 @@ class Canvas(QWidget):
         self.brush_size = 30  # screen px diameter
         self.brush_mode = False  # Brush editing turned on (only acts in EDIT)
         self._brush = BrushEngine()
+        # Perspective view of a 360° image: the window renders the view; drags rotate and the
+        # wheel changes the field of view instead of panning/zooming the picture.
+        self.pano = False
 
         self.setMinimumSize(320, 240)
         self.setMouseTracking(True)
@@ -179,6 +184,12 @@ class Canvas(QWidget):
         if mode != Mode.EDIT and self._brush.is_drawing:
             self._brush.cancel()
         self._update_cursor()
+        self.update()
+
+    def set_pano(self, on: bool) -> None:
+        self.pano = on
+        self.zoom = 1.0
+        self._pan = QPointF(0, 0)
         self.update()
 
     def set_brush_mode(self, on: bool) -> None:
@@ -395,7 +406,12 @@ class Canvas(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.position()
         self._mouse = pos
-        if self._pan_from is not None:
+        if self._pan_from is not None and self.pano:
+            start, _ = self._pan_from
+            d = pos - start
+            self._pan_from = (pos, QPointF())
+            self.look_dragged.emit(d.x(), d.y())
+        elif self._pan_from is not None:
             start, pan = self._pan_from
             self._pan = pan + (pos - start)
         elif self._brush.is_drawing:
@@ -456,6 +472,9 @@ class Canvas(QWidget):
         if resize:
             step = max(2, int(self.brush_size * 0.1))
             self.set_brush_size(self.brush_size + (step if delta > 0 else -step))
+            return
+        if self.pano:
+            self.fov_wheel.emit(delta)
             return
         self.set_zoom(self.zoom * (1.15 if delta > 0 else 1 / 1.15), event.position())
 
