@@ -127,6 +127,62 @@ class Session:
             looks = is_erp_shape(h, w)
         return {"count": len(paths), "saved": saved["projection"] if saved else None, "looks_erp": looks}
 
+    def convert_to_erp(self, erp_max_side: int = 4096) -> int:
+        """Switch the open project to ERP mode, rescaling its masks and prompts. Returns frames converted.
+
+        Existing masks were made at the normal working size; they are resized
+        (nearest) to the ERP working size so nothing is lost. Undo history is cleared.
+        """
+        import cv2
+
+        from src.core.project import EditLayer, Point, freeze
+        from src.engine.imageio import working_size
+
+        assert self.store is not None and self.image_dir is not None
+        old_side = self.store.max_side
+        converted = 0
+
+        def scale_mask(m, hw):
+            if m is None or m.shape == hw:
+                return m
+            return freeze(cv2.resize(m.astype(np.uint8), (hw[1], hw[0]), interpolation=cv2.INTER_NEAREST) > 0)
+
+        new_objects = []
+        for o in self.project.objects:
+            frames = {}
+            for key, fs in o.frames.items():
+                h0, w0 = self.original_size(key)
+                oh, ow = working_size(h0, w0, old_side)
+                nh, nw = working_size(h0, w0, erp_max_side)
+                sx, sy = nw / ow, nh / oh
+                hw = (nh, nw)
+                variants = tuple(dataclasses.replace(v, mask=scale_mask(v.mask, hw), logits=None) for v in fs.variants)
+                edit = (
+                    EditLayer(scale_mask(fs.edit.add, hw), scale_mask(fs.edit.sub, hw)) if fs.edit is not None else None
+                )
+                frames[key] = dataclasses.replace(
+                    fs,
+                    points=tuple(Point(p.x * sx, p.y * sy, p.positive) for p in fs.points),
+                    box=(fs.box[0] * sx, fs.box[1] * sy, fs.box[2] * sx, fs.box[3] * sy) if fs.box else None,
+                    base_mask=scale_mask(fs.base_mask, hw),
+                    variants=variants,
+                    edit=edit,
+                )
+                converted += 1
+            new_objects.append(dataclasses.replace(o, frames=frames))
+        self.project.objects = new_objects
+        self.project._undo.clear()
+        self.project._redo.clear()
+        self.project.revision += 1
+        self.erp = True
+        self.max_side = erp_max_side
+        self.store.max_side = erp_max_side
+        self.store.projection = "erp"
+        self.store.save(self.project, force=True)
+        index, self.index = self.index, -1
+        self.go_to(max(0, index))
+        return converted
+
     def open_folder(self, image_dir: Path, projection: Optional[str] = None, erp_max_side: int = 4096) -> int:
         """Open *image_dir* (loading its sidecar project, if any). Returns the image count.
 
