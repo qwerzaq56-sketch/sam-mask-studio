@@ -1031,4 +1031,11 @@ def test_frame_list_follows_the_strip_and_thumbnails_are_cached(qapp, win, tmp_p
     cache = win.session.store.root / "thumbs"
     wait_until(qapp, lambda: len(list(cache.glob("*.jpg"))) == 5, timeout=5)  # the whole folder, while idle
     wait_until(qapp, lambda: not ip._load_timer.isActive(), timeout=5)
-    assert any(a.text().replace("&", "") == "Frame List" for a in win.menuBar().actions()[0].menu().actions())
+    toggles = win.menuBar().actions()[0].menu().actions()
+    assert any(a.text().replace("&", "") == "Frame List" for a in toggles)
+    assert all(a.isEnabled() for a in toggles)  # each dock can be hidden / shown
+    frame_list = next(a for a in toggles if a.text().replace("&", "") == "Frame List")
+    frame_list.trigger()
+    assert not fl.isVisibleTo(win)
+    frame_list.trigger()
+    assert fl.isVisibleTo(win)

@@ -184,8 +184,11 @@ class MainWindow(QMainWindow):
         d = QDockWidget(title, self)
         d.setObjectName(title)
         d.setWidget(widget)
+        # closable too: Qt disables a dock's View-menu toggle when it cannot be closed
         d.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
         )
         self.addDockWidget(area, d)
         return d
