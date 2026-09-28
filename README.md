@@ -29,10 +29,10 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 ## 화면 구성
 
 ```text
-┌─ Open Save Undo Redo Export │ Preview Final Mask  Brush │ Outline ▢px │ Edit Changes │ Settings ─────┐
+┌─ Open Save Undo Redo Export │ Preview Final Mask  Brush │ Outline ▢px │ Show Changes │ Settings ─────┐
 ├───────────┬─────────────────────┬───────────────────────────────────────────┬──────────────────────┤
 │Frame List │ Objects             │                                           │ Properties           │
-│ 1 ★ ◎ a.jpg│ ☑ person #1  🔗 12  │                                           │  [Mask] [Edit Layer] │
+│ 1 ★ ◎ a.jpg│ ☑ person #1  🔗 12  │ Frame 1/12 · Object: ■ person #1 · Mode   │  [Mask] [Edit Layer] │
 │ 2 ✓   b.jpg│ ☑ car #1            │                Canvas                     │  Variants / Points   │
 │ 3 ✓📌 c.jpg│ [+ New Object]       │                                           │  Brush · Auto tools  │
 │ …         ├─────────────────────┤                                           │  Settings · Layer    │
@@ -44,6 +44,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 ```
 
 - **Frame List**(왼쪽 끝)와 **Frames** 썸네일 줄(아래)은 같은 목록입니다. 현재 이미지, 선택, ◎(전파 기준), 📌(고정)가 항상 똑같이 보입니다.
+- 캔버스 위 **작업 상태 바**: 지금 프레임 · 대상 Object(출처) · 모드(Points / Paint / Auto · 도구 (Fill/Paint) / Select on Image / 작업 중 진행)를 한 줄로 보여줍니다.
 - 모든 패널은 옮기거나 띄우거나 닫을 수 있고, **View** 메뉴에서 다시 켭니다. 단축키 전체는 **Help → Keyboard Shortcuts (F1)**.
 
 ## 사용법
@@ -63,7 +64,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 ### Object 편집 (포인트)
 
-- 목록의 **[Edit]** (`E`)로 Object 하나를 편집 상태로 둡니다. 편집 중에는 이미지를 넘길 수 없습니다(`Esc`로 종료).
+- 목록의 **[Points]** (`E`)로 Object 하나를 편집 상태로 둡니다. 편집 중에는 이미지를 넘길 수 없습니다(`Esc`로 종료).
 - 좌클릭 = Positive, 우클릭 = Negative, 드래그 = Box. 포인트는 **드래그로 이동**, **더블클릭으로 삭제**(또는 선택 후 `Delete`).
 - SAM3로 만든 Object도 포인트로 다듬을 수 있습니다(검출 Mask가 SAM2의 초기값).
 - Variant는 Properties의 **Mask** 탭이나 Objects 목록의 ●/○ 행에서 고릅니다.
@@ -75,7 +76,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 - **Auto tools**: Object Fill(물체 경계까지 넓히기) · Fill Holes · Remove Specks · Grow · Shrink.
   - **Fill** 모드: 결과 전체를 마젠타(추가)/보라(제거)로 미리 봄.
   - **Paint** 모드: 회색 후보를 칠해서 고름(`Alt` = 해제, `A` = 전체 선택/해제). Fill 모드에서 `A`를 누르면 전체 선택 상태로 Paint 모드에 들어감.
-  - **Apply & Recompute** (`Enter`) = 반영하고 다음 결과 계산 · **Apply & Close** = 반영하고 종료 ·
+  - **Apply & Continue** (`Enter`) = 반영하고 다음 결과 계산 · **Apply & Close** = 반영하고 종료 ·
     그 외(Esc, 다른 도구, 툴 버튼 다시 누르기)는 반영하지 않고 나감.
   - **Region Box**: 드래그로 범위를 정하면 그 안에서만 동작(`Alt`+드래그 = 빼기). 모든 조작은 Undo 가능.
 - **Apply Layer**: 손질을 확정해 기본 Mask로 만듦 · **Delete Layer**: 손질을 전부 버림.
@@ -106,7 +107,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 ### 표시
 
-- **Outline** (`O`) + 두께: 편집 중인 Mask의 흰 외곽선 · **Edit Changes** (`F`): 손질한 부분을 초록/빨강으로 표시.
+- **Outline** (`O`) + 두께: 편집 중인 Mask의 흰 외곽선 · **Show Changes** (`F`): 손질한 부분을 초록/빨강으로 표시.
 - **Final Mask**: `X` = 켜고 끄기, `Z`를 누르고 있는 동안 보기(편집은 그대로 가능, 브러쉬 원은 초록).
 
 ### 저장과 Export
@@ -121,12 +122,12 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 |---|---|
 | Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export |
 | Ctrl+Z / Ctrl+Y | Undo / Redo |
-| N / E / Esc | New Object / Edit 시작·종료 / 도구 → 편집 종료 |
+| N / E / Esc | New Object / Points 편집 시작·종료 / 도구 → 편집 종료 |
 | ← → / ↑ ↓ | 이미지 이동 / Object 이동 |
 | D | Paint 브러쉬 |
 | Enter / A | Auto tool 반영+재계산 / 전체 선택 |
 | X / Z(누르고 있기) | Final Mask 토글 / 잠깐 보기 |
-| O / F | Outline / Edit Changes |
+| O / F | Outline / Show Changes |
 | S | 현재 프레임으로 스크롤 |
 | 휠 / Ctrl+휠 / 가운데·Space 드래그 | 줌 / 브러쉬 크기 / 이동 |
 | F1 | 단축키 전체 목록 |

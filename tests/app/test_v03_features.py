@@ -209,7 +209,7 @@ def test_region_box_limits_the_fill(qapp, win):
     assert s.region is None and "whole mask" in p.scope_label.text()
     added, _ = s.auto_changes()
     assert added[25, 25] and added[35, 35]
-    p.recompute_btn.click()  # Apply & Recompute
+    p.recompute_btn.click()  # Apply & Continue
     oid = s.project.objects[0].id
     assert s.project.get(oid).mask(s.key)[25, 25]
     win.finish_editing()
@@ -242,7 +242,7 @@ def test_fill_preview_is_applied_by_fill_again(qapp, win):
     assert not s.editing_frame().mask[25, 25] and s.auto_tool is None
     assert not p.tool_btns["fill_holes"].isChecked() and s.editing is not None
     p.tool_btns["fill_holes"].click()
-    p.recompute_btn.click()  # Apply & Recompute
+    p.recompute_btn.click()  # Apply & Continue
     m = s.editing_frame().mask
     assert m[25, 25] and m[35, 35] and s.auto_tool == "fill_holes" and p.tool_btns["fill_holes"].isChecked()
     win.undo()  # one undo step
@@ -265,7 +265,7 @@ def test_each_apply_adds_one_more_and_leaving_drops(qapp, win):
     p.amount.setValue(2)
     area0 = s.editing_frame().mask.sum()
     p.tool_btns["grow"].click()
-    p.recompute_btn.click()  # Apply & Recompute
+    p.recompute_btn.click()  # Apply & Continue
     win.activateWindow()
     enter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
     assert win.eventFilter(win.canvas, enter)  # Enter = apply once more
@@ -363,7 +363,7 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     stroke(25, 25)
     stroke(25, 25, Qt.KeyboardModifier.AltModifier)  # Alt+drag unpicks: back to gray
     assert styles()["guide"][25, 25] and not styles()["auto_add"][25, 25]
-    p.recompute_btn.click()  # Apply & Recompute
+    p.recompute_btn.click()  # Apply & Continue
     m = s.editing_frame().mask
     assert m[35, 35] and not m[25, 25]
     win.act_brush.trigger()  # B = Paint
@@ -665,7 +665,7 @@ def test_paint_mode_picks_are_undoable(qapp, win):
     win.undo()
     assert taken()[35, 35] and not taken()[25, 25]
 
-    p.recompute_btn.click()  # Apply & Recompute
+    p.recompute_btn.click()  # Apply & Continue
     assert s.editing_frame().mask[35, 35]
     win.undo()
     assert not s.editing_frame().mask[35, 35] and not s.auto_taken().any()
@@ -730,7 +730,7 @@ def test_apply_row_restore_tints_and_d_for_paint(qapp, win):
     p.tool_btns["fill_holes"].click()
     guide_or_fill = [o for o in win.canvas._overlays if o.style in ("guide", "auto_add")]
     assert guide_or_fill
-    p.recompute_btn.click()  # Apply & Recompute: written in, the tool stays
+    p.recompute_btn.click()  # Apply & Continue: written in, the tool stays
     assert s.editing_frame().mask[25, 25] and s.auto_tool == "fill_holes"
     p.apply_auto_btn.click()  # Apply & Close
     assert s.auto_tool is None
