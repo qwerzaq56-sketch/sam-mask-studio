@@ -260,13 +260,14 @@ def test_each_click_applies_once_more_and_leaving_follows_the_mode(qapp, win):
         p.tool_btns["grow"].click()  # enter, then apply, apply
     area2 = s.editing_frame().mask.sum()
     assert area2 > area0 and s.auto_tool == "grow"
-    p.tool_btns["shrink"].click()  # Fill mode: another tool drops the pending Grow preview
-    assert s.editing_frame().mask.sum() == area2 and s.auto_tool == "shrink"
+    p.tool_btns["shrink"].click()  # another tool applies the pending Grow preview, then Shrink
+    area3 = s.editing_frame().mask.sum()
+    assert area3 > area2 and s.auto_tool == "shrink"
 
     p.mode_paint_btn.click()
     win.a_key()  # pick all of the Shrink result
     win.act_brush.trigger()  # Paint mode: switching tools applies the picks
-    assert s.editing_frame().mask.sum() < area2 and s.auto_tool is None
+    assert s.editing_frame().mask.sum() < area3 and s.auto_tool is None
     p.mode_fill_btn.click()
 
 

@@ -747,14 +747,11 @@ class MainWindow(QMainWindow):
             self.canvas.set_brush_mode(mode == "paint")
         self.refresh()
 
-    def close_tool(self, apply: Optional[bool] = None) -> None:
-        """End an auto tool. By default (another tool, Finish, another image) Paint-mode picks are
-        written in and a Fill preview is dropped; Apply passes True, Esc False."""
+    def close_tool(self, apply: bool = True) -> None:
+        """End an auto tool, writing its result in (Fill: all of it, Paint: the picks); Esc passes False."""
         if self.session.auto_tool is None:
             return
         tool = self.session.auto_tool
-        if apply is None:
-            apply = self.session.auto_mode == "paint"
         if self.session.close_auto(apply):
             self.log(f"{tool.replace('_', ' ').title()} applied")
         self._auto_gen += 1  # drop a computation still running

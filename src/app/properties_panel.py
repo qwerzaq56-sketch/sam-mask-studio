@@ -485,7 +485,7 @@ class PropertiesPanel(QWidget):
         self.mode_paint_btn.setChecked(mode == "paint")
         self.mode_hint.setText(
             "Fill: the result is shown in green / red; click the tool again to apply it (and again for more). "
-            "Another tool or Esc drops it; Apply applies and leaves."
+            "Apply or another tool applies it and leaves; Esc drops it."
             if mode == "fill"
             else "Paint: drag over the gray to pick it (green / red), Alt+drag to unpick, A picks all / none; "
             "the picks are applied when you click the tool again, Apply or switch tools (Esc drops them)."

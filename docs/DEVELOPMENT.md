@@ -241,8 +241,8 @@ Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
 **P2.11 — click again = apply once more** (`v0.3-p2.11`)
 - An auto tool's button is not a toggle: clicking the active one writes its result in
   (`Session.apply_auto`, one undo step), keeps the tool and recomputes, so N clicks apply N times.
-- Leaving by another tool / Finish / another image follows the mode: Fill drops the pending
-  preview (like Esc), Paint writes its picks in. Apply writes and leaves; Esc drops and leaves.
+- Leaving by another tool / Finish / another image / Apply writes the result in (Fill: all,
+  Paint: the picks); only Esc drops it.
 
 ### Remaining work
 
