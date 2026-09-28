@@ -4,7 +4,8 @@
 
 - 앱 안의 전체 목록(F1)은 `src/app/dialogs.py`의 `SHORTCUTS`가 원본입니다. 키를 바꾸면 그 표와 이 문서를 같이 고칩니다.
 - 새 단축키 아이디어는 맨 아래 "제안"에 적습니다. 결정되면 "현재 키맵"으로 옮깁니다.
-- 기준: v0.4.0 + `v0.4-p8` (2026-09-29).
+- 모든 키는 메뉴 바(File / Edit / View / Go / Help)에도 항목 오른쪽에 표시됩니다: [`menu-design.md`](menu-design.md).
+- 기준: v0.4.0 + `v0.4-p14` (2026-09-29).
 
 ## 한눈에 보기 (글자 키)
 
@@ -29,6 +30,7 @@
 | 키 | 동작 | 언제 |
 |---|---|---|
 | Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export | 항상 |
+| Ctrl+Q | 종료 | 항상 |
 | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | Undo / Redo | 항상 |
 | N | New Object (포인트로) | 항상 |
 | E | 선택한 Object 포인트 편집 시작 / 끝내기 | 항상 |
@@ -95,3 +97,4 @@
 - `v0.4-p8`: `,` / `.` 키프레임 이동, `F` 기준(◎)으로 이동 추가, Show Changes `F` → `R`, Final Mask 미리보기 → Mask Preview + `V` 대상 전환.
 - `v0.4-p9`: `Enter`(오토 툴 없을 때) = 현재 프레임을 기준(◎)으로 지정 / 해제.
 - `v0.4-p13`: 마우스를 올린 목록 기준 `W A S D` / 화살표. Frame List · Frames 줄 위 = 프레임, Objects 목록 위 = Object. 목록 위에서 `S` = 다음(스크롤은 ⌖ 버튼이나 목록 밖에서 `S`). Shift / Ctrl+화살표는 목록의 여러 칸 선택 그대로.
+- `v0.4-p14`: 모든 단축키를 메뉴 항목(QAction)으로 옮김. `Ctrl+Q` 종료 추가.

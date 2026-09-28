@@ -422,10 +422,9 @@ def test_open_frame_row_and_tile_are_filled(qapp, win):
     settle(qapp)
     fl = ip.frame_list
     img = fl.viewport().grab().toImage()
-    r = fl.visualRect(fl.model().index(2, 0))
-    assert img.pixelColor(r.right() - 3, r.center().y()) == CURRENT_FILL
-    other = fl.visualRect(fl.model().index(1, 0))
-    assert img.pixelColor(other.right() - 3, other.center().y()) != CURRENT_FILL
+    x = img.width() - 4  # the row's right end (the list may still be narrowing after the fold)
+    assert img.pixelColor(x, fl.visualRect(fl.model().index(2, 0)).center().y()) == CURRENT_FILL
+    assert img.pixelColor(x, fl.visualRect(fl.model().index(1, 0)).center().y()) != CURRENT_FILL
     strip = ip.list.viewport().grab().toImage()
     t = ip.list.visualItemRect(ip.list.item(2))
     assert strip.pixelColor(t.left() + 2, t.top() + 2) == CURRENT_FILL
@@ -492,3 +491,40 @@ def test_hover_keys_through_the_real_key_path(qapp, win):
     assert s.index == 2
     QTest.keyClick(win.canvas, Qt.Key.Key_W)  # ...and W does nothing
     assert s.index == 2
+
+
+# --- p14: menus hold every command and its key ------------------------------------
+
+
+def test_menus_hold_every_command(qapp, win):
+    from PyQt6.QtWidgets import QToolBar
+
+    bar = win.menuBar()
+    names = [a.text().replace("&", "") for a in bar.actions()]
+    assert names == ["File", "Edit", "View", "Go", "Help"]
+
+    def walk(menu):
+        for a in menu.actions():
+            if a.menu() is not None:
+                yield from walk(a.menu())
+            else:
+                yield a
+
+    entries = [a for top in bar.actions() for a in walk(top.menu())]
+    for act in (win.act_open, win.act_save, win.act_export, win.act_settings, win.act_undo, win.act_redo,
+                win.act_new, win.act_edit, win.act_delete, win.act_escape, win.act_brush, win.act_pick_all,
+                win.act_final, win.act_preview_mode, win.act_outline, win.act_changes, win.act_prev_frame,
+                win.act_next_frame, win.act_prev_object, win.act_next_object, win.act_prev_problem,
+                win.act_next_problem, win.act_prev_key, win.act_next_key, win.act_go_reference, win.act_focus,
+                win.act_shortcuts, win.act_duplicate, win.act_duplicate_all, win.act_copy_into, win.act_merge):
+        assert act in entries, act.text()
+    hints = " ".join(a.text() for a in entries)
+    assert "\tEnter" in hints and "\tZ (hold)" in hints and "W A S D" in hints
+    tb = win.findChild(QToolBar, "main_toolbar").actions()
+    assert win.act_open not in tb and win.act_undo not in tb and win.act_settings not in tb
+    assert win.act_final in tb and win.act_brush in tb and win.act_changes in tb
+    # every key in the F1 list is a menu entry's key (or a note in a menu)
+    shown = {a.shortcut().toString() for a in entries} | {a.text().split("\t")[1] for a in entries if "\t" in a.text()}
+    for key in ("Ctrl+O", "Ctrl+S", "Ctrl+E", "Ctrl+Z", "N", "E", "Del", "Esc", "D", "A", "X", "V", "O", "R",
+                "Left", "Right", "Up", "Down", "[", "]", ",", ".", "F", "S", "F1", "Enter"):
+        assert key in shown, key
