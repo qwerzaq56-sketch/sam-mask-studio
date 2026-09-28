@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PATH = ROOT / "config.local.json"
 
 
+PATH_FIELDS = ("sam2_checkpoint", "sam3_checkpoint")
+
+
 @dataclass
 class Settings:
     sam2_checkpoint: str = str(ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt")
@@ -36,12 +39,24 @@ class Settings:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 known = {f.name for f in fields(Settings)}
                 s = Settings(**{k: v for k, v in data.items() if k in known})
+                for name in PATH_FIELDS:  # stored relative to the app folder when inside it
+                    value = getattr(s, name)
+                    if value and not Path(value).is_absolute():
+                        setattr(s, name, str(ROOT / value))
             except (ValueError, TypeError, OSError) as e:
                 logger.warning("settings_unreadable", path=str(path), error=str(e))
         return s
 
     def save(self, path: Path = DEFAULT_PATH) -> None:
+        data = asdict(self)
+        for name in PATH_FIELDS:  # relative inside the app folder, so the folder can be moved (portable)
+            value = data[name]
+            if value:
+                try:
+                    data[name] = Path(value).resolve().relative_to(ROOT.resolve()).as_posix()
+                except ValueError:
+                    pass  # elsewhere: keep it absolute
         try:
-            path.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False), encoding="utf-8")
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         except OSError as e:
             logger.warning("settings_not_saved", path=str(path), error=str(e))
