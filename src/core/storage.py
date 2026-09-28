@@ -18,7 +18,7 @@ import json
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -61,6 +61,34 @@ def _atomic_write_text(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+@dataclass
+class SaveJob:
+    """The file work of one save, prepared on the UI thread and safe to run on another.
+
+    Masks are immutable arrays, so the job can hold references to them while the
+    user keeps editing.
+    """
+
+    writes: List[Tuple[Path, np.ndarray]] = field(default_factory=list)
+    deletes: List[Path] = field(default_factory=list)
+    dirs_to_remove: List[Path] = field(default_factory=list)
+    json_path: Optional[Path] = None
+    json_text: str = ""
+    revision: int = -1
+    written_keys: List[Tuple[int, str]] = field(default_factory=list)
+
+    def run(self) -> None:
+        for path, m in self.writes:
+            _write_png(path, m)
+        for p in self.deletes:
+            if p.exists():
+                p.unlink()
+        for d in self.dirs_to_remove:
+            shutil.rmtree(d, ignore_errors=True)
+        if self.json_path is not None:
+            _atomic_write_text(self.json_path, self.json_text)
+
+
 class ProjectStore:
     """Saves a Project incrementally: only masks whose array changed are rewritten."""
 
@@ -90,8 +118,31 @@ class ProjectStore:
 
     def save(self, project: Project, force: bool = False) -> bool:
         """Write changes since the last save. Returns True if anything was written."""
-        if not force and project.revision == self._saved_revision:
+        job = self.prepare(project, force)
+        if job is None:
             return False
+        try:
+            job.run()
+        except Exception:
+            self.failed(job)
+            raise
+        return True
+
+    def failed(self, job: SaveJob) -> None:
+        """A prepared job did not finish: make the next save write its masks again."""
+        for k in job.written_keys:
+            self._written.pop(k, None)
+        self._saved_revision = -1
+
+    def prepare(self, project: Project, force: bool = False) -> Optional[SaveJob]:
+        """Collect what a save must write (None when nothing changed); ``run()`` writes it.
+
+        The store records the job as saved right away, so preparing the next one
+        while this runs only picks up later changes.
+        """
+        if not force and project.revision == self._saved_revision:
+            return None
+        job = SaveJob(revision=project.revision)
         live: Dict[Tuple[int, str], np.ndarray] = {}
         objects_json = []
         for o in project.objects:
@@ -127,19 +178,16 @@ class ProjectStore:
 
         for (oid, key), m in live.items():
             if force or self._written.get((oid, key)) is not m:
-                _write_png(self.mask_path(oid, key), m)
+                job.writes.append((self.mask_path(oid, key), m))
+                job.written_keys.append((oid, key))
                 self._written[(oid, key)] = m
         for gone in [k for k in self._written if k not in live]:
-            p = self.mask_path(*gone)
-            if p.exists():
-                p.unlink()
+            job.deletes.append(self.mask_path(*gone))
             del self._written[gone]
         live_ids = {str(o.id) for o in project.objects}
         obj_root = self.root / "objects"
         if obj_root.is_dir():
-            for d in obj_root.iterdir():
-                if d.is_dir() and d.name not in live_ids:
-                    shutil.rmtree(d, ignore_errors=True)
+            job.dirs_to_remove = [d for d in obj_root.iterdir() if d.is_dir() and d.name not in live_ids]
 
         doc = {
             "version": FORMAT_VERSION,
@@ -149,9 +197,10 @@ class ProjectStore:
             "label_counts": project.label_counts,
             "objects": objects_json,
         }
-        _atomic_write_text(self.root / "project.json", json.dumps(doc, indent=1, ensure_ascii=False))
+        job.json_path = self.root / "project.json"
+        job.json_text = json.dumps(doc, indent=1, ensure_ascii=False)
         self._saved_revision = project.revision
-        return True
+        return job
 
     # ------------------------------------------------------------------
     # Load

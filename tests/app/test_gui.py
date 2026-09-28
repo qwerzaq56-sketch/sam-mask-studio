@@ -155,20 +155,18 @@ def test_brush_mode_layer_apply_and_delete(win, qapp):
     win.act_brush.trigger()
     assert win.canvas.brush_mode and win.properties_panel.brush_btn.isChecked()
     size0 = win.canvas.brush_size
-    wheel = QTest  # wheel = size while the brush is on
     from PyQt6.QtCore import QPointF
     from PyQt6.QtGui import QWheelEvent
 
     ev = QWheelEvent(QPointF(canvas_pos(win, 40, 40)), QPointF(), QPoint(), QPoint(0, 120),
-                     Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
-    qapp.sendEvent(win.canvas, ev)
-    assert win.canvas.brush_size > size0 and win.canvas.zoom == 1.0
-    ev = QWheelEvent(QPointF(canvas_pos(win, 40, 40)), QPointF(), QPoint(), QPoint(0, 120),
                      Qt.MouseButton.NoButton, Qt.KeyboardModifier.ControlModifier, Qt.ScrollPhase.NoScrollPhase, False)
     qapp.sendEvent(win.canvas, ev)
-    assert win.canvas.zoom > 1.0  # Ctrl+wheel zooms
+    assert win.canvas.brush_size > size0 and win.canvas.zoom == 1.0  # Ctrl+wheel = size
+    ev = QWheelEvent(QPointF(canvas_pos(win, 40, 40)), QPointF(), QPoint(), QPoint(0, 120),
+                     Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    qapp.sendEvent(win.canvas, ev)
+    assert win.canvas.zoom > 1.0  # the wheel zooms, brush on or not
     win.canvas.set_zoom(1.0)
-    del wheel
 
     # plain drag = add, and it goes to the layer (points stay)
     p = canvas_pos(win, 70, 50)
@@ -316,7 +314,8 @@ def test_navigation_and_autosave_reload(win, qapp, folder, tmp_path):
     click(win, 30, 30)
     win.step(1)
     assert win.session.index == 1 and win.session.mode == Mode.IDLE
-    assert (sidecar_dir(folder) / "project.json").is_file()  # flushed on image change
+    win._save_task.wait()  # written in the background on image change
+    assert (sidecar_dir(folder) / "project.json").is_file()
     marks = [win.images_panel.list.item(i).text()[0] for i in range(2)]
     assert marks == ["★", " "]
     win.run_export(ExportOptions(out_dir=tmp_path / "out"))

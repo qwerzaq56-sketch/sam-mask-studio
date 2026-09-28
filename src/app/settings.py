@@ -23,6 +23,9 @@ class Settings:
     max_side: int = DEFAULT_MAX_SIDE
     last_dir: Optional[str] = None
     autosave_ms: int = 1500
+    outline_visible: bool = True  # white outline around the edited mask
+    outline_width: float = 1.0  # screen px
+    show_edit_changes: bool = False  # tint what the edit layer added (green) / removed (red)
 
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":

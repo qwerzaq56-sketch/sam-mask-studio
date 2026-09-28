@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Sequence
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -56,7 +56,8 @@ class DetectionPanel(QWidget):
     add_requested = pyqtSignal()
     clear_requested = pyqtSignal()
     batch_requested = pyqtSignal(list, str, int, int, float)  # labels, scope, start, end, threshold
-    batch_cancel_requested = pyqtSignal()
+    batch_stop_requested = pyqtSignal()  # stop, keep what is done
+    batch_cancel_requested = pyqtSignal()  # stop and discard everything
     navigate_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -64,6 +65,13 @@ class DetectionPanel(QWidget):
         self._updating = False
         self._busy = False
         self._n = 0
+        self._shown: Sequence[Detection] = ()
+        # A label row's checkbox changes all its candidates at once (plus the tristate
+        # parent for a single one): report that as one change, not one per row.
+        self._checks_timer = QTimer(self)
+        self._checks_timer.setSingleShot(True)
+        self._checks_timer.setInterval(0)
+        self._checks_timer.timeout.connect(lambda: self.checks_changed.emit(self.checked()))
         self.prompt = QLineEdit()
         self.prompt.setPlaceholderText("SAM3 text prompt — separate labels with commas: person, car, tripod")
         self.prompt.returnPressed.connect(self._detect)
@@ -118,7 +126,12 @@ class DetectionPanel(QWidget):
         self.batch_btn = QPushButton("Run on Images")
         self.batch_btn.setToolTip("One Object per label; each image gets the union of that label's detections")
         self.batch_btn.clicked.connect(self._batch)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setToolTip("Stop after the current prompt and keep the images done so far")
+        self.stop_btn.clicked.connect(self.batch_stop_requested)
+        self.stop_btn.setEnabled(False)
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setToolTip("Stop and discard the whole run (nothing is added)")
         self.cancel_btn.clicked.connect(self.batch_cancel_requested)
         self.cancel_btn.setEnabled(False)
         self.progress = QProgressBar()
@@ -136,6 +149,7 @@ class DetectionPanel(QWidget):
         b2.addWidget(QLabel("Min score"))
         b2.addWidget(self.threshold)
         b2.addStretch(1)
+        b2.addWidget(self.stop_btn)
         b2.addWidget(self.cancel_btn)
         b2.addWidget(self.batch_btn)
         batch = QGroupBox("Batch masking (prompt → one Object per label)")
@@ -168,7 +182,7 @@ class DetectionPanel(QWidget):
             self.detect_requested.emit(labels)
 
     def set_busy(self, busy: bool, message: str = "") -> None:
-        """Lock everything except the batch Cancel button while a long job runs."""
+        """Lock everything except the batch Stop / Cancel buttons while a long job runs."""
         self._busy = busy
         for w in (self.detect_btn, self.prompt, self.batch_btn, self.scope, self.start, self.end, self.threshold,
                   self.tree, self.results):
@@ -183,6 +197,10 @@ class DetectionPanel(QWidget):
     # ------------------------------------------------------------------
 
     def set_detections(self, detections: Sequence[Detection], checked: Sequence[bool]) -> None:
+        if detections is self._shown and len(detections) == self._n:
+            self._sync_checks(checked)  # same results: keep the tree (scroll, collapsed groups)
+            return
+        self._shown = detections
         self._updating = True
         self.tree.clear()
         groups: Dict[str, QTreeWidgetItem] = {}
@@ -207,6 +225,15 @@ class DetectionPanel(QWidget):
         has = bool(detections)
         for b in (self.all_btn, self.none_btn, self.clear_btn):
             self._want(b, has)
+        self._want(self.add_btn, any(checked))
+
+    def _sync_checks(self, checked: Sequence[bool]) -> None:
+        self._updating = True
+        for it in self._leaves():
+            state = Qt.CheckState.Checked if checked[it.data(0, INDEX_ROLE)] else Qt.CheckState.Unchecked
+            if it.checkState(0) != state:
+                it.setCheckState(0, state)
+        self._updating = False
         self._want(self.add_btn, any(checked))
 
     def _want(self, button: QPushButton, on: bool) -> None:
@@ -244,9 +271,8 @@ class DetectionPanel(QWidget):
     def _on_changed(self, *_):
         if self._updating:
             return
-        c = self.checked()
-        self._want(self.add_btn, any(c))
-        later(self.checks_changed, c)
+        self._want(self.add_btn, any(self.checked()))
+        self._checks_timer.start()
 
     # ------------------------------------------------------------------
     # Batch
@@ -277,6 +303,7 @@ class DetectionPanel(QWidget):
         self.results.clear()
         self.progress.setRange(0, max(1, total))
         self.progress.setValue(0)
+        self.stop_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
 
     def batch_frame(self, index: int, text: str, found: bool) -> None:
@@ -285,7 +312,13 @@ class DetectionPanel(QWidget):
         self.results.addItem(it)
         self.progress.setValue(self.results.count())
 
+    def batch_stopping(self) -> None:
+        self.stop_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.status.setText("Stopping after the current prompt…")
+
     def batch_end(self, message: str) -> None:
+        self.stop_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
         self.status.setText(message)
 

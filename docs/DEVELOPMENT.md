@@ -119,7 +119,7 @@ Verified locally (Windows 10, RTX 2060 Super 8 GB, torch 2.14 cu130, SAM2.1 tiny
   Specks* are stored as add/sub pixels on top of the point/prompt mask. *Delete Layer* returns
   to the prompt mask; *Apply Layer* makes the edited mask the base mask (points cleared, new
   points refine from it). Saved as `<key>.add.png` / `<key>.sub.png` beside the main PNG.
-- **Brush** (B): drag = add, Ctrl+drag = subtract, wheel = size, Ctrl+wheel = zoom; clicks add
+- **Brush** (B): drag = add, Ctrl+drag = subtract (wheel/size: see v0.3); clicks add
   no points while it is on. Shift+drag still works as a quick brush.
 - **Comma-separated prompts** (`core/prompts.py`): `person, car, tripod` is detected label by
   label; the Detection list is a tree grouped per label.
@@ -129,6 +129,28 @@ Verified locally (Windows 10, RTX 2060 Super 8 GB, torch 2.14 cu130, SAM2.1 tiny
 - **First Object from a plain click** while the project has no Objects (`Session.effective_mode`).
 - A 360° (ERP) mode was tried and removed at the user's request (seam artefacts); the code is
   kept at tag `erp-experiment`.
+
+### v0.3 (user requests after v0.2.0), built in phases
+
+Each phase is a branch merged into `dev` with `--no-ff` and tagged `v0.3-pN`; each change
+is one commit, so a phase (`git revert -m 1 <merge>`) or a single change can be undone.
+The user's request list is `docs/specs/04-v0.3-requests.md`.
+
+**P1 — responsiveness and small UX fixes** (`v0.3-p1`)
+- Checking a detection candidate was slow: every checkbox change (and the tristate
+  parent's) ran a full window refresh — N+1 refreshes for a label row. Now one coalesced
+  signal that redraws only the candidate overlays (~0.8 s → ~0.02 s for 8 candidates).
+- Canvas overlays are three cached images (Objects / edited mask / candidates), blended
+  within each mask's bounding box; a change re-blends only its group.
+- Outlines are vector polygons with a cosmetic pen: one white line, width and on/off in the
+  toolbar (Outline, O). The edit layer's green/red tints are opt-in (Edit Changes).
+- Objects panel updates rows in place; rebuilding it on selection deleted the row buttons
+  between press and release, so a button on an unselected row needed two clicks.
+- Wheel = zoom always; Ctrl+wheel (or Shift+wheel) = brush size in Edit.
+- Batch masking / propagation: **Stop** keeps what is done, **Cancel** discards the run.
+  Batch checks for a stop before each label.
+- Autosave (and the save on image change) writes PNGs in a background thread: the first save
+  after a batch/propagation used to block the window for seconds.
 
 ### Remaining work
 

@@ -106,7 +106,7 @@ class PropertiesPanel(QWidget):
         self.brush_btn = QPushButton("Brush")
         self.brush_btn.setCheckable(True)
         self.brush_btn.setToolTip(
-            "Brush editing (B): drag = add, Ctrl+drag = subtract, wheel = size, Ctrl+wheel = zoom"
+            "Brush editing (B): drag = add, Ctrl+drag = subtract, Ctrl+wheel = size, wheel = zoom"
         )
         self.brush_btn.toggled.connect(self._on_brush)
         self.brush_size = QLabel("")
@@ -236,7 +236,7 @@ class PropertiesPanel(QWidget):
         self.brush_btn.blockSignals(False)
 
     def set_brush_size(self, px: int) -> None:
-        self.brush_size.setText(f"size {px}px · wheel to change")
+        self.brush_size.setText(f"size {px}px · Ctrl+wheel to change")
 
     def _on_brush(self, on: bool) -> None:
         self.brush_toggled.emit(on)

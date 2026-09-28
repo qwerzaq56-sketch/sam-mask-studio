@@ -1,6 +1,7 @@
 """Main window: wires the Session to the canvas and panels (spec 01 §5 layout).
 
-Toolbar (Open, Save, Undo, Redo, Export, Final Mask preview, ERP later) ·
+Toolbar (Open, Save, Undo, Redo, Export, Final Mask preview, Brush,
+Outline + width, Edit Changes) ·
 left Objects + Images · center canvas · right Properties · bottom
 Prompt/Detection, Propagation and Logs tabs · status bar with the mode.
 
@@ -20,6 +21,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QLabel,
     QMainWindow,
@@ -76,6 +78,8 @@ class MainWindow(QMainWindow):
         self.session = Session(engine, max_side=self.settings.max_side)
         self._tasks: List[Task] = []
         self._prop_worker: Optional[PropagationWorker] = None
+        self._discard = False  # the running batch/propagation was cancelled: drop its results
+        self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._loading_models = False
 
@@ -88,7 +92,8 @@ class MainWindow(QMainWindow):
         self._autosave = QTimer(self)
         self._autosave.setSingleShot(True)
         self._autosave.setInterval(self.settings.autosave_ms)
-        self._autosave.timeout.connect(self.save)
+        self._autosave.timeout.connect(lambda: self.save(background=True))
+        self._save_task: Optional[Task] = None
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -168,11 +173,28 @@ class MainWindow(QMainWindow):
             "Brush",
             self.set_brush,
             ["B"],
-            "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, wheel = size",
+            "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, Ctrl+wheel = size",
             True,
         )
-        self.act_erp = self._action("ERP", lambda: None, tip="ERP / 360° input — planned for a later version")
-        self.act_erp.setEnabled(False)
+        self.act_outline = self._action(
+            "Outline", self.set_outline, ["O"], "White outline around the edited mask", True
+        )
+        self.act_outline.setChecked(self.settings.outline_visible)
+        self.outline_width = QDoubleSpinBox()
+        self.outline_width.setRange(0.5, 8.0)
+        self.outline_width.setSingleStep(0.5)
+        self.outline_width.setDecimals(1)
+        self.outline_width.setSuffix(" px")
+        self.outline_width.setValue(self.settings.outline_width)
+        self.outline_width.setToolTip("Outline width in screen pixels")
+        self.outline_width.valueChanged.connect(lambda _v: self.set_outline(self.act_outline.isChecked()))
+        self.act_changes = self._action(
+            "Edit Changes",
+            self.set_show_changes,
+            tip="Tint what the edit layer added (green) and removed (red)",
+            checkable=True,
+        )
+        self.act_changes.setChecked(self.settings.show_edit_changes)
         self.act_settings = self._action("Settings", self.show_settings)
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
@@ -182,10 +204,14 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_final)
         tb.addAction(self.act_brush)
-        tb.addAction(self.act_erp)
+        tb.addSeparator()
+        tb.addAction(self.act_outline)
+        tb.addWidget(self.outline_width)
+        tb.addAction(self.act_changes)
         tb.addSeparator()
         tb.addAction(self.act_settings)
         self.addToolBar(tb)
+        self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
             QShortcut(QKeySequence(seq), self, slot)
@@ -238,12 +264,14 @@ class MainWindow(QMainWindow):
         d.add_requested.connect(lambda: self._do(self.session.add_checked_detections))
         d.clear_requested.connect(lambda: self._do(self.session.clear_detections))
         d.batch_requested.connect(self.run_batch)
-        d.batch_cancel_requested.connect(self.cancel_propagation)
+        d.batch_stop_requested.connect(lambda: self.stop_job(discard=False))
+        d.batch_cancel_requested.connect(lambda: self.stop_job(discard=True))
         d.navigate_requested.connect(self.go_to)
 
         pp = self.propagation_panel
         pp.propagate_requested.connect(self.propagate)
-        pp.cancel_requested.connect(self.cancel_propagation)
+        pp.stop_requested.connect(lambda: self.stop_job(discard=False))
+        pp.cancel_requested.connect(lambda: self.stop_job(discard=True))
         pp.navigate_requested.connect(self.go_to)
         self.images_panel.navigate_requested.connect(self.go_to)
 
@@ -298,25 +326,7 @@ class MainWindow(QMainWindow):
         project = s.project
         busy = self._busy is not None
 
-        overlays: List[Overlay] = []
-        edit_layer = None
-        for o in project.objects:
-            m = o.mask(key) if key else None
-            if m is None:
-                continue
-            if o.id == s.editing:
-                edit_layer = Overlay(m, o.color, "edit")
-            else:
-                overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
-        if edit_layer is not None:
-            overlays.append(edit_layer)
-            layer = s.editing_frame().edit if s.editing_frame() is not None else None
-            if layer is not None:  # show what the hand edits changed
-                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
-                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
-        for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
-            overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
-        self.canvas.set_overlays(overlays)
+        self._update_overlays()
         self.canvas.set_final(project.final_mask(key) if key else None)
 
         fs = s.editing_frame()
@@ -370,7 +380,7 @@ class MainWindow(QMainWindow):
         if mode == Mode.NEW_OBJECT and s.mode == Mode.IDLE:
             mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
-            mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · wheel: size · Ctrl+wheel: zoom · B: brush off"
+            mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
         self.mode_label.setText(self._busy or mode_text)
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine
@@ -382,6 +392,30 @@ class MainWindow(QMainWindow):
         )
         if s.store is not None and not s.store.is_saved(project):
             self._autosave.start()
+
+    def _update_overlays(self) -> None:
+        """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""
+        s = self.session
+        key = s.key
+        overlays: List[Overlay] = []
+        edit_layer = None
+        for o in s.project.objects:
+            m = o.mask(key) if key else None
+            if m is None:
+                continue
+            if o.id == s.editing:
+                edit_layer = Overlay(m, o.color, "edit")
+            else:
+                overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
+        if edit_layer is not None:
+            overlays.append(edit_layer)
+            layer = s.editing_frame().edit if s.editing_frame() is not None else None
+            if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
+                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
+        for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
+            overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
+        self.canvas.set_overlays(overlays)
 
     # ------------------------------------------------------------------
     # Folder / navigation / saving
@@ -419,7 +453,7 @@ class MainWindow(QMainWindow):
     def go_to(self, index: int) -> None:
         if self._busy or index is None:
             return
-        self.save()
+        self.save(background=True)
         try:
             moved = self.session.go_to(index)
         except ValueError as e:
@@ -433,13 +467,49 @@ class MainWindow(QMainWindow):
         if self.session.key is not None:
             self.go_to(max(0, min(len(self.session.keys) - 1, self.session.index + delta)))
 
-    def save(self, force: bool = False) -> None:
+    def save(self, force: bool = False, background: bool = False) -> None:
+        """Write the project's changes; *background* writes the PNGs off the UI thread.
+
+        Autosave runs in the background (the first save after a batch or a
+        propagation can be thousands of masks); explicit saves, navigation and
+        closing write directly, after any background save has finished;
+        moving to another image saves in the background too.
+        """
         self._autosave.stop()
+        store = self.session.store
+        if store is None:
+            return
+        running = self._save_task
+        if running is not None and running.isRunning():
+            if background:
+                self._autosave.start()  # try again once the current write is done
+                return
+            running.wait()
         try:
-            if self.session.save(force=force) and force:
-                self.log("Saved")
+            job = store.prepare(self.session.project, force=force)
         except OSError as e:
             self.log(f"Save failed: {e}")
+            return
+        if job is None:
+            return
+        if not background:
+            try:
+                job.run()
+                if force:
+                    self.log("Saved")
+            except OSError as e:
+                store.failed(job)
+                self.log(f"Save failed: {e}")
+            return
+
+        def failed(msg):
+            store.failed(job)
+            self.log(f"Save failed: {msg}")
+
+        task = Task(job.run)
+        self._save_task = task
+        task.failed.connect(failed)
+        task.start()
 
     def closeEvent(self, event):
         if self._prop_worker is not None and self._prop_worker.isRunning():
@@ -524,6 +594,17 @@ class MainWindow(QMainWindow):
             self.canvas.setFocus()
         if redraw:
             self.refresh()
+
+    def set_outline(self, on: bool) -> None:
+        self.settings.outline_visible = bool(on)
+        self.settings.outline_width = float(self.outline_width.value())
+        self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
+        self.settings.save(self.settings_path)
+
+    def set_show_changes(self, on: bool) -> None:
+        self.settings.show_edit_changes = bool(on)
+        self.settings.save(self.settings_path)
+        self._update_overlays()
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""
@@ -673,8 +754,9 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def on_detection_checks(self, checked: List[bool]) -> None:
+        """Checking candidates only changes their overlays: redraw the canvas, nothing else."""
         self.session.detection_checked = list(checked)
-        self.refresh()
+        self._update_overlays()
 
     def run_batch(self, labels: List[str], scope: str, start: int, end: int, threshold: float) -> None:
         """Batch masking: SAM3 over many images, one Object per label (spec: prompt-based bulk masking)."""
@@ -714,6 +796,13 @@ class MainWindow(QMainWindow):
         def finish(results, outcome):
             self._busy = None
             self._prop_worker = None
+            if self._discard:
+                self._discard = False
+                self.detection_panel.set_busy(False)
+                self.detection_panel.batch_end(f"Cancelled: nothing added ({len(results)} image(s) discarded)")
+                self.log("Batch masking cancelled — results discarded")
+                self.refresh()
+                return
             made = s.apply_batch(results) if results else {}
             names = ", ".join(s.project.get(oid).name for oid in made.values())
             found = sum(1 for hits in results.values() if any(h.mask is not None for h in hits.values()))
@@ -729,8 +818,10 @@ class MainWindow(QMainWindow):
 
         w = PropagationWorker(run, self)
         w.frame_done.connect(on_frame)
-        w.finished_ok.connect(lambda results, cancelled: finish(results, "Cancelled" if cancelled else "Done"))
+        w.finished_ok.connect(lambda results, stopped: finish(results, "Stopped" if stopped else "Done"))
         w.failed.connect(lambda msg, partial: finish(partial, f"Failed: {msg}"))
+        self._discard = False
+        self._job = "batch"
         self._prop_worker = w
         w.start()
         self.refresh()
@@ -782,9 +873,11 @@ class MainWindow(QMainWindow):
         w.progress.connect(self.propagation_panel.on_progress)
         w.frame_done.connect(lambda idx, masks: self.propagation_panel.on_frame(idx, list(masks)))
         w.finished_ok.connect(
-            lambda results, cancelled: self._propagation_done(results, seeds, "Cancelled" if cancelled else "Done")
+            lambda results, stopped: self._propagation_done(results, seeds, "Stopped" if stopped else "Done")
         )
         w.failed.connect(lambda msg, partial: self._propagation_done(partial, seeds, f"Failed: {msg}"))
+        self._discard = False
+        self._job = "propagation"
         self._prop_worker = w
         w.start()
         self.refresh()
@@ -792,6 +885,12 @@ class MainWindow(QMainWindow):
     def _propagation_done(self, results, seeds, outcome: str) -> None:
         self._busy = None
         self._prop_worker = None
+        if self._discard:
+            self._discard = False
+            self.propagation_panel.finish({}, f"Cancelled: nothing changed ({len(results)} frame(s) discarded)")
+            self.log("Propagation cancelled — results discarded")
+            self.refresh()
+            return
         statuses = self.session.apply_propagation(results, seeds) if results else {}
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
@@ -802,10 +901,24 @@ class MainWindow(QMainWindow):
             self.log(msg + (" — Ctrl+Z undoes the whole propagation" if statuses else ""))
         self.refresh()
 
+    def stop_job(self, discard: bool) -> None:
+        """Stop the running batch / propagation after its current step.
+
+        Stop keeps what is done (one undo step); Cancel (*discard*) drops it all.
+        """
+        w = self._prop_worker
+        if w is None or not w.isRunning():
+            return
+        self._discard = discard
+        w.cancel()
+        if self._job == "batch":
+            self.detection_panel.batch_stopping()
+        else:
+            self.propagation_panel.stopping()
+        self.log("Cancelling — results will be discarded…" if discard else "Stopping — keeping the results so far…")
+
     def cancel_propagation(self) -> None:
-        if self._prop_worker is not None:
-            self._prop_worker.cancel()
-            self.log("Cancelling…")
+        self.stop_job(discard=True)
 
     # ------------------------------------------------------------------
     # Export / settings
