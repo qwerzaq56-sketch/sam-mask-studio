@@ -2,6 +2,8 @@
 
 외부(GPT) UX 리뷰 중 코드와 대조해서 타당했던 항목만 반영합니다. v0.3 기록: [`PROGRESS_v0.3.md`](PROGRESS_v0.3.md)
 
+적어두는 곳: 기능 아이디어 [`ideas.md`](ideas.md) · 작은 UI 문제 [`ui-issues.md`](ui-issues.md)
+
 - 브랜치 `dev`에서 단계별 브랜치(`feat/v04-pN-…`)로 작업 → `--no-ff` 병합 → 태그 `v0.4-pN`.
 - 되돌리기: 단계 전체 `git revert -m 1 <병합 커밋>`
 - 실행: `SAM Mask Studio (dev).bat` = 최신 dev, `SAM Mask Studio.bat` = 안정판 v0.3.0
