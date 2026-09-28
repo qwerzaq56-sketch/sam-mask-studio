@@ -54,7 +54,8 @@ def chain(keys: Sequence[str], indices: Sequence[int], current: int, limit: int 
 
 class PropagationPanel(QWidget):
     propagate_requested = pyqtSignal(int, int, object)  # start, end, Direction
-    cancel_requested = pyqtSignal()
+    stop_requested = pyqtSignal()  # stop, keep the frames done
+    cancel_requested = pyqtSignal()  # stop and discard the run
     navigate_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -89,11 +90,17 @@ class PropagationPanel(QWidget):
         self.run_btn = QPushButton("Propagate Selected Objects")
         self.run_btn.setToolTip("Every checked Object propagates from its selected Variant on the Current image")
         self.run_btn.clicked.connect(self._run)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setToolTip("Stop and keep the frames propagated so far")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_requested)
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setToolTip("Stop and discard the whole propagation (nothing changes)")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.cancel_requested)
         brow = QHBoxLayout()
         brow.addWidget(self.run_btn, 1)
+        brow.addWidget(self.stop_btn)
         brow.addWidget(self.cancel_btn)
 
         self.phase = QLabel("")
@@ -156,6 +163,7 @@ class PropagationPanel(QWidget):
 
     def set_running(self, running: bool) -> None:
         self.run_btn.setEnabled(not running)
+        self.stop_btn.setEnabled(running)
         self.cancel_btn.setEnabled(running)
         for w in (self.start, self.end, *self.dirs.buttons()):
             w.setEnabled(not running)
@@ -206,6 +214,11 @@ class PropagationPanel(QWidget):
         it = self._obj_rows.get(oid)
         if it is not None:
             it.setText(f"{name}    {text}")
+
+    def stopping(self) -> None:
+        self.stop_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.phase.setText("Stopping after the current frame…")
 
     def mark(self, index: int, status: Optional[object]) -> None:
         it = self._rows.get(index)

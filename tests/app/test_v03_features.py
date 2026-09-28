@@ -1,11 +1,15 @@
 """v0.3: responsiveness and UX fixes (one section per change, so each can be reverted with it)."""
 
+import threading
 import time
+
+import pytest
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QPushButton
 
+from tests.app.conftest import wait_until
 from tests.app.test_gui import folder, win  # noqa: F401  (fixtures)
 
 
@@ -65,3 +69,35 @@ def test_outline_options_and_edit_change_tints(qapp, win):
     win.act_outline.trigger()
     assert not win.canvas.outline_visible and win.canvas.outline_width == 2.5
     win.canvas.grab()  # paints without error
+
+
+# --- Batch masking: Stop keeps the images done, Cancel discards the run -------
+
+
+@pytest.mark.parametrize("button, kept", [("stop_btn", 2), ("cancel_btn", 0)])
+def test_batch_stop_keeps_and_cancel_discards(qapp, win, button, kept):
+    engine = win.session.engine
+    gate, entered = threading.Event(), threading.Event()
+    real = engine.detect_many
+    seen = []
+
+    def gated(image, labels):
+        seen.append(1)
+        if len(seen) == 2:  # image 1 waits until the button is pressed
+            entered.set()
+            gate.wait(5)
+        return real(image, labels)
+
+    engine.detect_many = gated
+    win.run_batch(["person"], "all", 0, -1, 0.5)
+    wait_until(qapp, entered.is_set)
+    getattr(win.detection_panel, button).click()
+    assert not win.detection_panel.stop_btn.isEnabled()
+    gate.set()
+    wait_until(qapp, lambda: win._busy is None)
+    objs = win.session.project.objects
+    assert len(seen) == 2  # nothing ran after the button
+    if kept:
+        assert len(objs) == 1 and len(objs[0].frames) == kept
+    else:
+        assert objs == [] and not win.session.project.can_undo

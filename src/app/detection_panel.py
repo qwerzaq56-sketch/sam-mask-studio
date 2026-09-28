@@ -56,7 +56,8 @@ class DetectionPanel(QWidget):
     add_requested = pyqtSignal()
     clear_requested = pyqtSignal()
     batch_requested = pyqtSignal(list, str, int, int, float)  # labels, scope, start, end, threshold
-    batch_cancel_requested = pyqtSignal()
+    batch_stop_requested = pyqtSignal()  # stop, keep what is done
+    batch_cancel_requested = pyqtSignal()  # stop and discard everything
     navigate_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -125,7 +126,12 @@ class DetectionPanel(QWidget):
         self.batch_btn = QPushButton("Run on Images")
         self.batch_btn.setToolTip("One Object per label; each image gets the union of that label's detections")
         self.batch_btn.clicked.connect(self._batch)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setToolTip("Stop after the current prompt and keep the images done so far")
+        self.stop_btn.clicked.connect(self.batch_stop_requested)
+        self.stop_btn.setEnabled(False)
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setToolTip("Stop and discard the whole run (nothing is added)")
         self.cancel_btn.clicked.connect(self.batch_cancel_requested)
         self.cancel_btn.setEnabled(False)
         self.progress = QProgressBar()
@@ -143,6 +149,7 @@ class DetectionPanel(QWidget):
         b2.addWidget(QLabel("Min score"))
         b2.addWidget(self.threshold)
         b2.addStretch(1)
+        b2.addWidget(self.stop_btn)
         b2.addWidget(self.cancel_btn)
         b2.addWidget(self.batch_btn)
         batch = QGroupBox("Batch masking (prompt → one Object per label)")
@@ -175,7 +182,7 @@ class DetectionPanel(QWidget):
             self.detect_requested.emit(labels)
 
     def set_busy(self, busy: bool, message: str = "") -> None:
-        """Lock everything except the batch Cancel button while a long job runs."""
+        """Lock everything except the batch Stop / Cancel buttons while a long job runs."""
         self._busy = busy
         for w in (self.detect_btn, self.prompt, self.batch_btn, self.scope, self.start, self.end, self.threshold,
                   self.tree, self.results):
@@ -296,6 +303,7 @@ class DetectionPanel(QWidget):
         self.results.clear()
         self.progress.setRange(0, max(1, total))
         self.progress.setValue(0)
+        self.stop_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
 
     def batch_frame(self, index: int, text: str, found: bool) -> None:
@@ -304,7 +312,13 @@ class DetectionPanel(QWidget):
         self.results.addItem(it)
         self.progress.setValue(self.results.count())
 
+    def batch_stopping(self) -> None:
+        self.stop_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.status.setText("Stopping after the current prompt…")
+
     def batch_end(self, message: str) -> None:
+        self.stop_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
         self.status.setText(message)
 

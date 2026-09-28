@@ -200,6 +200,20 @@ def test_batch_low_threshold_merges_all_instances(session):
 
 
 def test_batch_cancel(session):
-    calls = iter([False, True])
-    out = list(batch_detect(session.engine, session.paths, [0, 1, 2], ["a"], 1024, 0.5, cancel=lambda: next(calls)))
-    assert [i for i, _ in out] == [0]
+    stop = []
+    out = []
+    for idx, hits in batch_detect(session.engine, session.paths, [0, 1, 2], ["a"], 1024, 0.5, cancel=lambda: stop):
+        out.append(idx)
+        stop.append(True)
+    assert out == [0]
+
+
+def test_batch_cancel_between_labels(session):
+    asked = []
+
+    def cancel():
+        asked.append(1)
+        return len(asked) > 2  # image 0: top, label a; stops before label b
+
+    out = list(batch_detect(session.engine, session.paths, [0, 1], ["a", "b"], 1024, 0.5, cancel=cancel))
+    assert out == []  # the half-done image 0 is dropped

@@ -78,6 +78,8 @@ class MainWindow(QMainWindow):
         self.session = Session(engine, max_side=self.settings.max_side)
         self._tasks: List[Task] = []
         self._prop_worker: Optional[PropagationWorker] = None
+        self._discard = False  # the running batch/propagation was cancelled: drop its results
+        self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._loading_models = False
 
@@ -261,12 +263,14 @@ class MainWindow(QMainWindow):
         d.add_requested.connect(lambda: self._do(self.session.add_checked_detections))
         d.clear_requested.connect(lambda: self._do(self.session.clear_detections))
         d.batch_requested.connect(self.run_batch)
-        d.batch_cancel_requested.connect(self.cancel_propagation)
+        d.batch_stop_requested.connect(lambda: self.stop_job(discard=False))
+        d.batch_cancel_requested.connect(lambda: self.stop_job(discard=True))
         d.navigate_requested.connect(self.go_to)
 
         pp = self.propagation_panel
         pp.propagate_requested.connect(self.propagate)
-        pp.cancel_requested.connect(self.cancel_propagation)
+        pp.stop_requested.connect(lambda: self.stop_job(discard=False))
+        pp.cancel_requested.connect(lambda: self.stop_job(discard=True))
         pp.navigate_requested.connect(self.go_to)
         self.images_panel.navigate_requested.connect(self.go_to)
 
@@ -755,6 +759,13 @@ class MainWindow(QMainWindow):
         def finish(results, outcome):
             self._busy = None
             self._prop_worker = None
+            if self._discard:
+                self._discard = False
+                self.detection_panel.set_busy(False)
+                self.detection_panel.batch_end(f"Cancelled: nothing added ({len(results)} image(s) discarded)")
+                self.log("Batch masking cancelled — results discarded")
+                self.refresh()
+                return
             made = s.apply_batch(results) if results else {}
             names = ", ".join(s.project.get(oid).name for oid in made.values())
             found = sum(1 for hits in results.values() if any(h.mask is not None for h in hits.values()))
@@ -770,8 +781,10 @@ class MainWindow(QMainWindow):
 
         w = PropagationWorker(run, self)
         w.frame_done.connect(on_frame)
-        w.finished_ok.connect(lambda results, cancelled: finish(results, "Cancelled" if cancelled else "Done"))
+        w.finished_ok.connect(lambda results, stopped: finish(results, "Stopped" if stopped else "Done"))
         w.failed.connect(lambda msg, partial: finish(partial, f"Failed: {msg}"))
+        self._discard = False
+        self._job = "batch"
         self._prop_worker = w
         w.start()
         self.refresh()
@@ -823,9 +836,11 @@ class MainWindow(QMainWindow):
         w.progress.connect(self.propagation_panel.on_progress)
         w.frame_done.connect(lambda idx, masks: self.propagation_panel.on_frame(idx, list(masks)))
         w.finished_ok.connect(
-            lambda results, cancelled: self._propagation_done(results, seeds, "Cancelled" if cancelled else "Done")
+            lambda results, stopped: self._propagation_done(results, seeds, "Stopped" if stopped else "Done")
         )
         w.failed.connect(lambda msg, partial: self._propagation_done(partial, seeds, f"Failed: {msg}"))
+        self._discard = False
+        self._job = "propagation"
         self._prop_worker = w
         w.start()
         self.refresh()
@@ -833,6 +848,12 @@ class MainWindow(QMainWindow):
     def _propagation_done(self, results, seeds, outcome: str) -> None:
         self._busy = None
         self._prop_worker = None
+        if self._discard:
+            self._discard = False
+            self.propagation_panel.finish({}, f"Cancelled: nothing changed ({len(results)} frame(s) discarded)")
+            self.log("Propagation cancelled — results discarded")
+            self.refresh()
+            return
         statuses = self.session.apply_propagation(results, seeds) if results else {}
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
@@ -843,10 +864,24 @@ class MainWindow(QMainWindow):
             self.log(msg + (" — Ctrl+Z undoes the whole propagation" if statuses else ""))
         self.refresh()
 
+    def stop_job(self, discard: bool) -> None:
+        """Stop the running batch / propagation after its current step.
+
+        Stop keeps what is done (one undo step); Cancel (*discard*) drops it all.
+        """
+        w = self._prop_worker
+        if w is None or not w.isRunning():
+            return
+        self._discard = discard
+        w.cancel()
+        if self._job == "batch":
+            self.detection_panel.batch_stopping()
+        else:
+            self.propagation_panel.stopping()
+        self.log("Cancelling — results will be discarded…" if discard else "Stopping — keeping the results so far…")
+
     def cancel_propagation(self) -> None:
-        if self._prop_worker is not None:
-            self._prop_worker.cancel()
-            self.log("Cancelling…")
+        self.stop_job(discard=True)
 
     # ------------------------------------------------------------------
     # Export / settings

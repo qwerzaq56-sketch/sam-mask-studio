@@ -34,14 +34,20 @@ def batch_detect(
     """Yield ``(index, {label: LabelHit})`` for each image in *indices*.
 
     Uses ``engine.detect_many`` so the image being edited in the UI is not
-    disturbed. Detections scoring below *threshold* are ignored.
+    disturbed. Detections scoring below *threshold* are ignored. *cancel* is
+    checked before every label, so a stop takes effect within one prompt; an
+    image interrupted half-way is not yielded.
     """
     total = len(indices)
     for n, idx in enumerate(indices):
         if cancel and cancel():
             return
         image = to_working(read_rgb(image_paths[idx]), max_side)
-        dets = engine.detect_many(image, labels)
+        dets = []
+        for label in labels:
+            if cancel and cancel():
+                return
+            dets.extend(engine.detect_many(image, [label]))
         hits: Dict[str, LabelHit] = {}
         for label in labels:
             kept = [d for d in dets if d.label == label and d.score >= threshold]
