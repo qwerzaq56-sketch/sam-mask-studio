@@ -787,31 +787,52 @@ def test_add_detections_each_merged_per_prompt(qapp, win, how, names):
     assert s.project.objects == []  # one undo step
 
 
-def test_preview_toggle_and_viewport_picking(qapp, win):
+def test_select_on_image_add_toggle_remove_and_no_edit(qapp, win):
     from tests.app.test_gui import canvas_pos
 
+    s = win.session
+    oid = make_objects(win, 1)[0]
     win.detection_panel.prompt.setText("person, car")
     win.detection_panel.detect_btn.click()
     wait_until(qapp, lambda: win._busy is None)
-    s = win.session
+    d = win.detection_panel
+    assert d.select_btn.isChecked() and win.canvas.candidates_pickable  # on after the detection
     cands = lambda: [o for o in win.canvas._overlays if o.style.startswith("candidate")]  # noqa: E731
-    assert len(cands()) == 4 and win.canvas.candidates_pickable
-    win.detection_panel.preview_btn.click()  # off
+    d.preview_btn.click()  # Preview off: nothing shown, nothing to pick
     assert cands() == [] and not win.canvas.candidates_pickable
-    win.detection_panel.preview_btn.click()  # on again
+    d.preview_btn.click()
+    d.none_btn.click()
+    qapp.processEvents()
+    assert s.detection_checked == [False] * 4
 
-    ctrl, shift = Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.ShiftModifier
-    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 10, 10))  # Ctrl+click unchecks
-    assert s.detection_checked == [False, True, True, True]
-    assert not win.detection_panel.item(0).checkState(0) == Qt.CheckState.Checked  # the tree follows
-    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, shift, canvas_pos(win, 10, 10))  # Shift+click checks
-    assert s.detection_checked == [True, True, True, True]
-    # Ctrl+drag a box around the "car" column (x 30..50) unchecks both cars
-    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 28, 2))
-    QTest.mouseMove(win.canvas, canvas_pos(win, 52, 40))
-    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 52, 40))
-    assert s.detection_checked == [True, True, False, False]
-    assert s.project.objects == []  # picking never creates an Object
+    shift, ctrl = Qt.KeyboardModifier.ShiftModifier, Qt.KeyboardModifier.ControlModifier
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 10, 10))  # click = add
+    assert s.detection_checked == [True, False, False, False]
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 10, 10))  # add again: stays
+    assert s.detection_checked[0]
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, shift, canvas_pos(win, 10, 10))  # Shift = toggle
+    assert not s.detection_checked[0]
+    # a drag that only grazes the car column (x 30..50) still adds both cars
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 29, 2))
+    QTest.mouseMove(win.canvas, canvas_pos(win, 31, 40))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 31, 40))
+    assert s.detection_checked == [False, False, True, True]
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 35, 30))  # Ctrl = remove
+    assert s.detection_checked == [False, False, True, False]
+    outlines = [o for o in win.canvas._overlays if o.style == "candidate_off"]
+    assert len(outlines) == 3  # unchecked ones stay visible (outline drawn in paint)
+    win.canvas.grab()
+
+    win.toggle_edit(oid)  # Edit is blocked while Select on Image is on
+    assert s.editing is None and s.project.objects[0].id == oid
+    win.new_object()
+    assert s.mode.value == "idle"
+    d.add_btn.click()  # adding closes the list: Select on Image turns off, Edit works again
+    qapp.processEvents()
+    assert not d.select_btn.isChecked()
+    win.toggle_edit(oid)
+    assert s.editing == oid
+
 
 
 def test_batch_tab_has_its_own_prompt(qapp, win):

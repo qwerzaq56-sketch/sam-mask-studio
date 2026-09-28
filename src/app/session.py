@@ -211,13 +211,8 @@ class Session:
 
     @property
     def effective_mode(self) -> Mode:
-        """The mode clicks act in.
-
-        While the project has no Objects at all, a click or box in IDLE starts
-        the first one (there is nothing it could be refining yet).
-        """
-        if self.mode == Mode.IDLE and self.key is not None and not self.project.objects:
-            return Mode.NEW_OBJECT
+        """The mode clicks act in. A plain click never creates an Object, not even the first
+        one: New Object (N) does (the v0.2 "first click" shortcut was removed on request)."""
         return self.mode
 
     def sync(self) -> None:
@@ -735,24 +730,30 @@ class Session:
                     best, best_area = i, area
         return best
 
-    def check_detections(self, indices: Iterable[int], on: bool) -> bool:
-        """Check (or uncheck) candidates; True when anything changed."""
+    def check_detections(self, indices: Iterable[int], op) -> bool:
+        """Check (``add`` / True), uncheck (``remove`` / False) or ``toggle`` candidates.
+
+        True when anything changed.
+        """
         changed = False
         for i in indices:
-            if 0 <= i < len(self.detection_checked) and self.detection_checked[i] != on:
-                self.detection_checked[i] = on
+            if not 0 <= i < len(self.detection_checked):
+                continue
+            old = self.detection_checked[i]
+            new = (not old) if op == "toggle" else op in (True, "add")
+            if new != old:
+                self.detection_checked[i] = new
                 changed = True
         return changed
 
     def detections_in_box(self, box: Box) -> List[int]:
-        """Candidates with at least half of their mask inside *box* (a drag on the image)."""
+        """Candidates the drag box touches at all (any pixel of the mask inside *box*)."""
         x0, y0, x1, y1 = box
         x0, x1 = sorted((int(x0), int(x1)))
         y0, y1 = sorted((int(y0), int(y1)))
         out = []
         for i, d in enumerate(self.detections):
-            total = int(d.mask.sum())
-            if total and 2 * int(d.mask[max(0, y0) : y1 + 1, max(0, x0) : x1 + 1].sum()) >= total:
+            if d.mask[max(0, y0) : y1 + 1, max(0, x0) : x1 + 1].any():
                 out.append(i)
         return out
 

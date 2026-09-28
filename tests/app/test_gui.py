@@ -46,8 +46,11 @@ def click(win, x, y, button=Qt.MouseButton.LeftButton, mods=Qt.KeyboardModifier.
     QTest.mouseClick(win.canvas, button, mods, canvas_pos(win, x, y))
 
 
-def test_first_click_creates_object_then_idle_clicks_create_nothing(win):
-    assert win.canvas.mode == Mode.NEW_OBJECT  # no Objects yet: a click starts the first one
+def test_plain_clicks_never_create_objects_new_object_does(win):
+    assert win.canvas.mode == Mode.IDLE
+    click(win, 20, 20)  # even with no Objects yet, a plain click creates nothing
+    assert win.session.project.objects == []
+    win.new_object()
     click(win, 20, 20)
     assert len(win.session.project.objects) == 1 and win.session.mode == Mode.EDIT
     win.finish_editing()

@@ -20,28 +20,16 @@ def session(tmp_path):
     return s
 
 
-# --- 3) the very first Object comes from a plain click -------------------------
+# --- 3) a plain click never creates an Object (the v0.2 first-click shortcut was removed) ---
 
 
-def test_first_click_creates_object_when_there_are_none(session):
-    assert session.mode == Mode.IDLE and session.effective_mode == Mode.NEW_OBJECT
-    oid = session.click(30, 30)
-    assert oid is not None and session.mode == Mode.EDIT
-    session.finish_editing()
-    assert session.effective_mode == Mode.IDLE
-    assert session.click(50, 30) is None and len(session.project.objects) == 1  # later: never silent
-
-
-def test_first_object_by_box_and_negative_click_does_nothing(session):
-    assert session.click(30, 30, positive=False) is None
+def test_plain_click_never_creates_the_first_object(session):
+    assert session.mode == Mode.IDLE and session.effective_mode == Mode.IDLE
+    assert session.click(30, 30) is None and session.drag_box((10, 10, 40, 30)) is None
+    assert session.project.objects == []
+    session.start_new_object()
     assert session.drag_box((10, 10, 40, 30)) is not None
     assert session.project.objects[0].source == Source.SAM2_BOX
-
-
-def test_auto_new_again_after_all_objects_deleted(session):
-    oid = session.click(30, 30)
-    session.delete_objects([oid])
-    assert session.effective_mode == Mode.NEW_OBJECT
 
 
 # --- 4) comma separated prompts ------------------------------------------------
@@ -63,6 +51,7 @@ def test_detect_many_groups_by_label(session):
 
 
 def edited(session):
+    session.start_new_object()
     session.click(30, 30)  # disc r=10 (best variant)
     return session.editing_frame()
 

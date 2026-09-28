@@ -276,6 +276,11 @@ Then: the mode buttons only switch modes; Apply & Recompute (or Enter) is the on
 spec 03). The list shows only Objects with a mask on this image (plus the one in Edit); `Show all
 Objects` lists every one. A second column shows `🔗 n` for Objects with masks on n > 1 images.
 
+**P3.1** (`v0.3-p3.1`): Select on Image toggle (on after a detection; required for picking; Edit and
+New Object are blocked while on): click / drag = add, Shift = toggle, Ctrl = remove; a drag box takes
+every candidate it touches; unchecked candidates keep their outline. The v0.2 "first click creates
+the first Object" rule is gone (`Session.effective_mode` == `mode`).
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

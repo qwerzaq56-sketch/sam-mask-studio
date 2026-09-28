@@ -147,9 +147,10 @@ SHORTCUTS = (
         ("Middle-drag / Space+drag", "Pan"),
         ("F1", "This list"),
     )),
-    ("Detections (current image)", (
-        ("Shift+click / Shift+drag", "Check the candidate under the cursor / inside the box"),
-        ("Ctrl+click / Ctrl+drag", "Uncheck them"),
+    ("Detections: Select on Image on", (
+        ("Click / drag", "Add the candidate under the cursor / every one the box touches"),
+        ("Shift+click / Shift+drag", "Toggle them"),
+        ("Ctrl+click / Ctrl+drag", "Remove them"),
     )),
     ("On the image (Edit)", (
         ("Left click / Right click", "Positive / negative point"),

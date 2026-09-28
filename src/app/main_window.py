@@ -303,6 +303,7 @@ class MainWindow(QMainWindow):
         d.add_requested.connect(lambda how: self._do(lambda: self.session.add_checked_detections(how)))
         d.clear_requested.connect(lambda: self._do(self.session.clear_detections))
         d.preview_toggled.connect(lambda _on: self.refresh())
+        d.select_toggled.connect(self.set_picking)
         b = self.batch_panel
         b.batch_requested.connect(self.run_batch)
         b.batch_stop_requested.connect(lambda: self.stop_job(discard=False))
@@ -384,8 +385,8 @@ class MainWindow(QMainWindow):
                 banner += "  ·  REGION BOX"
         elif s.mode == Mode.NEW_OBJECT:
             banner = "New Object: click or drag a box"
-        elif mode == Mode.NEW_OBJECT:
-            banner = "Click or drag a box to create the first Object"
+        elif self.picking():
+            banner = "Select on Image: click / drag = add · Shift = toggle · Ctrl = remove"
         else:
             banner = ""
         if s.mode != Mode.EDIT and (self._tool or self.canvas.brush_mode):
@@ -409,6 +410,10 @@ class MainWindow(QMainWindow):
             editing=shown is not None and shown is editing_obj,
         )
         self.detection_panel.set_detections(s.detections, s.detection_checked)
+        if not s.detections and self.detection_panel.select_btn.isChecked():
+            self.detection_panel.select_btn.blockSignals(True)  # nothing left to pick (added / discarded)
+            self.detection_panel.select_btn.setChecked(False)
+            self.detection_panel.select_btn.blockSignals(False)
         self.images_panel.update_marks(project)
         self.images_panel.set_current(s.index)
         self.propagation_panel.set_current(s.index)
@@ -432,8 +437,8 @@ class MainWindow(QMainWindow):
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
             Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: brush · Delete: point · Esc: finish",
         }[s.mode]
-        if mode == Mode.NEW_OBJECT and s.mode == Mode.IDLE:
-            mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
+        if self.picking():
+            mode_text = "SELECT ON IMAGE — click / drag: add · Shift: toggle · Ctrl: remove · Edit is off meanwhile"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
             mode_text = "BRUSH — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · D: brush off"
             if self.canvas.brush_tool != "paint":
@@ -494,7 +499,7 @@ class MainWindow(QMainWindow):
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
             if preview:
                 overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
-        self.canvas.candidates_pickable = preview and bool(s.detections)
+        self.canvas.candidates_pickable = preview and self.picking()
         self.canvas.set_overlays(overlays)
 
     # ------------------------------------------------------------------
@@ -901,7 +906,7 @@ class MainWindow(QMainWindow):
         if oid is None:
             return
         self.objects_panel.select_ids([oid])
-        if s.mode == Mode.EDIT and s.editing != oid:
+        if s.mode == Mode.EDIT and s.editing != oid and not self.picking():
             self.close_tool(apply=False)
             self.set_brush_tool("", redraw=False)
             s.edit(oid)
@@ -916,6 +921,8 @@ class MainWindow(QMainWindow):
             self._do(lambda: self.session.select_variant(index, oid))
 
     def new_object(self) -> None:
+        if self._no_edit_while_picking():
+            return
         self.close_tool()
         if self.session.key is None or self._busy:
             return
@@ -924,6 +931,9 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def toggle_edit(self, oid: int) -> None:
+        if self.session.editing != oid and self._no_edit_while_picking():
+            self.refresh()  # the row's Edit button springs back
+            return
         self.close_tool()
         if self.session.editing == oid:
             self.session.finish_editing()
@@ -1024,6 +1034,8 @@ class MainWindow(QMainWindow):
             counts = ", ".join(f"{lb} {sum(1 for d in dets if d.label == lb)}" for lb in labels)
             self.detection_panel.set_busy(False, f"{len(dets)} candidate(s) — {counts}. Check the ones to keep")
             self.log(f"SAM3 {counts}")
+            if dets:
+                self.detection_panel.select_btn.setChecked(True)  # pick them on the image right away
             self.refresh()
 
         def failed(msg):
@@ -1035,16 +1047,33 @@ class MainWindow(QMainWindow):
         self._start(Task(run), done, failed)
         self.refresh()
 
-    def on_candidates_clicked(self, x: float, y: float, on: bool) -> None:
-        """Shift+click checks the candidate under the cursor, Ctrl+click unchecks it."""
+    def picking(self) -> bool:
+        """Select on Image is on (and there are Detections to pick)."""
+        return self.detection_panel.select_btn.isChecked() and bool(self.session.detections)
+
+    def set_picking(self, on: bool) -> None:
+        """Select on Image: clicks pick Detections; Edit is left and blocked meanwhile."""
+        if on and self.session.mode != Mode.IDLE:
+            self.close_tool()
+            self.session.finish_editing()
+        self.refresh()
+
+    def _no_edit_while_picking(self) -> bool:
+        if self.picking():
+            self.log("Turn off Select on Image (Detection tab) to edit Objects")
+            return True
+        return False
+
+    def on_candidates_clicked(self, x: float, y: float, op: str) -> None:
+        """Click = add the candidate under the cursor, Shift = toggle it, Ctrl = remove it."""
         i = self.session.detection_at(x, y)
-        if i is not None and self.session.check_detections([i], on):
+        if i is not None and self.session.check_detections([i], op):
             self.refresh()
 
-    def on_candidates_boxed(self, x0: float, y0: float, x1: float, y1: float, on: bool) -> None:
-        """Shift+drag checks the candidates (mostly) inside the box, Ctrl+drag unchecks them."""
+    def on_candidates_boxed(self, x0: float, y0: float, x1: float, y1: float, op: str) -> None:
+        """Drag = add every candidate the box touches, Shift = toggle them, Ctrl = remove them."""
         s = self.session
-        if s.check_detections(s.detections_in_box((x0, y0, x1, y1)), on):
+        if s.check_detections(s.detections_in_box((x0, y0, x1, y1)), op):
             self.refresh()
 
     def on_detection_checks(self, checked: List[bool]) -> None:
