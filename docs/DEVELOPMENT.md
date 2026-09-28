@@ -30,7 +30,7 @@ The original planning documents are in `docs/specs/` and win over anything here:
 | 01 §9 one Variant per Object, many Objects checked | Variant rows (Objects panel) and thumbnails (Properties) → `Session.select_variant(i, obj_id)` |
 | 01 §10 over-detection left unchecked | Detection checkboxes → `add_checked_detections` |
 | 01 §11 SAM3 Object refined by SAM2 | `predict(points, box, seed_mask=base_mask)` |
-| 01 §12 Preview Final Mask / Export | toolbar `Z` (toggle) / hold Space; editing works in it; Export dialog |
+| 01 §12 Preview Final Mask / Export | toolbar `X` (toggle) / hold Z; editing works in it; Export dialog |
 | 01 §15 Image → DetectionResults | Detections kept per image in `Session` (restored on navigating back; not persisted) |
 | 02 §3 Current must be within Start~End; §8 Current never re-processed | `PropagationPlan`, `MainWindow.propagate` |
 | 02 §6–7 only checked Objects, from their selected Variant | `Session.seeds()` |
@@ -226,6 +226,17 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   is not an edge) sharing one Amount.
 - Paint mode: **A** picks the whole result, A again drops every pick (otherwise A = previous image).
 - Mode buttons show the selection by color only; the brush circle is green over the Final Mask.
+
+**P2.10 — keys and help** (`v0.3-p2.10`)
+- Final Mask: hold **Z** to peek, **X** toggles (app-wide event filter; Ctrl+Z untouched).
+  Space+drag pans again.
+- The wheel over sliders / number boxes is forwarded to their parent (the panel scrolls, the
+  value stays).
+- Help > Keyboard Shortcuts (F1) lists `dialogs.SHORTCUTS`.
+- Auto tools: an **Apply** button under Region writes the result in and leaves the tool; the
+  Alt (unpick) stroke area is red.
+
+Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
 
 ### Remaining work
 

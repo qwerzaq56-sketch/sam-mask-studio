@@ -153,6 +153,7 @@ class PropertiesPanel(QWidget):
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
+    auto_apply_requested = pyqtSignal()  # write the auto tool's result in and leave the tool
     apply_layer_requested = pyqtSignal()
     delete_layer_requested = pyqtSignal()
 
@@ -253,6 +254,10 @@ class PropertiesPanel(QWidget):
         self.clear_region_btn = QPushButton("Clear")
         self.clear_region_btn.clicked.connect(self.clear_region_requested)
         self.scope_label = note("")
+        self.apply_auto_btn = QPushButton("Apply")
+        self.apply_auto_btn.setToolTip("Write the auto tool's result in (Fill: all of it, Paint: the picks) and leave it")
+        self.apply_auto_btn.clicked.connect(self.auto_apply_requested)
+        self.apply_auto_btn.setEnabled(False)
         abox = QGroupBox("Auto tools")
         av = QVBoxLayout(abox)
         rows = (
@@ -262,6 +267,7 @@ class PropertiesPanel(QWidget):
             (self.mode_hint, None),
             ("Region", [self.region_btn, self.clear_region_btn]),
             (self.scope_label, None),
+            (None, [self.apply_auto_btn]),
         )
         for head, buttons in rows:
             if buttons is None:
@@ -460,6 +466,7 @@ class PropertiesPanel(QWidget):
             b.blockSignals(False)
         auto = tool in AUTO_TOOLS
         self.settings_box.setVisible(auto)
+        self.apply_auto_btn.setEnabled(auto)
         if auto:
             self.settings_stack.setCurrentIndex(self._pages[tool])
             self.settings_box.setTitle(f"{TOOL_TEXT[tool][0]} settings")

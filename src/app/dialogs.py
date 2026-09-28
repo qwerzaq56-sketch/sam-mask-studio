@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QTextBrowser,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -113,3 +115,62 @@ class ExportDialog(QDialog):
             invert=self.invert.isChecked(),
             include_empty=self.empty.isChecked(),
         )
+
+
+# Every keyboard / mouse shortcut, by area (kept here so the Help window and the code agree).
+SHORTCUTS = (
+    ("File", (
+        ("Ctrl+O", "Open an image folder"),
+        ("Ctrl+S", "Save (also autosaved)"),
+        ("Ctrl+E", "Export Final Masks"),
+    )),
+    ("Edit", (
+        ("Ctrl+Z", "Undo"),
+        ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
+        ("N", "New Object from points"),
+        ("E", "Edit the selected Object / finish editing"),
+        ("Delete", "Delete the selected point, else the selected Objects"),
+        ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
+    )),
+    ("Images", (
+        ("D / Right / PgDown", "Next image"),
+        ("A / Left / PgUp", "Previous image (A in an auto tool's Paint mode: pick all / none)"),
+    )),
+    ("View", (
+        ("Z (hold)", "Show the Final Mask while held"),
+        ("X", "Final Mask preview on / off"),
+        ("O", "Outline on / off"),
+        ("Wheel", "Zoom at the cursor"),
+        ("Middle-drag / Space+drag", "Pan"),
+        ("F1", "This list"),
+    )),
+    ("On the image (Edit)", (
+        ("Left click / Right click", "Positive / negative point"),
+        ("Drag", "Box prompt (Region Box on: add a box to the region)"),
+        ("B", "Paint brush on / off"),
+        ("Drag with a brush", "Paint: add · Restore: undo edits · auto tool Paint mode: pick"),
+        ("Alt+drag", "Paint: subtract · auto tool Paint mode: unpick · Region Box: remove a box"),
+        ("Shift+drag", "Paint without turning the brush on"),
+        ("Ctrl+wheel / Shift+wheel", "Brush size"),
+    )),
+)
+
+
+class ShortcutsDialog(QDialog):
+    """Help > Keyboard Shortcuts (F1)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Keyboard Shortcuts")
+        self.resize(560, 620)
+        rows = []
+        for group, items in SHORTCUTS:
+            rows.append(f"<tr><td colspan=2><h3 style='margin-top:10px'>{group}</h3></td></tr>")
+            rows += [f"<tr><td style='padding-right:16px'><b>{k}</b></td><td>{v}</td></tr>" for k, v in items]
+        view = QTextBrowser()
+        view.setHtml("<table cellspacing=3>" + "".join(rows) + "</table>")
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addWidget(view)
+        lay.addWidget(buttons)

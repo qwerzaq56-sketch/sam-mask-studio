@@ -20,7 +20,7 @@ depends on the mode the main window sets:
               With ``region_mode`` on, a drag reports ``region_box`` instead
               (Alt or Ctrl: subtract); the region is shown in cyan.
 
-Middle-drag pans and the wheel zooms at the cursor. Ctrl+wheel (or
+Middle-drag or Space+drag pans and the wheel zooms at the cursor. Ctrl+wheel (or
 Shift+wheel) sets the brush size while an Object is in Edit. The Final Mask
 preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
 editing keeps working in it.
@@ -72,6 +72,7 @@ class Overlay:
 GROUPS = ("objects", "edit", "region", "candidates")
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
+UNPICK_STROKE_COLOR = (255, 60, 60)  # Alt: the stroke takes picks back out
 
 
 def group_of(style: str) -> str:
@@ -195,6 +196,7 @@ class Canvas(QWidget):
         self.zoom = 1.0
         self._pan = QPointF(0, 0)
         self._pan_from: Optional[Tuple[QPointF, QPointF]] = None
+        self._space_held = False
         self._press: Optional[Tuple[QPointF, Qt.MouseButton]] = None
         self._drag_to: Optional[QPointF] = None
         self._mouse: Optional[QPointF] = None
@@ -255,7 +257,8 @@ class Canvas(QWidget):
             if self._region is not None:
                 layers.append(Overlay(self._region, REGION_COLOR, "region"))
             if self._tool_area is not None:
-                layers.append(Overlay(self._tool_area, TOOL_STROKE_COLOR, "region"))
+                color = UNPICK_STROKE_COLOR if self._tool_erase else TOOL_STROKE_COLOR
+                layers.append(Overlay(self._tool_area, color, "region"))
             return layers
         layers = [o for o in self._overlays if group_of(o.style) == group]
         if group == "edit" and self._stroke_mask is not None:
@@ -551,7 +554,7 @@ class Canvas(QWidget):
         if self.image is None:
             return
         pos, btn = event.position(), event.button()
-        if btn == Qt.MouseButton.MiddleButton:
+        if btn == Qt.MouseButton.MiddleButton or (btn == Qt.MouseButton.LeftButton and self._space_held):
             self._pan_from = (pos, QPointF(self._pan))
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
@@ -683,14 +686,20 @@ class Canvas(QWidget):
 
     def keyPressEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Shift:
+        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self._space_held = True
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        elif k == Qt.Key.Key_Shift:
             self.update()
         else:
             super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Shift:
+        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self._space_held = False
+            self._update_cursor()
+        elif k == Qt.Key.Key_Shift:
             if self._brush.is_drawing and not self.brush_mode:
                 self._finish_stroke()  # a Shift stroke ends when Shift is let go
             self.update()
@@ -698,6 +707,7 @@ class Canvas(QWidget):
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):
+        self._space_held = False
         if self._brush.is_drawing:
             self._finish_stroke()
         self.update()
