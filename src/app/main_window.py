@@ -829,10 +829,10 @@ class MainWindow(QMainWindow):
         goto.setMinimumWidth(30)  # it may get narrow with the folded Frame List
         goto.setMaximumWidth(90)
         goto.returnPressed.connect(lambda: self.goto_frame(goto))
-        focus = QPushButton("S")
+        focus = QToolButton()
+        focus.setText("⌖")
+        focus.setAutoRaise(True)
         focus.setToolTip("Focus: scroll to the current frame (S)")
-        focus.setMinimumWidth(0)
-        focus.setMaximumWidth(40)
         focus.clicked.connect(self.focus_frame)
         self._goto_fields.append(goto)
         row = QHBoxLayout()
