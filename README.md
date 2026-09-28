@@ -88,8 +88,14 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 ### Object 관리
 
 - 목록에는 **현재 이미지에 Mask가 있는 Object만** 보입니다. **Show all Objects**로 전부 보기. 여러 이미지에 걸친 Object는 `🔗 N`.
-- 체크박스 = Final Mask 포함 여부. 이름 더블클릭 = Rename, `[×]` = 삭제, `[···]` = Duplicate / 이 이미지 Mask만 제거.
-- 여러 행을 선택해 **Merge**(처음 선택한 Object 이름을 씀) / Duplicate / Delete.
+- 체크박스 = Final Mask 포함 여부. 이름 더블클릭 = Rename, `[×]` = 삭제, `[···]` = Duplicate / Duplicate All / Copy into ▸ / 이 이미지 Mask만 제거.
+- 선택한 행에 대한 버튼(메뉴 **Edit → Objects**에도 있음):
+  - **Duplicate**: 현재 이미지의 Mask만 복제 · **Duplicate All**: 모든 이미지의 링크된 Mask까지 복제.
+  - **Copy A → B…**: 처음 선택한 Object(A)를 두 번째(B)에 복사. 방향(A → B / B → A), **Add**(합집합, 기본) / **Replace**(B의 Mask를 A로 교체),
+    **이 이미지만**(기본) / **A에 Mask가 있는 모든 이미지**를 고릅니다. A에 Mask가 없는 이미지의 B는 그대로.
+  - **Merge…**: 하나의 Object로 합치고 원본은 지움. **Add**(합집합, 처음 선택한 이름, 기본) /
+    **Override with A**(겹치는 이미지는 A의 Mask, A 이름) / **Override with B**(B의 Mask, B 이름). 한쪽에만 있는 이미지는 그 Mask를 그대로.
+  - **Delete**. 모두 Undo 한 번으로 되돌아갑니다.
 - `↑` / `↓`: 이 이미지에 Mask가 있는 이전/다음 Object로 이동(편집 중이면 편집 대상도 따라감).
 
 ### 프레임 이동

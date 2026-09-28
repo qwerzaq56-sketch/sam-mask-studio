@@ -3,8 +3,9 @@
 Each row: include checkbox (Final Mask), color, name (double-click to rename),
 [Edit], [×] delete, [···] menu. When an Object has several Variants on the
 current image they are listed under it as ● / ○ rows; clicking one selects it.
-Merge / Duplicate / Delete act on the selected rows (Ctrl/Shift-click), so they
-never conflict with the include checkboxes.
+Merge / Copy into / Duplicate / Delete act on the selected rows (Ctrl/Shift-click),
+so they never conflict with the include checkboxes. Duplicate copies the mask on
+the current image only; Duplicate All copies every linked mask.
 """
 
 from __future__ import annotations
@@ -67,7 +68,9 @@ class ObjectsPanel(QWidget):
     edit_requested = pyqtSignal(int)  # obj id; the Object already in Edit means "finish"
     new_requested = pyqtSignal()
     merge_requested = pyqtSignal(list)
-    duplicate_requested = pyqtSignal(list)
+    duplicate_requested = pyqtSignal(list)  # the current image's mask only
+    duplicate_all_requested = pyqtSignal(list)  # every linked mask
+    copy_requested = pyqtSignal(list)  # [source id, target id]
     delete_requested = pyqtSignal(list)
     remove_frame_requested = pyqtSignal(int)
     variant_selected = pyqtSignal(int, int)  # obj id, variant index (current image)
@@ -104,17 +107,33 @@ class ObjectsPanel(QWidget):
         self.new_btn = QPushButton("+ New Object from Points")
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
         self.new_btn.clicked.connect(lambda: later(self, self.new_requested))
-        self.merge_btn = QPushButton("Merge")
-        self.merge_btn.setToolTip("Fuse the selected rows into one Object (Ctrl/Shift-click rows to select)")
+        self.merge_btn = QPushButton("Merge…")
+        self.merge_btn.setToolTip(
+            "Fuse the selected rows into one Object: Add (union) or Override with one of them"
+            " (Ctrl/Shift-click rows to select)"
+        )
         self.merge_btn.clicked.connect(lambda: later(self, self.merge_requested, self.selected_ids()))
+        self.copy_btn = QPushButton("Copy A → B…")
+        self.copy_btn.setToolTip(
+            "Copy the first selected Object (A) into the second (B): Replace or Add,"
+            " on this image or on all of A's images"
+        )
+        self.copy_btn.clicked.connect(lambda: later(self, self.copy_requested, self.selected_ids()[:2]))
         self.dup_btn = QPushButton("Duplicate")
+        self.dup_btn.setToolTip("Copy the selected Objects' mask on this image only")
         self.dup_btn.clicked.connect(lambda: later(self, self.duplicate_requested, self.selected_ids()))
+        self.dup_all_btn = QPushButton("Duplicate All")
+        self.dup_all_btn.setToolTip("Copy the selected Objects with every linked mask (all images)")
+        self.dup_all_btn.clicked.connect(lambda: later(self, self.duplicate_all_requested, self.selected_ids()))
         self.del_btn = QPushButton("Delete")
         self.del_btn.clicked.connect(lambda: later(self, self.delete_requested, self.selected_ids()))
 
         ops = QHBoxLayout()
-        for b in (self.merge_btn, self.dup_btn, self.del_btn):
+        for b in (self.merge_btn, self.copy_btn):
             ops.addWidget(b)
+        ops2 = QHBoxLayout()
+        for b in (self.dup_btn, self.dup_all_btn, self.del_btn):
+            ops2.addWidget(b)
         # Only the Objects with a mask on this image by default; Show all lists every Object.
         self.show_all = QCheckBox("Show all Objects")
         self.show_all.setToolTip("Also list Objects that have no mask on this image")
@@ -132,6 +151,7 @@ class ObjectsPanel(QWidget):
         lay.addWidget(self.new_btn)
         lay.addWidget(QLabel("Selected Objects"))
         lay.addLayout(ops)
+        lay.addLayout(ops2)
         self._update_buttons()
 
     # ------------------------------------------------------------------
@@ -243,12 +263,30 @@ class ObjectsPanel(QWidget):
         b.setObjectName(f"more_{oid}")
         menu = QMenu(b)
         menu.addAction("Rename", lambda i=oid: self._start_rename(i))
-        menu.addAction("Duplicate", lambda i=oid: later(self, self.duplicate_requested, [i]))
+        menu.addAction("Duplicate (this image)", lambda i=oid: later(self, self.duplicate_requested, [i]))
+        menu.addAction("Duplicate All (every linked mask)",
+                       lambda i=oid: later(self, self.duplicate_all_requested, [i]))
+        into = menu.addMenu("Copy into")
+        into.aboutToShow.connect(lambda i=oid, m=into: self._fill_copy_menu(m, i))
         menu.addAction("Remove mask on this image", lambda i=oid: later(self, self.remove_frame_requested, i))
         menu.addSeparator()
         menu.addAction("Delete", lambda i=oid: later(self, self.delete_requested, [i]))
         b.setMenu(menu)
         return b
+
+    def _fill_copy_menu(self, menu: QMenu, oid: int) -> None:
+        """Copy into ▸ every other Object (built when opened, so names are current)."""
+        menu.clear()
+        others = [o for o in self._objects if o.id != oid]
+        for o in others:
+            menu.addAction(color_icon(o.color), o.name,
+                           lambda i=oid, j=o.id: later(self, self.copy_requested, [i, j]))
+        if not others:
+            menu.addAction("(no other Object)").setEnabled(False)
+
+    def listed_ids(self) -> List[int]:
+        """The Object rows in list order (what hovering the list steps through)."""
+        return [self.tree.topLevelItem(i).data(0, ID_ROLE) for i in range(self.tree.topLevelItemCount())]
 
     def _item(self, oid: int) -> Optional[QTreeWidgetItem]:
         for i in range(self.tree.topLevelItemCount()):
@@ -328,5 +366,7 @@ class ObjectsPanel(QWidget):
     def _update_buttons(self) -> None:
         n = len(self.selected_ids())
         self.merge_btn.setEnabled(n >= 2)
+        self.copy_btn.setEnabled(n == 2)
         self.dup_btn.setEnabled(n >= 1)
+        self.dup_all_btn.setEnabled(n >= 1)
         self.del_btn.setEnabled(n >= 1)

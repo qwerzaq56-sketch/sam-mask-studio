@@ -1,7 +1,7 @@
 """v0.4: the GPT review follow-ups (one section per phase, so each can be reverted with it)."""
 
 from tests.app.test_gui import folder, win  # noqa: F401  (fixtures)
-from tests.app.test_v03_features import make_objects
+from tests.app.test_v03_features import make_objects, settle
 
 
 # --- p1: the work bar and the clearer names ----------------------------------
@@ -306,3 +306,105 @@ def test_auto_tool_starts_in_fill_mode(qapp, win):
     win.escape()
     p.tool_btns["grow"].click()  # after leaving too
     assert s.auto_mode == "fill"
+
+
+# --- p11: Duplicate (this image / all), Copy A → B, Merge Add / Override ------------
+
+
+def _box_mask(shape, x0, x1):
+    import numpy as np
+
+    m = np.zeros(shape, bool)
+    m[10:30, x0:x1] = True
+    return m
+
+
+def _two_linked(win):
+    """A on images 0 and 2 (x 0..20), B on images 0 and 3 (x 10..40): they overlap on image 0."""
+    from src.core.project import FrameState, FrameStatus, Source
+
+    s = win.session
+    p = s.project
+    shape = s.working_hw()
+    k = s.keys
+    a = p.add_object(k[0], FrameState.from_mask(_box_mask(shape, 0, 20)), Source.SAM2_POINT, "A")
+    p.set_frame(a, k[2], FrameState.from_mask(_box_mask(shape, 0, 20), status=FrameStatus.PROPAGATED))
+    b = p.add_object(k[0], FrameState.from_mask(_box_mask(shape, 10, 40)), Source.SAM2_POINT, "B")
+    p.set_frame(b, k[3], FrameState.from_mask(_box_mask(shape, 10, 40), status=FrameStatus.PROPAGATED))
+    win.refresh()
+    return a, b
+
+
+def test_duplicate_this_image_or_every_linked_mask(qapp, win):
+    a, _b = _two_linked(win)
+    s = win.session
+    p = s.project
+    op = win.objects_panel
+    op.select_ids([a])
+    op.dup_btn.click()
+    settle(qapp)
+    copy = p.objects[1]
+    assert copy.name == "A #1 (copy)" and list(copy.frames) == [s.keys[0]]  # this image only
+    assert op.selected_ids() == [copy.id]
+    op.select_ids([a])
+    op.dup_all_btn.click()
+    settle(qapp)
+    assert sorted(p.objects[1].frames) == [s.keys[0], s.keys[2]]  # every linked mask
+    win.go_to(1)  # A has no mask here: nothing to copy
+    n = len(p.objects)
+    win.duplicate([a])
+    assert len(p.objects) == n
+    assert not op.copy_btn.isEnabled()
+
+
+def test_copy_a_into_b_add_or_replace(qapp, win):
+    import numpy as np
+
+    a, b = _two_linked(win)
+    s = win.session
+    p = s.project
+    k = s.keys
+    A0, B0 = p.get(a).mask(k[0]).copy(), p.get(b).mask(k[0]).copy()
+    win.objects_panel.select_ids([a, b])
+    assert win.objects_panel.copy_btn.isEnabled()
+    win.objects_panel.copy_btn.click()  # the defaults: A -> B, Add, this image only
+    settle(qapp)
+    assert np.array_equal(p.get(b).mask(k[0]), A0 | B0)
+    assert k[2] not in p.get(b).frames and np.array_equal(p.get(a).mask(k[0]), A0)  # A is untouched
+    win.undo()
+    win.copy_into([a, b], replace=True, all_frames=True)
+    B = p.get(b)
+    assert np.array_equal(B.mask(k[0]), A0) and np.array_equal(B.mask(k[2]), A0)
+    assert B.frame(k[2]).status.value == "propagated"  # the frame is copied as it is
+    assert k[3] in B.frames  # where A has no mask, B keeps its own
+    win.undo()
+    win.choose = lambda title, text, groups, ok="OK": [1, 1, 0]  # B -> A, Replace, this image
+    win.copy_into([a, b])
+    assert np.array_equal(p.get(a).mask(k[0]), B0)
+
+
+def test_merge_add_or_override(qapp, win):
+    import numpy as np
+
+    a, b = _two_linked(win)
+    s = win.session
+    p = s.project
+    k = s.keys
+    A0, B0 = p.get(a).mask(k[0]).copy(), p.get(b).mask(k[0]).copy()
+    win.merge([a, b], "override_a")
+    m = p.objects[0]
+    assert m.name == "A #1" and np.array_equal(m.mask(k[0]), A0)  # A wins where both have a mask
+    assert sorted(m.frames) == [k[0], k[2], k[3]]  # elsewhere each keeps its own
+    win.undo()
+    win.merge([a, b], "override_b")
+    m = p.objects[0]
+    assert m.name == "B #1" and np.array_equal(m.mask(k[0]), B0)
+    win.undo()
+    win.choose = lambda title, text, groups, ok="OK": [0]  # the dialog: Add
+    win.merge([a, b])
+    m = p.objects[0]
+    assert m.name == "A #1" and np.array_equal(m.mask(k[0]), A0 | B0) and len(p.objects) == 1
+    win.undo()
+    win.choose = lambda *a, **kw: None  # cancelled: nothing happens
+    win.merge([a, b])
+    assert len(p.objects) == 2

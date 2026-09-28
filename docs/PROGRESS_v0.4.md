@@ -89,6 +89,15 @@
 ### 10단계 · 오토 툴은 Fill 모드로 시작 (`v0.4-p10`)
 - 오토 툴을 켜거나 다른 오토 툴로 바꾸면 항상 Fill 모드로 시작(전에는 직전 모드 유지). 같은 도구 안에서 Fill ↔ Paint 전환과 `A`(Paint 모드로 전체 선택)는 그대로.
 
+### 11단계 · Object 관리 (`v0.4-p11`)
+- **Duplicate** = 현재 이미지의 Mask만 복제(그 이미지에 Mask가 없는 Object는 건너뜀). **Duplicate All** = 전처럼 모든 링크 Mask.
+- **Copy A → B…**: 처음 선택한 Object(A)를 두 번째(B)에. 창에서 방향(A → B / B → A), Add(합집합, 기본) / Replace, 이 이미지만(기본) / A에 Mask가 있는 모든 이미지.
+  Replace는 프레임을 그대로 복사(포인트·상태 포함), A에 Mask가 없는 이미지의 B는 그대로. Undo 한 번.
+- **Merge…**: 창에서 Add(합집합, 먼저 선택한 이름, 기본) / Override with A / Override with B. Override는 겹치는 이미지에서 이긴 쪽 프레임을 그대로 쓰고 이름도 이긴 쪽. 3개 이상이면 선택 순서(A) 또는 역순(B)으로 우선.
+- `[···]` 메뉴: Duplicate (this image) / Duplicate All / Copy into ▸(다른 Object 목록).
+- 새로 만든 Object가 선택되지 않던 문제(Merge 포함): 목록이 다시 그려진 뒤 선택.
+- 코드: `Project.duplicate(key=)`, `Project.copy_into`, `Project.merge(how=)`, `Session.duplicate / copy_into`, `OptionsDialog`, `MainWindow.choose`(테스트에서 교체).
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 

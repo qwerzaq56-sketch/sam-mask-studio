@@ -47,7 +47,7 @@ from PyQt6.QtWidgets import (
 from src.app.canvas import Canvas, Overlay
 from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
-from src.app.dialogs import ExportDialog, SettingsDialog, ShortcutsDialog
+from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
 from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
@@ -389,7 +389,9 @@ class MainWindow(QMainWindow):
         o.edit_requested.connect(self.toggle_edit)
         o.new_requested.connect(self.new_object)
         o.merge_requested.connect(self.merge)
-        o.duplicate_requested.connect(lambda ids: self._do(lambda: self.session.project.duplicate(ids)))
+        o.duplicate_requested.connect(self.duplicate)
+        o.duplicate_all_requested.connect(lambda ids: self.duplicate(ids, all_frames=True))
+        o.copy_requested.connect(self.copy_into)
         o.delete_requested.connect(self.delete_objects)
         o.remove_frame_requested.connect(lambda oid: self._do(lambda: self.session.remove_frame(oid)))
         o.variant_selected.connect(lambda oid, i: self._do(lambda: self.session.select_variant(i, oid)))
@@ -452,6 +454,11 @@ class MainWindow(QMainWindow):
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.exec()
         return box.clickedButton() is yes
+
+    def choose(self, title: str, text: str, groups, ok: str = "OK") -> Optional[List[int]]:
+        """Radio-choice dialog: the picked index per group, None when cancelled; tests replace this."""
+        dlg = OptionsDialog(title, text, groups, ok, self)
+        return dlg.choice() if dlg.exec() == OptionsDialog.DialogCode.Accepted else None
 
     def warn(self, text: str) -> None:
         self.log(text)
@@ -1202,6 +1209,11 @@ class MainWindow(QMainWindow):
         self.session.finish_editing()
         self.refresh()
 
+    def _select_new(self, ids: List[int]) -> None:
+        """Select Objects just made: their rows exist only after a refresh."""
+        self.refresh()
+        self.objects_panel.select_ids(ids)
+
     def delete_key(self) -> None:
         if self.session.mode == Mode.EDIT and self.session.selected_point is not None:
             self._prompt(self.session.delete_point)
@@ -1225,14 +1237,82 @@ class MainWindow(QMainWindow):
         if self.ask("Delete Object", text, "Delete"):
             self._do(lambda: self.session.delete_objects(ids))
 
-    def merge(self, ids: List[int]) -> None:
-        if len(ids) < 2:
+    def merge(self, ids: List[int], how: Optional[str] = None) -> None:
+        """Fuse the selected Objects. *how*: ``add`` (union), ``override_a`` (the first selected wins
+        where both have a mask, and names it), ``override_b`` (the second / last selected wins); None asks."""
+        ids = list(dict.fromkeys(ids))
+        objs = [o for o in (self.session.project.get(i) for i in ids) if o is not None]
+        if len(objs) < 2:
             self.log("Select two or more Object rows to merge (Ctrl/Shift-click)")
             return
-        new = self.session.merge(ids)
+        a, b = objs[0], objs[-1]
+        hows = ("add", "override_a", "override_b")
+        if how is None:
+            two = len(objs) == 2
+            picked = self.choose(
+                "Merge Objects",
+                f"Merge {len(objs)} Objects into one. The originals are removed (Ctrl+Z undoes it).",
+                [("Where more than one has a mask", [
+                    f"Add: the union of the masks, named “{a.name}”",
+                    f"Override with A: “{a.name}” wins" + ("" if two else " (then the next selected)"),
+                    f"Override with B: “{b.name}” wins" + ("" if two else " (then the one before)"),
+                ], 0)],
+                "Merge",
+            )
+            if picked is None:
+                return
+            how = hows[picked[0]]
+        order = [o.id for o in (reversed(objs) if how == "override_b" else objs)]
+        new = self.session.merge(order, "add" if how == "add" else "override")
         if new is not None:
-            self.objects_panel.select_ids([new])
-            self.log(f"Merged into {self.session.project.get(new).name}")
+            self._select_new([new])
+            self.log(f"Merged into {self.session.project.get(new).name}"
+                     + ("" if how == "add" else " (override)"))
+        self.refresh()
+
+    def duplicate(self, ids: List[int], all_frames: bool = False) -> None:
+        """Duplicate: the selected Objects' mask on this image only; *all_frames*: every linked mask."""
+        if not ids or self._busy:
+            return
+        new = self.session.duplicate(ids, all_frames)
+        if new:
+            self._select_new(new)
+            self.log(f"Duplicated {len(new)} Object(s)"
+                     + (" with every linked mask" if all_frames else " (this image's mask only)"))
+        else:
+            self.log("Nothing duplicated: no mask on this image (Duplicate All copies every image)")
+        self.refresh()
+
+    def copy_into(self, ids: List[int], replace: Optional[bool] = None, all_frames: Optional[bool] = None) -> None:
+        """Copy Object A (the first id) into B (the second): *replace* B's mask or add to it,
+        on this image or (*all_frames*) on every image where A has a mask. None asks."""
+        objs = [o for o in (self.session.project.get(i) for i in list(dict.fromkeys(ids))[:2]) if o is not None]
+        if len(objs) < 2 or self._busy:
+            self.log("Select two Objects: the first (A) is copied into the second (B)")
+            return
+        a, b = objs
+        if replace is None or all_frames is None:
+            picked = self.choose(
+                "Copy Object into Another",
+                f"Copy one Object's mask into the other. A = “{a.name}”, B = “{b.name}”.",
+                [
+                    ("Direction", [f"A → B: into “{b.name}”", f"B → A: into “{a.name}”"], 0),
+                    ("Mask", ["Add: A's mask is added to B's (union)", "Replace: B's mask becomes A's"], 0),
+                    ("Images", ["This image only", "Every image where A has a mask"], 0),
+                ],
+                "Copy",
+            )
+            if picked is None:
+                return
+            if picked[0] == 1:
+                a, b = b, a
+            replace, all_frames = picked[1] == 1, picked[2] == 1
+        changed = self.session.copy_into(a.id, b.id, replace, all_frames)
+        if changed:
+            self.objects_panel.select_ids([b.id])
+            self.log(f"{'Replaced' if replace else 'Added'} “{a.name}” into “{b.name}” on {len(changed)} image(s)")
+        else:
+            self.log(f"Nothing copied: “{a.name}” has no mask" + ("" if all_frames else " on this image"))
         self.refresh()
 
     def undo(self) -> None:
