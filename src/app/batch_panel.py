@@ -80,6 +80,7 @@ class BatchPanel(QWidget):
         self.progress.setFormat("%v / %m")
         self.status = QLabel("")
         self.status.setStyleSheet("color: gray;")
+        self.status.setWordWrap(True)  # a long message wraps instead of widening the column
         self.results = QListWidget()
         self.results.itemClicked.connect(self._on_result)
 
@@ -112,6 +113,8 @@ class BatchPanel(QWidget):
         lay.addWidget(self.progress)
         lay.addWidget(self.status)
         lay.addWidget(self.results, 1)
+        lay.addStretch(0)
+        self._show_results(False)  # progress and results appear with the first run
         self._scope_changed()
         allow_narrow(self)  # it shares the left column with the Objects
 
@@ -126,7 +129,15 @@ class BatchPanel(QWidget):
         if message:
             self.status.setText(message)
 
+    def _show_results(self, on: bool) -> None:
+        self.progress.setVisible(on)
+        self.results.setVisible(on)
+        self.layout().setStretch(self.layout().count() - 1, 0 if on else 1)  # keep the controls on top
+
     def set_image_count(self, n: int) -> None:
+        """A folder was opened: its image count; the last folder's results go away."""
+        self.results.clear()
+        self._show_results(False)
         for sb in (self.start, self.end):
             sb.setMaximum(max(1, n))
         self.end.setValue(max(1, n))
@@ -147,6 +158,7 @@ class BatchPanel(QWidget):
 
     def batch_begin(self, total: int) -> None:
         self.results.clear()
+        self._show_results(True)
         self.progress.setRange(0, max(1, total))
         self.progress.setValue(0)
         self.stop_btn.setEnabled(True)

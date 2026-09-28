@@ -150,8 +150,7 @@ class PropagationPanel(QWidget):
         self.cancel_btn.setToolTip("Stop and discard the whole propagation (nothing changes)")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.cancel_requested)
-        brow = QHBoxLayout()
-        brow.addWidget(self.run_btn, 1)
+        brow = QHBoxLayout()  # Stop / Cancel / Resume under the full-width run button
         brow.addWidget(self.stop_btn)
         brow.addWidget(self.cancel_btn)
         self.resume_btn = QPushButton("Resume")
@@ -185,17 +184,29 @@ class PropagationPanel(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(form)
+        lay.addWidget(self.run_btn)
         lay.addLayout(brow)
-        lay.addLayout(prog)
-        lay.addWidget(lists, 1)
+        self.run_view = QWidget()  # progress + Object / frame lists: shown from the first run on
+        rv = QVBoxLayout(self.run_view)
+        rv.setContentsMargins(0, 0, 0, 0)
+        rv.addLayout(prog)
+        rv.addWidget(lists, 1)
+        lay.addWidget(self.run_view, 1)
+        lay.addStretch(0)
+        self._show_run(False)
         self._reset_bars()
         self._scope_changed()
         allow_narrow(self)  # it shares the left column with the Objects
 
     # ------------------------------------------------------------------
 
+    def _show_run(self, on: bool) -> None:
+        self.run_view.setVisible(on)
+        self.layout().setStretch(self.layout().count() - 1, 0 if on else 1)  # keep the controls on top
+
     def set_images(self, keys: Sequence[str]) -> None:
         self._keys = list(keys)
+        self._show_run(False)
         self.start_edit.setText("1" if keys else "")
         self.end_edit.setText(str(len(keys)) if keys else "")
         self.frames.clear()
@@ -270,6 +281,7 @@ class PropagationPanel(QWidget):
     def begin(self, plan: PropagationPlan, objects: Sequence[Tuple[int, str]]) -> None:
         """Lay out the run: direction chains, Objects waiting, frames pending (reference ★)."""
         self._plan = plan
+        self._show_run(True)
         self._reset_bars()
         for name, targets in (("Backward", plan.backward), ("Forward", plan.forward)):
             label, bar = self.bars[name]

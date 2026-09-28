@@ -380,6 +380,9 @@ class PropertiesPanel(QWidget):
         lay.addWidget(self.title)
         lay.addWidget(self.hint)
         lay.addWidget(self.tabs, 1)
+        self.empty_space = QWidget()  # keeps the title and how-to at the top while the tabs are hidden
+        self.empty_space.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        lay.addWidget(self.empty_space, 1)
         lay.addWidget(self.finish_btn)
         self.show_frame(None, None, None, None)
 
@@ -401,6 +404,8 @@ class PropertiesPanel(QWidget):
         self.variants.clear()
         self.points.clear()
         self.hint.setVisible(obj is None)  # the how-to only while nothing is shown
+        self.tabs.setVisible(obj is not None)  # no empty lists / gray tools with nothing to show
+        self.empty_space.setVisible(obj is None)
         if obj is None:
             self.title.setText(
                 "<b>New Object</b> — click or drag a box on the image" if new_mode else "No Object selected"
@@ -480,6 +485,11 @@ class PropertiesPanel(QWidget):
         self.recompute_btn.setEnabled(auto)
         if auto:
             self.settings_stack.setCurrentIndex(self._pages[tool])
+            for i in range(self.settings_stack.count()):  # size to the page in use, not the tallest
+                page = self.settings_stack.widget(i)
+                policy = QSizePolicy.Policy.Preferred if i == self._pages[tool] else QSizePolicy.Policy.Ignored
+                page.setSizePolicy(policy, policy)
+            self.settings_stack.adjustSize()
             self.settings_box.setTitle(f"{TOOL_TEXT[tool][0]} settings")
         else:
             self.preview_label.setText("")
@@ -492,11 +502,9 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn.setChecked(mode == "fill")
         self.mode_paint_btn.setChecked(mode == "paint")
         self.mode_hint.setText(
-            "Fill: the result is shown in magenta (added) / purple (removed). Apply & Continue or Enter applies it "
-            "(and again for more); A switches to Paint with everything picked. Leaving the tool drops it."
+            "Magenta = added, purple = removed. Enter applies · A: pick in Paint mode."
             if mode == "fill"
-            else "Paint: drag over the gray to pick it (magenta / purple), Alt+drag to unpick, A picks all / none. "
-            "Apply & Continue or Enter applies the picks; leaving the tool drops them."
+            else "Drag over the gray to pick · Alt+drag unpicks · A: all / none · Enter applies."
         )
         if emit:
             self.auto_mode_changed.emit(mode)
