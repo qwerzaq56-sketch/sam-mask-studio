@@ -208,13 +208,14 @@ def test_region_box_limits_the_fill(qapp, win):
     assert s.region is None and "whole mask" in p.scope_label.text()
     added, _ = s.auto_changes()
     assert added[25, 25] and added[35, 35]
-    win.finish_editing()  # leaving Edit writes the preview in
+    p.tool_btns["fill_holes"].click()  # clicking the tool again applies it
     oid = s.project.objects[0].id
     assert s.project.get(oid).mask(s.key)[25, 25]
+    win.finish_editing()
     assert not win.canvas.region_mode and s.region is None
 
 
-def test_fill_preview_is_written_in_when_the_tool_closes(qapp, win):
+def test_fill_preview_is_applied_by_clicking_the_tool_again(qapp, win):
     s = win.session
     win.new_object()
     s.click(30, 30)
@@ -236,14 +237,38 @@ def test_fill_preview_is_written_in_when_the_tool_closes(qapp, win):
     win.escape()  # Esc drops the preview and leaves the tool (Edit stays)
     assert not s.editing_frame().mask[25, 25] and s.auto_tool is None and s.editing is not None
     p.tool_btns["fill_holes"].click()
-    p.tool_btns["fill_holes"].click()  # clicking the tool again writes it in
+    p.tool_btns["fill_holes"].click()  # clicking the tool again applies it and stays in the tool
     m = s.editing_frame().mask
-    assert m[25, 25] and m[35, 35]
+    assert m[25, 25] and m[35, 35] and s.auto_tool == "fill_holes" and p.tool_btns["fill_holes"].isChecked()
     win.undo()  # one undo step
     m = s.editing_frame().mask
     assert not m[25, 25] and not m[35, 35]
     win.escape()
+    win.escape()
     assert s.editing is None  # with no tool on, Esc finishes editing
+
+
+def test_each_click_applies_once_more_and_leaving_follows_the_mode(qapp, win):
+    s = win.session
+    win.new_object()
+    s.click(40, 30)
+    win.refresh()
+    p = win.properties_panel
+    p.amount.setValue(2)
+    area0 = s.editing_frame().mask.sum()
+    for _ in range(3):
+        p.tool_btns["grow"].click()  # enter, then apply, apply
+    area2 = s.editing_frame().mask.sum()
+    assert area2 > area0 and s.auto_tool == "grow"
+    p.tool_btns["shrink"].click()  # Fill mode: another tool drops the pending Grow preview
+    assert s.editing_frame().mask.sum() == area2 and s.auto_tool == "shrink"
+
+    p.mode_paint_btn.click()
+    win.a_key()  # pick all of the Shrink result
+    win.act_brush.trigger()  # Paint mode: switching tools applies the picks
+    assert s.editing_frame().mask.sum() < area2 and s.auto_tool is None
+    p.mode_fill_btn.click()
+
 
 
 def test_mode_switch_keeps_the_same_area(qapp, win):

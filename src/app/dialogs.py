@@ -131,6 +131,7 @@ SHORTCUTS = (
         ("E", "Edit the selected Object / finish editing"),
         ("Delete", "Delete the selected point, else the selected Objects"),
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
+        ("Auto tool button again", "Apply its result once more (the tool stays on)"),
     )),
     ("Images", (
         ("D / Right / PgDown", "Next image"),
