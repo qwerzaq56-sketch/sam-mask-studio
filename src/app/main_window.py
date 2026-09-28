@@ -17,14 +17,16 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -97,6 +99,7 @@ class MainWindow(QMainWindow):
         self._autosave.setSingleShot(True)
         self._autosave.setInterval(self.settings.autosave_ms)
         self._autosave.timeout.connect(lambda: self.save(background=True))
+        QApplication.instance().installEventFilter(self)  # Space = peek at the Final Mask
         self._save_task: Optional[Task] = None
         self.refresh()
 
@@ -131,7 +134,7 @@ class MainWindow(QMainWindow):
         bottom_dock = self._dock(
             "Prompt / Detection / Propagation / Logs", self.tabs, Qt.DockWidgetArea.BottomDockWidgetArea
         )
-        self.resizeDocks([left_dock, right_dock], [330, 360], Qt.Orientation.Horizontal)
+        self.resizeDocks([left_dock, right_dock], [330, 400], Qt.Orientation.Horizontal)
         self.resizeDocks([bottom_dock], [280], Qt.Orientation.Vertical)
 
         self.mode_label = QLabel()
@@ -171,7 +174,11 @@ class MainWindow(QMainWindow):
         self.act_redo = self._action("Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
         self.act_export = self._action("Export", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
         self.act_final = self._action(
-            "Preview Final Mask", self.toggle_final, ["X"], "Show the Final Mask (editing keeps working)", True
+            "Preview Final Mask",
+            self.toggle_final,
+            ["Z"],
+            "Show the Final Mask (hold Space to peek; editing keeps working)",
+            True,
         )
         self.act_brush = self._action(
             "Brush",
@@ -239,6 +246,7 @@ class MainWindow(QMainWindow):
         c.brush_finished.connect(self.on_brush)
         c.region_box.connect(self.on_region_box)
         c.tool_stroke.connect(self.on_tool_stroke)
+        c.tool_target_fn = self._tool_target
         c.brush_size_changed.connect(lambda px: self.properties_panel.set_brush_size(px))
 
         o = self.objects_panel
@@ -438,18 +446,22 @@ class MainWindow(QMainWindow):
             overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             added, removed = s.auto_changes()
-            if added is not None and s.auto_mode == "brush":  # the auto tool's guide, to paint in
-                overlays.append(Overlay(added | removed, (170, 170, 170), "guide"))
-            elif added is not None:  # what the live Fill step changed
-                overlays.append(Overlay(added, (80, 255, 120), "layer_add"))
-                overlays.append(Overlay(removed, (255, 60, 60), "layer_sub"))
+            if added is not None:  # the auto tool: taken parts green/red, the rest (Paint mode) gray
+                taken = s.auto_taken()
+                overlays.append(Overlay((added | removed) & ~taken, (170, 170, 170), "guide"))
+                overlays.append(Overlay(added & taken, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(removed & taken, (255, 60, 60), "layer_sub"))
             elif layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
             if s.auto_tool is not None and not self._auto_pending():
-                self.properties_panel.set_preview(
-                    int(added.sum()) if added is not None else 0, int(removed.sum()) if removed is not None else 0
-                )
+                if added is None:
+                    self.properties_panel.set_preview(0, 0, 0, 0)
+                else:
+                    taken = s.auto_taken()
+                    self.properties_panel.set_preview(
+                        int((added & taken).sum()), int((removed & taken).sum()), int(added.sum()), int(removed.sum())
+                    )
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
             overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.set_overlays(overlays)
@@ -549,6 +561,18 @@ class MainWindow(QMainWindow):
         task.failed.connect(failed)
         task.start()
 
+    def eventFilter(self, obj, event):
+        """Space held anywhere (except in a text box) shows the Final Mask."""
+        t = event.type()
+        if t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and event.key() == Qt.Key.Key_Space:
+            focus = QApplication.focusWidget()
+            typing = isinstance(focus, (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            if not typing and self.isActiveWindow():
+                if not event.isAutoRepeat():
+                    self.canvas.set_final_peek(t == QEvent.Type.KeyPress)
+                return True  # not also a click on a focused button
+        return super().eventFilter(obj, event)
+
     def closeEvent(self, event):
         if self._prop_worker is not None and self._prop_worker.isRunning():
             if not self.ask("Propagation running", "Cancel the running propagation and quit?", "Quit"):
@@ -559,6 +583,7 @@ class MainWindow(QMainWindow):
         for t in self._tasks:
             t.wait(10000)
         self.save()
+        QApplication.instance().removeEventFilter(self)
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
@@ -642,7 +667,7 @@ class MainWindow(QMainWindow):
             self.canvas.set_brush_tool(tool)
             if self.canvas.region_mode and not auto:
                 self.set_region_mode(False, redraw=False)
-        self.canvas.set_brush_mode(on and (not auto or self.session.auto_mode == "brush"))
+        self.canvas.set_brush_mode(on and (not auto or self.session.auto_mode == "paint"))
         self.act_brush.setChecked(tool == "paint")
         self.properties_panel.set_brush_tool(tool)
         if auto:
@@ -685,10 +710,10 @@ class MainWindow(QMainWindow):
         self._auto_refresh()
 
     def set_auto_mode(self, mode: str) -> None:
-        """Brush <-> Fill with the tool on: the same result, as a gray guide or a green/red preview."""
+        """Fill <-> Paint with the tool on: the same result; Paint shows the unpicked parts in gray."""
         self.session.set_auto_mode(mode)
         if self.session.auto_tool:
-            self.canvas.set_brush_mode(mode == "brush")
+            self.canvas.set_brush_mode(mode == "paint")
         self.refresh()
 
     def close_tool(self, apply: bool) -> None:
@@ -743,20 +768,14 @@ class MainWindow(QMainWindow):
         else:
             self._update_overlays()
 
-    def on_tool_stroke(self, tool: str, area) -> None:
-        """A tool stroke was released: paint the auto tool's guide in, or run Restore there."""
-        if tool in AUTO_TOOLS:
-            self._layer(lambda: self.session.paint_guide(area), f"{tool.replace('_', ' ').title()} painted in")
-            return
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            settings = self.properties_panel.tool_settings()
-            self._layer(
-                lambda: self.session.tool_stroke(tool, area, **settings),
-                f"{tool.replace('_', ' ').title()} applied in the brushed area",
-            )
-        finally:
-            QApplication.restoreOverrideCursor()
+    def on_tool_stroke(self, tool: str, area, unpick: bool = False) -> None:
+        """An auto tool's Paint-mode stroke was released: pick (Alt: unpick) that part of the result."""
+        if tool in AUTO_TOOLS and self.session.pick(area, unpick):
+            self._update_overlays()
+
+    def _tool_target(self, tool: str):
+        """For a live Restore stroke: the edited mask with the edit layer undone (per the mode box)."""
+        return self.session.tool_result(tool, **self.properties_panel.tool_settings())
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""

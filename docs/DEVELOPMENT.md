@@ -30,7 +30,7 @@ The original planning documents are in `docs/specs/` and win over anything here:
 | 01 §9 one Variant per Object, many Objects checked | Variant rows (Objects panel) and thumbnails (Properties) → `Session.select_variant(i, obj_id)` |
 | 01 §10 over-detection left unchecked | Detection checkboxes → `add_checked_detections` |
 | 01 §11 SAM3 Object refined by SAM2 | `predict(points, box, seed_mask=base_mask)` |
-| 01 §12 Preview Final Mask / Export | toolbar `X` (toggle; editing works in it), Export dialog |
+| 01 §12 Preview Final Mask / Export | toolbar `Z` (toggle) / hold Space; editing works in it; Export dialog |
 | 01 §15 Image → DetectionResults | Detections kept per image in `Session` (restored on navigating back; not persisted) |
 | 02 §3 Current must be within Start~End; §8 Current never re-processed | `PropagationPlan`, `MainWindow.propagate` |
 | 02 §6–7 only checked Objects, from their selected Variant | `Session.seeds()` |
@@ -206,6 +206,17 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   and leaves the tool; with no tool on, Esc finishes editing.
 - Brush strokes write immediately; the guide keeps fitting the painted mask. If the mask
   changes otherwise (undo, a SAM2 click) the result is recomputed. `Project.amend_frame` gone.
+
+**P2.8 — live brushes, Fill / Paint modes** (`v0.3-p2.8`)
+- Brush group: **Paint** (was Add / Subtract; Alt+drag subtracts) and **Restore** are live
+  while dragging (Restore's result comes from `Canvas.tool_target_fn` at the press).
+- Auto tools in one row. Mode **Fill** (default) takes the whole result; **Paint** picks parts:
+  a drag shows its area (yellow), release picks it (green / red), Alt+drag unpicks (back to
+  gray). Nothing is written until the tool closes (`Session.close_auto`, one undo step); the
+  picks survive mode switches and setting changes. The selected mode button is highlighted and
+  a line under it says what the mode does.
+- Final Mask preview: `Z` toggles; holding **Space** peeks (an app-wide event filter, ignored
+  in text boxes). Space+drag no longer pans (middle-drag does).
 
 ### Remaining work
 

@@ -12,21 +12,24 @@ depends on the mode the main window sets:
               and Alt+drag subtracts on the edited Object (``brush_finished``);
               Shift+drag / Alt+Shift+drag do the same without turning it on.
               ``brush_tool`` picks what a stroke does: ``paint`` adds (Alt:
-              subtracts); with ``restore`` / ``fill_holes`` / ``remove_specks``
-              / ``object_fill`` a stroke marks an area (yellow) and releasing
-              reports ``tool_stroke`` so the tool runs inside it once.
+              subtracts) and ``restore`` brings back the prompt mask (from
+              ``tool_target_fn``), both live; with an auto tool
+              (``fill_holes`` / ``remove_specks`` / ``object_fill``) a stroke
+              marks an area (yellow) and releasing reports ``tool_stroke``
+              (Alt: unpick).
               With ``region_mode`` on, a drag reports ``region_box`` instead
               (Alt or Ctrl: subtract); the region is shown in cyan.
 
-Middle-drag or Space+drag pans and the wheel zooms at the cursor. Ctrl+wheel
-(or Shift+wheel) sets the brush size while an Object is in Edit. The Final
-Mask preview is a toggle; editing keeps working in it.
+Middle-drag pans and the wheel zooms at the cursor. Ctrl+wheel (or
+Shift+wheel) sets the brush size while an Object is in Edit. The Final Mask
+preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
+editing keeps working in it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -154,7 +157,7 @@ class Canvas(QWidget):
     object_picked = pyqtSignal(float, float)
     brush_finished = pyqtSignal(object)  # bool mask
     region_box = pyqtSignal(float, float, float, float, bool)  # x0, y0, x1, y1, subtract
-    tool_stroke = pyqtSignal(str, object)  # tool, bool mask of the area the stroke covered
+    tool_stroke = pyqtSignal(str, object, bool)  # tool, area the stroke covered, Alt (unpick)
     zoom_changed = pyqtSignal(float)
     brush_size_changed = pyqtSignal(int)
 
@@ -172,6 +175,12 @@ class Canvas(QWidget):
         self.brush_tool = "paint"  # paint | fill_holes | remove_specks | object_fill
         self.region_mode = False  # a drag sets the tool region (box) instead of a SAM2 box
         self._tool_stroke = False  # the live stroke marks a tool area rather than painting
+        self._tool_erase = False  # ...and unpicks it (Alt)
+        self._live_base: Optional[np.ndarray] = None  # restore strokes: the mask before the stroke
+        self._live_target: Optional[np.ndarray] = None  # ...and the restored mask
+        # tool -> the edited mask with that tool applied everywhere (live strokes: restore)
+        self.tool_target_fn: Optional[Callable[[str], Optional[np.ndarray]]] = None
+        self._peek = False  # the Final Mask shown while a key is held
         self.outline_visible = True
         self.outline_width = 1.0  # screen px, independent of zoom
         self._final: Optional[np.ndarray] = None
@@ -186,7 +195,6 @@ class Canvas(QWidget):
         self.zoom = 1.0
         self._pan = QPointF(0, 0)
         self._pan_from: Optional[Tuple[QPointF, QPointF]] = None
-        self._space_held = False
         self._press: Optional[Tuple[QPointF, Qt.MouseButton]] = None
         self._drag_to: Optional[QPointF] = None
         self._mouse: Optional[QPointF] = None
@@ -283,7 +291,12 @@ class Canvas(QWidget):
 
     @property
     def showing_final(self) -> bool:
-        return self.final_preview
+        return self.final_preview or self._peek
+
+    def set_final_peek(self, on: bool) -> None:
+        """Show the Final Mask while a key is held (the toggle stays as it is)."""
+        self._peek = on
+        self.update()
 
     def set_mode(self, mode: Mode, banner: str = "") -> None:
         self.mode = mode
@@ -314,7 +327,10 @@ class Canvas(QWidget):
             self._tool_area = m > 0
             self._rebuild_overlay(("region",))
         else:
-            self._stroke_mask = m > 0
+            painted = m > 0
+            if self._live_target is not None:  # restore: its result where the stroke passed, live
+                painted = np.where(painted, self._live_target, self._live_base)
+            self._stroke_mask = painted
             self._rebuild_overlay(("edit",))
 
     def _finish_stroke(self) -> None:
@@ -324,9 +340,12 @@ class Canvas(QWidget):
             self._tool_area = None
             self._rebuild_overlay(("region",))
             if m is not None:
-                self.tool_stroke.emit(self.brush_tool, m > 0)
-        elif m is not None:
-            self.brush_finished.emit(m > 0)
+                self.tool_stroke.emit(self.brush_tool, m > 0, self._tool_erase)
+            return
+        result = self._stroke_mask
+        self._live_base = self._live_target = None
+        if m is not None and result is not None:
+            self.brush_finished.emit(result)
 
     def set_prompts(self, points: Sequence[Point], selected: Optional[int], box: Optional[Box]) -> None:
         self.points = tuple(points)
@@ -530,7 +549,7 @@ class Canvas(QWidget):
         if self.image is None:
             return
         pos, btn = event.position(), event.button()
-        if btn == Qt.MouseButton.MiddleButton or (btn == Qt.MouseButton.LeftButton and self._space_held):
+        if btn == Qt.MouseButton.MiddleButton:
             self._pan_from = (pos, QPointF(self._pan))
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
@@ -547,11 +566,19 @@ class Canvas(QWidget):
             x, y = self._clamped(pos)
             base = self.edit_mask()
             h, w = self.image.shape[:2]
-            self._tool_stroke = self.brush_tool != "paint"
+            alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+            self._tool_stroke = self.brush_tool not in ("paint", "restore")
             if self._tool_stroke:
                 if base is None:
                     return
-                start, value = None, 255  # the stroke only marks where the tool applies
+                self._tool_erase = alt
+                start, value = None, 255  # the stroke only marks an area for the auto tool
+            elif self.brush_tool == "restore":
+                target = self.tool_target_fn("restore") if self.tool_target_fn else None
+                if target is None or base is None:
+                    return
+                self._live_base, self._live_target = base, target
+                start, value = None, 255  # the stroke marks where the restored mask shows
             else:
                 erase = bool(mods & Qt.KeyboardModifier.AltModifier)
                 start = base.astype(np.uint8) * 255 if base is not None else None
@@ -654,20 +681,14 @@ class Canvas(QWidget):
 
     def keyPressEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._space_held = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-        elif k == Qt.Key.Key_Shift:
+        if k == Qt.Key.Key_Shift:
             self.update()
         else:
             super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._space_held = False
-            self._update_cursor()
-        elif k == Qt.Key.Key_Shift:
+        if k == Qt.Key.Key_Shift:
             if self._brush.is_drawing and not self.brush_mode:
                 self._finish_stroke()  # a Shift stroke ends when Shift is let go
             self.update()
@@ -675,7 +696,6 @@ class Canvas(QWidget):
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):
-        self._space_held = False
         if self._brush.is_drawing:
             self._finish_stroke()
         self.update()
