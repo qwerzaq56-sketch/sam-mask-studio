@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QProgressBar,
@@ -30,7 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.project import FrameStatus
-from src.core.propagation import Direction, PropagationPlan
+from src.core.propagation import Direction, PropagationPlan, format_ids, parse_id_range
 
 INDEX_ROLE = Qt.ItemDataRole.UserRole
 REFERENCE = "reference"
@@ -96,8 +97,12 @@ class PropagationPanel(QWidget):
         pin_row = QHBoxLayout()
         pin_row.addWidget(self.pin_btn)
         pin_row.addWidget(self.pin_label, 1)
-        self.start = QComboBox()
-        self.end = QComboBox()
+        self.range_edit = QLineEdit()
+        self.range_edit.setPlaceholderText("e.g. 5 ~ 45")
+        self.range_edit.setToolTip("Image IDs (the numbers in the Images list), e.g. 5 ~ 45")
+        self.ref_hint = QLabel("Double-click an image in the Images list to use it as the reference")
+        self.ref_hint.setStyleSheet("color: gray;")
+        self.ref_hint.setWordWrap(True)
         self.dirs = QButtonGroup(self)
         drow = QHBoxLayout()
         for i, (d, text) in enumerate(
@@ -110,10 +115,10 @@ class PropagationPanel(QWidget):
         self.dirs.button(0).setChecked(True)
         form = QFormLayout()
         form.addRow("Reference", self.reference)
+        form.addRow("", self.ref_hint)
         form.addRow("Scope", self.scope)
         form.addRow("", pin_row)
-        form.addRow("Start Image", self.start)
-        form.addRow("End Image", self.end)
+        form.addRow("Range (IDs)", self.range_edit)
         form.addRow("Direction", drow)
         self._form = form
 
@@ -175,14 +180,7 @@ class PropagationPanel(QWidget):
 
     def set_images(self, keys: Sequence[str]) -> None:
         self._keys = list(keys)
-        for combo in (self.start, self.end):
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItems(list(keys))
-            combo.blockSignals(False)
-        if keys:
-            self.start.setCurrentIndex(0)
-            self.end.setCurrentIndex(len(keys) - 1)
+        self.range_edit.setText(f"1 ~ {len(keys)}" if keys else "")
         self.frames.clear()
         self.objects.clear()
         self._rows.clear()
@@ -193,19 +191,22 @@ class PropagationPanel(QWidget):
         name = self._keys[index] if 0 <= index < len(self._keys) else "—"
         self.reference.setText(f"◎ {name}" if chosen else f"{name}  (current image)")
 
-    def set_pinned(self, count: Optional[int]) -> None:
+    def set_pinned(self, indices: Optional[Sequence[int]]) -> None:
+        """Show the pinned images by ID (None: the live Images-list selection is used)."""
         self.pin_btn.blockSignals(True)
-        self.pin_btn.setChecked(count is not None)
+        self.pin_btn.setChecked(indices is not None)
         self.pin_btn.blockSignals(False)
-        self.pin_label.setText(f"{count} image(s) pinned" if count is not None else "uses the Images-list selection")
+        self.pin_label.setText(
+            f"Pinned: {format_ids(indices)} ({len(indices)} image(s))" if indices is not None
+            else "uses the Images-list selection"
+        )
 
     def scope_value(self) -> str:
         return self.scope.currentData()
 
     def _scope_changed(self, *_):
         scope = self.scope_value()
-        for w in (self.start, self.end):
-            self._form.setRowVisible(w, scope == "range")
+        self._form.setRowVisible(self.range_edit, scope == "range")
         self.pin_btn.setVisible(scope == "selection")
         self.pin_label.setVisible(scope == "selection")
 
@@ -213,9 +214,14 @@ class PropagationPanel(QWidget):
         return Direction(self.dirs.checkedButton().property("direction"))
 
     def _run(self) -> None:
-        self.propagate_requested.emit(
-            self.start.currentIndex(), self.end.currentIndex(), self.direction(), self.scope_value()
-        )
+        start, end = 0, max(0, len(self._keys) - 1)
+        if self.scope_value() == "range":
+            try:
+                start, end = parse_id_range(self.range_edit.text(), len(self._keys))
+            except ValueError as e:
+                self.phase.setText(str(e))
+                return
+        self.propagate_requested.emit(start, end, self.direction(), self.scope_value())
 
     def set_resumable(self, on: bool) -> None:
         self.resume_btn.setEnabled(on)
@@ -224,7 +230,7 @@ class PropagationPanel(QWidget):
         self.run_btn.setEnabled(not running)
         self.stop_btn.setEnabled(running)
         self.cancel_btn.setEnabled(running)
-        for w in (self.start, self.end, self.scope, self.pin_btn, *self.dirs.buttons()):
+        for w in (self.range_edit, self.scope, self.pin_btn, *self.dirs.buttons()):
             w.setEnabled(not running)
         if running:
             self.resume_btn.setEnabled(False)

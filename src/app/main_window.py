@@ -428,7 +428,8 @@ class MainWindow(QMainWindow):
         self.images_panel.set_current(s.index)
         ref = self._reference if self._reference is not None else s.index
         self.propagation_panel.set_reference(ref, self._reference is not None)
-        self.propagation_panel.set_pinned(len(self._pinned) if self._pinned is not None else None)
+        self.propagation_panel.set_pinned(self._pinned)
+        self.images_panel.set_pinned(self._pinned)
 
         has_folder = key is not None
         self.act_undo.setEnabled(s.can_undo and not busy)
