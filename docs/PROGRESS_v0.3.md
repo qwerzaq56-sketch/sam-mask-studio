@@ -111,7 +111,7 @@
   - 썸네일은 화면에 보이는 칸만 조금씩 읽어서 이미지가 많아도 멈추지 않습니다.
 - **왼쪽:** 오브젝트 목록 아래에 Prompt/Detection · Batch · Propagation · Logs 탭이 있습니다. 폭에 맞게 Propagation·Batch·Detection 패널을 세로로 재배치했습니다.
 - **오른쪽:** Properties는 그대로입니다.
-- **원복:** 레이아웃만 되돌리려면 `git revert -m 1 <v0.3-p5 병합 커밋>`, 레이아웃 전 상태 전체는 태그 `before-p5-layout`입니다.
+- **원복:** 레이아웃만 되돌리려면 `git revert -m 1 0fee2be`, 레이아웃 전 상태 전체는 태그 `before-p5-layout`입니다.
 
 ## 진행 예정
 
