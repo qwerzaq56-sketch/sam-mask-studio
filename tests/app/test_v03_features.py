@@ -484,6 +484,7 @@ def test_z_held_peeks_and_the_wheel_leaves_sliders_alone(qapp, win):
     wheel = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(), QPoint(0, 120), Qt.MouseButton.NoButton,
                         Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
     p = win.properties_panel
+    win.toggle_edit(make_objects(win, 1)[0])  # the tabs show only with an Object
     p.tabs.setCurrentIndex(p.layer_tab)
     win.resize(1200, 500)  # short enough for the Edit Layer tab to scroll
     qapp.processEvents()

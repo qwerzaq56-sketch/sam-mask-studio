@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QScrollBar,
+    QSizePolicy,
     QSplitter,
     QTabWidget,
     QToolBar,
@@ -144,6 +145,9 @@ class MainWindow(QMainWindow):
         self.work_bar.setObjectName("work_bar")
         self.work_bar.setTextFormat(Qt.TextFormat.RichText)
         self.work_bar.setStyleSheet("#work_bar { padding: 3px 8px; font-weight: 600; border-bottom: 1px solid palette(mid); }")
+        # a long line is clipped, never widening the canvas (that pushed the side panels around)
+        self.work_bar.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.work_bar.setMinimumWidth(50)
         center = QWidget()
         cb = QVBoxLayout(center)
         cb.setContentsMargins(0, 0, 0, 0)
@@ -476,18 +480,6 @@ class MainWindow(QMainWindow):
         self.canvas.set_prompts(fs.points if fs else (), s.selected_point, fs.box if fs else None)
         editing_obj = project.get(s.editing) if s.editing is not None else None
         mode = s.effective_mode
-        if s.mode == Mode.EDIT and editing_obj is not None:
-            banner = f"Editing: {editing_obj.name}"
-            if self.canvas.brush_mode:
-                banner += "  ·  " + self.canvas.brush_tool.replace("_", " ").upper()
-            elif self.canvas.region_mode:
-                banner += "  ·  REGION BOX"
-        elif s.mode == Mode.NEW_OBJECT:
-            banner = "New Object: click or drag a box"
-        elif self.picking():
-            banner = "Select on Image: click / drag = add · Shift = toggle · Ctrl = remove"
-        else:
-            banner = ""
         if s.mode != Mode.EDIT and (self._tool or self.canvas.brush_mode):
             self.set_brush_tool("", redraw=False)
         if s.auto_stale() and not self._auto_pending():
@@ -496,7 +488,7 @@ class MainWindow(QMainWindow):
             self.set_region_mode(False, redraw=False)
         self.canvas.set_region(s.region)
         self.properties_panel.set_region(s.region)
-        self.canvas.set_mode(mode, banner)
+        self.canvas.set_mode(mode)  # what is being edited is on the work bar (no banner on the image)
 
         self.objects_panel.set_objects(project.objects, key, s.editing)
         shown = project.get(self.shown_object_id()) if self.shown_object_id() is not None else None
@@ -571,7 +563,8 @@ class MainWindow(QMainWindow):
         if s.key is None:
             return "No folder open — File ▸ Open (Ctrl+O)"
         sep = "&nbsp;&nbsp;│&nbsp;&nbsp;"
-        frame = f"Frame {s.index + 1} / {len(s.keys)} · {html.escape(s.key)}"
+        frame = f"Frame {s.index + 1} / {len(s.keys)}"
+        name = f"<span style='font-weight: 400; color: gray'>{html.escape(s.key)}</span>"  # last: clipped first
         ids = self.objects_panel.selected_ids()
         oid = self.shown_object_id()
         o = s.project.get(oid) if oid is not None else None
@@ -598,10 +591,10 @@ class MainWindow(QMainWindow):
             else:
                 mode = "Points"
             if self.canvas.region_mode:
-                mode += " · Region Box"
+                mode += " + Region"
         else:
             mode = "View"
-        return f"{frame}{sep}Object: {obj}{sep}Mode: {html.escape(mode)}"
+        return f"{frame}{sep}Object: {obj}{sep}Mode: {html.escape(mode)}{sep}{name}"
 
     def _update_overlays(self) -> None:
         """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""

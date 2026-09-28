@@ -73,6 +73,7 @@ class DetectionPanel(QWidget):
         self.tree.itemChanged.connect(self._on_changed)
         self.status = QLabel("")
         self.status.setStyleSheet("color: gray;")
+        self.status.setWordWrap(True)  # a long message wraps instead of widening the column
         self.all_btn = QPushButton("All")
         self.all_btn.setToolTip("Check every candidate")
         self.all_btn.clicked.connect(lambda: self._set_all(True))

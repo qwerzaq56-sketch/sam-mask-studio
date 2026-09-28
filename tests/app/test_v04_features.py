@@ -183,3 +183,33 @@ def test_batch_and_detection_buttons_keep_their_width(qapp, win):
     win.tabs.setCurrentWidget(win.detection_panel)
     qapp.processEvents()
     assert win.detection_panel.detect_btn.width() > 30
+
+
+# --- UI audit polish: nothing empty or jumping --------------------------------------
+
+
+def test_empty_states_and_steady_panel_widths(qapp, win):
+    import time
+
+    from PyQt6.QtWidgets import QDockWidget
+
+    def pump():
+        for _ in range(10):
+            qapp.processEvents()
+            time.sleep(0.01)
+
+    pp = win.properties_panel
+    assert pp.tabs.isHidden() and not pp.hint.isHidden()  # nothing selected: only the how-to
+    assert win.propagation_panel.run_view.isHidden()  # no run yet: no progress / lists
+    assert win.batch_panel.progress.isHidden() and win.batch_panel.results.isHidden()
+    ids = make_objects(win, 1)
+    pump()
+    widths = [d.width() for d in win.findChildren(QDockWidget)]
+    win.toggle_edit(ids[0])
+    pp.tabs.setCurrentIndex(pp.layer_tab)
+    win.set_brush_tool("object_fill")
+    win.set_region_mode(True)
+    pump()
+    assert not pp.tabs.isHidden()
+    assert [d.width() for d in win.findChildren(QDockWidget)] == widths  # a long work bar never pushes docks
+    assert win.canvas.banner == ""

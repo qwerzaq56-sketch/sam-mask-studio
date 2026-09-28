@@ -13,16 +13,16 @@
 - [x] 5. 버튼 글자 잘림: Detection 아래 `elect on Imag`, `dd per Promp`; 작은 창에서 `ly & Conti`, `move Spe`; 탭 `Propagat`
 - [x] 6. Propagation 탭 문구에 옛 이름 `Images list`
 
-### 어색하거나 개선하면 좋은 것
-- [ ] 7. 상태(편집, 디텍션)에 따라 패널 폭이 바뀌어 캔버스가 좌우로 움직임
-- [ ] 8. 아무것도 선택 안 했을 때 Properties에 빈 Variants/Points 칸이 크게 차지, Edit Layer 탭이면 회색 버튼만 가득
-- [ ] 9. 캔버스 왼쪽 위 배너(`Editing: Object #6 · OBJECT FILL`)가 위 작업 상태 바와 중복
-- [ ] 10. Propagation 탭: 실행 전에도 진행 막대(0 / 1)와 빈 Objects / Frames 상자, Propagate 버튼 폭이 다른 줄과 안 맞음
-- [ ] 11. Batch 탭: 실행 전에도 진행 막대와 큰 빈 결과 상자
-- [ ] 12. 오토 툴 Settings 상자 아래 빈 공간 (가장 큰 설정 페이지 높이에 맞춰짐)
+### 어색하거나 개선하면 좋은 것 (`v0.4-p6` 처리: 7~12, 14, 15 / 13, 16~18은 보류)
+- [x] 7. 상태(편집, 디텍션)에 따라 패널 폭이 바뀌어 캔버스가 좌우로 움직임
+- [x] 8. 아무것도 선택 안 했을 때 Properties에 빈 Variants/Points 칸이 크게 차지, Edit Layer 탭이면 회색 버튼만 가득
+- [x] 9. 캔버스 왼쪽 위 배너(`Editing: Object #6 · OBJECT FILL`)가 위 작업 상태 바와 중복
+- [x] 10. Propagation 탭: 실행 전에도 진행 막대(0 / 1)와 빈 Objects / Frames 상자, Propagate 버튼 폭이 다른 줄과 안 맞음
+- [x] 11. Batch 탭: 실행 전에도 진행 막대와 큰 빈 결과 상자
+- [x] 12. 오토 툴 Settings 상자 아래 빈 공간 (가장 큰 설정 페이지 높이에 맞춰짐)
 - [ ] 13. 1280×720 창에서 캔버스가 약 400px로 좁아짐 (양쪽 패널 합이 큼)
-- [ ] 14. 오토 툴 Fill 설명 문구가 4~6줄 차지
-- [ ] 15. 작업 중(Propagating 등)에도 캔버스에 `Select on Image` 안내가 그대로
+- [x] 14. 오토 툴 Fill 설명 문구가 4~6줄 차지
+- [x] 15. 작업 중(Propagating 등)에도 캔버스에 `Select on Image` 안내가 그대로
 - [ ] 16. 상태 표시줄 왼쪽에 폴더 전체 경로가 길게 나옴
 - [ ] 17. Settings 창이 좁아 체크포인트 경로가 잘림
 - [ ] 18. 연한 Object 색(예: `sky #1` 라벤더)은 목록의 색 칩이 잘 안 보임

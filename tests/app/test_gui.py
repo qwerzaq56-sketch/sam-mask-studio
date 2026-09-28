@@ -71,7 +71,7 @@ def test_new_object_from_points_by_mouse(win):
     assert tree.topLevelItem(0).text(0) == obj.name
     assert tree.topLevelItem(0).childCount() == 3  # Variant rows under the Object
     assert win.properties_panel.variants.count() == 3
-    assert win.canvas.banner == f"Editing: {obj.name}"
+    assert win.work_bar.text().count(obj.name) == 1 and "Mode: Points" in win.work_bar.text()
     # right click = negative point on the same Object
     click(win, 34, 30, Qt.MouseButton.RightButton)
     fs = s.editing_frame()
