@@ -56,7 +56,7 @@ ALPHA = {
     "region": 70,  # where the edit-layer tools act
     "auto_add": 150,  # an auto tool's result: pixels it adds
     "auto_sub": 130,  # ...and removes
-    "guide": 150,  # an auto tool's result, not painted in yet (Brush mode)
+    "guide": 210,  # an auto tool's result, not picked yet (Paint mode): dark and dense to stand out
 }
 
 
@@ -268,9 +268,18 @@ class Canvas(QWidget):
             return layers
         layers = [o for o in self._overlays if group_of(o.style) == group]
         if group == "edit" and self._stroke_mask is not None:
-            # a live stroke replaces the edit fill; the layer tints would be stale
+            # a live stroke replaces the edit fill; Paint drops the (now stale) tints, but Restore
+            # keeps them, trimmed to what is still added / removed, so its effect shows as it paints
             color = next((o.color for o in layers if o.style == "edit"), (255, 255, 255))
-            layers = [Overlay(self._stroke_mask, color, "edit")]
+            live = self._stroke_mask
+            tints = []
+            if self._live_target is not None:
+                for o in layers:
+                    if o.style == "layer_add":
+                        tints.append(Overlay(o.mask & live, o.color, o.style))
+                    elif o.style == "layer_sub":
+                        tints.append(Overlay(o.mask & ~live, o.color, o.style))
+            layers = [Overlay(live, color, "edit")] + tints
         return layers
 
     def _rebuild_overlay(self, groups: Sequence[str] = GROUPS) -> None:

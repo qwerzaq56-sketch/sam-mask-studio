@@ -259,6 +259,10 @@ Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
   A in Fill mode enters Paint mode with everything picked. Auto previews use their own styles
   (`auto_add` / `auto_sub`) drawn over the Edit Changes tints.
 
+**P2.14** (`v0.3-p2.14`): Apply & Recompute / Apply & Close row under the mode buttons; Restore
+strokes keep the Edit Changes tints (trimmed live); the Paint-mode guide is dark gray, alpha 210;
+Paint brush shortcut B -> D.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

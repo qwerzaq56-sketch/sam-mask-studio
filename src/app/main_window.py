@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         self.act_brush = self._action(
             "Brush",
             self.set_brush,
-            ["B"],
+            ["D"],
             "Brush editing on the edited Object: drag = add, Alt+drag = subtract, Ctrl+wheel = size",
             True,
         )
@@ -420,12 +420,12 @@ class MainWindow(QMainWindow):
         mode_text = {
             Mode.IDLE: "Ready — use an Object's Edit, + New Object from Points (N), or a SAM3 prompt",
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
-            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · B: brush · Delete: point · Esc: finish",
+            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: brush · Delete: point · Esc: finish",
         }[s.mode]
         if mode == Mode.NEW_OBJECT and s.mode == Mode.IDLE:
             mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
-            mode_text = "BRUSH — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
+            mode_text = "BRUSH — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · D: brush off"
             if self.canvas.brush_tool != "paint":
                 mode_text = (
                     f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — drag over the area,"
@@ -468,7 +468,7 @@ class MainWindow(QMainWindow):
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
             if added is not None:  # the auto tool (on top): taken parts magenta / purple, the rest gray
                 taken = s.auto_taken()
-                overlays.append(Overlay((added | removed) & ~taken, (170, 170, 170), "guide"))
+                overlays.append(Overlay((added | removed) & ~taken, (55, 55, 60), "guide"))  # dark gray
                 # own colors, so they are never confused with the edit layer's green / red
                 overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "auto_add"))
                 overlays.append(Overlay(removed & taken, AUTO_SUB_COLOR, "auto_sub"))
