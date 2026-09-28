@@ -124,16 +124,12 @@ class MainWindow(QMainWindow):
         self.canvas = Canvas()
         self.setCentralWidget(self.canvas)
 
+        # Layout: left = Objects over the Prompt / Batch / Propagation / Logs tabs;
+        # center = canvas; right = Properties; bottom = the frames as a thumbnail strip.
         self.objects_panel = ObjectsPanel()
         self.images_panel = ImagesPanel()
-        left = QSplitter(Qt.Orientation.Vertical)
-        left.addWidget(self.objects_panel)
-        left.addWidget(self.images_panel)
-        left.setSizes([550, 350])
-        left_dock = self._dock("Objects / Images", left, Qt.DockWidgetArea.LeftDockWidgetArea)
 
         self.properties_panel = PropertiesPanel()
-        right_dock = self._dock("Properties", self.properties_panel, Qt.DockWidgetArea.RightDockWidgetArea)
 
         self.detection_panel = DetectionPanel()
         self.propagation_panel = PropagationPanel()
@@ -146,11 +142,18 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.batch_panel, "Batch")
         self.tabs.addTab(self.propagation_panel, "Propagation")
         self.tabs.addTab(self.log_view, "Logs")
-        bottom_dock = self._dock(
-            "Prompt / Detection / Batch / Propagation / Logs", self.tabs, Qt.DockWidgetArea.BottomDockWidgetArea
-        )
-        self.resizeDocks([left_dock, right_dock], [330, 400], Qt.Orientation.Horizontal)
-        self.resizeDocks([bottom_dock], [280], Qt.Orientation.Vertical)
+        left = QSplitter(Qt.Orientation.Vertical)
+        left.addWidget(self.objects_panel)
+        left.addWidget(self.tabs)
+        left.setSizes([330, 520])
+        left_dock = self._dock("Objects / Prompt / Propagation", left, Qt.DockWidgetArea.LeftDockWidgetArea)
+        right_dock = self._dock("Properties", self.properties_panel, Qt.DockWidgetArea.RightDockWidgetArea)
+        frames_dock = self._dock("Frames", self.images_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        # the frame strip spans only the canvas: the side docks keep the full height
+        self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        self.resizeDocks([left_dock, right_dock], [400, 400], Qt.Orientation.Horizontal)
+        self.resizeDocks([frames_dock], [150], Qt.Orientation.Vertical)
 
         self.mode_label = QLabel()
         self.image_label = QLabel()
@@ -537,7 +540,7 @@ class MainWindow(QMainWindow):
             return False
         self.settings.last_dir = str(folder)
         self.settings.save(self.settings_path)
-        self.images_panel.set_images(self.session.keys)
+        self.images_panel.set_images(self.session.keys, self.session.paths)
         self.propagation_panel.set_images(self.session.keys)
         self._reference, self._pinned, self._last_prop, self._prop_queue = None, None, None, []
         self.propagation_panel.set_resumable(False)
@@ -666,6 +669,7 @@ class MainWindow(QMainWindow):
         for t in self._tasks:
             t.wait(10000)
         self.save()
+        self.images_panel.shutdown()
         QApplication.instance().removeEventFilter(self)
         super().closeEvent(event)
 

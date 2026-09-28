@@ -99,18 +99,19 @@ class DetectionPanel(QWidget):
         self.per_label_btn.clicked.connect(lambda: self.add_requested.emit("per_label"))
         self.clear_btn = QPushButton("Discard")
         self.clear_btn.clicked.connect(self.clear_requested)
-        row = QHBoxLayout()  # one row, so the buttons stay visible in a short dock
+        row = QHBoxLayout()  # selection / view
         for b in (self.all_btn, self.none_btn, self.preview_btn, self.select_btn):
             row.addWidget(b)
-        row.addStretch(1)
+        row2 = QHBoxLayout()  # what to do with the checked ones
         for b in (self.clear_btn, self.add_btn, self.merge_btn, self.per_label_btn):
-            row.addWidget(b)
+            row2.addWidget(b)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(top)
         lay.addWidget(self.tree, 1)
         lay.addWidget(self.status)
         lay.addLayout(row)
+        lay.addLayout(row2)
         self.set_detections([], [])
 
     # ------------------------------------------------------------------

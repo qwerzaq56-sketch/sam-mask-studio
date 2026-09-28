@@ -921,7 +921,7 @@ def test_reference_selection_pin_and_all(qapp, win):
     pp.pin_btn.click()  # pin images 3, 4
     assert win._pinned == [3, 4] and pp.pin_label.text().startswith("Pinned: 4–5 (2 image(s))")
     assert lst.item(3).background().color() == __import__("src.app.images_panel", fromlist=["x"]).PIN_COLOR
-    assert lst.item(3).text().endswith("📌") and not lst.item(2).text().endswith("📌")
+    assert "📌" in lst.item(3).text().splitlines()[0] and "📌" not in lst.item(2).text()
     lst.clearSelection()  # the pin survives
     assert pp.scope_value() == "selection"
     pp.run_btn.click()
