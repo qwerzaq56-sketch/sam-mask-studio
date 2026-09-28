@@ -289,6 +289,13 @@ the first Object" rule is gone (`Session.effective_mode` == `mode`).
 - Resume: after Stop / failure, each direction continues from the last frame reached
   (`_remaining_plans`, queued runs). Cancel stays enabled after Stop and turns it into a discard.
 
+**P5 — layout** (`v0.3-p5`; the state before is tagged `before-p5-layout`)
+- Frames: a bottom dock with a horizontal thumbnail strip (`ImagesPanel`, QListWidget icon mode;
+  same API). Thumbnails load one per timer tick on the UI thread, visible tiles first, JPEGs
+  decoded at 1/8 — Python threads made the pytest run crash, and Qt objects must stay on the UI thread.
+- Left dock: Objects over the Prompt / Batch / Propagation / Logs tabs (panels restacked for the
+  narrow column); the side docks own the bottom corners so the strip spans only the canvas.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

@@ -164,15 +164,13 @@ class PropagationPanel(QWidget):
         lists.addWidget(obox)
         lists.addWidget(fbox)
 
-        left = QVBoxLayout()
-        left.addLayout(form)
-        left.addLayout(brow)
-        left.addLayout(prog)
-        left.addStretch(1)
-        lay = QHBoxLayout(self)
+        # one column: settings, buttons, progress, then the Object / frame lists
+        lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
-        lay.addLayout(left, 1)
-        lay.addWidget(lists, 2)
+        lay.addLayout(form)
+        lay.addLayout(brow)
+        lay.addLayout(prog)
+        lay.addWidget(lists, 1)
         self._reset_bars()
         self._scope_changed()
 
