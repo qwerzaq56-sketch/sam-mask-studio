@@ -185,12 +185,23 @@ class PropertiesPanel(QWidget):
             "Object Fill sensitivity: higher grows further into colors like the object's,\n"
             "lower stops sooner (50 = grow where the color is more object than background)"
         )
-        sbox = QGroupBox("Settings")
-        sf = QFormLayout(sbox)
-        sf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        sf.addRow("Area", self.refine_area)  # holes / specks
-        sf.addRow("Grow", self.grow)  # Object Fill
-        sf.addRow("Sensitivity", self.sensitivity)  # Object Fill
+        # One settings box per tool, so it is clear which value drives what.
+        def note(text: str) -> QLabel:
+            lb = QLabel(text)
+            lb.setStyleSheet("color: gray;")
+            lb.setWordWrap(True)
+            return lb
+
+        hbox = QGroupBox("Fill Holes / Remove Specks")
+        hf = QFormLayout(hbox)
+        hf.addRow("Max size", self.refine_area)
+        hf.addRow(note("Only holes / specks up to this many pixels are filled / removed."))
+        obox = QGroupBox("Object Fill")
+        of = QFormLayout(obox)
+        of.addRow("Max grow", self.grow)
+        of.addRow("Sensitivity", self.sensitivity)
+        of.addRow(note("Max grow: how far the mask may spread. Sensitivity: higher spreads further "
+                       "into colors like the object's, lower stops sooner."))
 
         # The same tools at once on the whole mask, or inside the region.
         self.fill_btn = QPushButton("Fill Holes")
@@ -250,7 +261,7 @@ class PropertiesPanel(QWidget):
         layer_page = QWidget()
         el = QVBoxLayout(layer_page)
         el.setContentsMargins(0, 0, 0, 0)
-        for box in (tbox, sbox, abox, lbox):
+        for box in (tbox, hbox, obox, abox, lbox):
             el.addWidget(box)
         el.addStretch(1)
         self.tabs = QTabWidget()
