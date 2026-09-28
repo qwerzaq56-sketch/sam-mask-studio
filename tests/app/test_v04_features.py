@@ -76,3 +76,46 @@ def test_marks_counts_and_problem_navigation(qapp, win):
     assert s.index == 1  # the next image without the Object
     win.marks_btn.setChecked(False)
     assert win.settings.marks_one_object is False
+
+
+# --- p3: the check before Export ----------------------------------------------
+
+
+def test_check_export_counts_and_clashes(qapp, win):
+    import dataclasses
+
+    import numpy as np
+
+    from src.core.project import FrameState, FrameStatus
+    from src.core.storage import check_export
+
+    ids = make_objects(win, 1)
+    p = win.session.project
+    k = win.session.keys
+    fs = p.get(ids[0]).frame(k[0])
+    p.set_frame(ids[0], k[1], dataclasses.replace(fs, status=FrameStatus.WARNING))
+    p.set_frame(ids[0], k[2], FrameState.from_mask(np.zeros_like(fs.mask), status=FrameStatus.FAILED))
+    c = check_export(p)
+    assert c.images == len(k)
+    assert c.with_mask == [k[0], k[1]] and c.empty == [k[2]] and c.without_mask == k[3:]
+    assert c.warning == [k[1], k[2]] and c.clashes == []
+    assert c.problems == k[1:]
+    p.image_keys = list(p.image_keys) + ["frame_000.jpg"]  # frame_000.png + .jpg -> the same {stem}.png
+    assert check_export(p, "{stem}.png").clashes == [[k[0], "frame_000.jpg"]]
+    assert check_export(p, "{name}.png").clashes == []
+
+
+def test_export_dialog_shows_the_check_and_opens_a_problem(qapp, win):
+    from src.app.dialogs import ExportDialog
+    from src.core.storage import check_export
+
+    make_objects(win, 1)
+    s = win.session
+    dlg = ExportDialog(win.session.image_dir, win, check=lambda pat: check_export(s.project, pat))
+    text = dlg.summary.text()
+    assert "Images without a mask: 4" in text and "for <b>5</b> image(s)" in text
+    assert dlg.problems.count() == 4
+    dlg.empty.setChecked(True)
+    assert "<b>5</b> file(s)" in dlg.summary.text()
+    dlg._open_problem(dlg.problems.item(1))
+    assert dlg.goto == s.keys[2]

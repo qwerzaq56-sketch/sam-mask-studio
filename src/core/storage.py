@@ -276,6 +276,51 @@ class ExportOptions:
     include_empty: bool = False  # also write masks for images with no object
 
 
+@dataclass
+class ExportCheck:
+    """What an export would write, and what may be wrong (checked before Export)."""
+
+    images: int = 0
+    with_mask: List[str] = field(default_factory=list)  # a non-empty Final Mask
+    without_mask: List[str] = field(default_factory=list)  # no checked Object has a mask here
+    empty: List[str] = field(default_factory=list)  # masks exist, but the Final Mask has no pixel
+    warning: List[str] = field(default_factory=list)  # a checked Object's mask here is ⚠ / ✕
+    clashes: List[List[str]] = field(default_factory=list)  # images that would write the same file
+
+    @property
+    def problems(self) -> List[str]:
+        """Every image worth a look, in sequence order."""
+        bad = set(self.without_mask) | set(self.empty) | set(self.warning) | {k for c in self.clashes for k in c}
+        return [k for k in self.keys if k in bad]
+
+    keys: List[str] = field(default_factory=list, repr=False)  # every image, in sequence order
+
+
+def check_export(project: Project, name_pattern: str = "{stem}.png") -> ExportCheck:
+    """Count the images with / without a Final Mask, empty masks, ⚠ / ✕ frames and file name clashes."""
+    keys = list(project.image_keys)
+    c = ExportCheck(images=len(keys), keys=keys)
+    bad_status = (FrameStatus.WARNING, FrameStatus.FAILED)
+    for key in keys:
+        m = project.final_mask(key)
+        if m is None:
+            c.without_mask.append(key)
+        elif not m.any():
+            c.empty.append(key)
+        else:
+            c.with_mask.append(key)
+        if any(
+            o.included and (fs := o.frames.get(key)) is not None and fs.mask is not None and fs.status in bad_status
+            for o in project.objects
+        ):
+            c.warning.append(key)
+    names: Dict[str, List[str]] = {}
+    for key in keys:
+        names.setdefault(name_pattern.format(stem=Path(key).stem, name=key).lower(), []).append(key)
+    c.clashes = [ks for ks in names.values() if len(ks) > 1]
+    return c
+
+
 def export_final_masks(
     project: Project,
     image_dir: Path,
