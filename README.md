@@ -13,6 +13,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 | [`docs/PROGRESS_v0.3.md`](docs/PROGRESS_v0.3.md) | v0.3에서 바뀐 기능 전체 (한국어) |
 | [`docs/PROGRESS_v0.4.md`](docs/PROGRESS_v0.4.md) | v0.4 진행 현황: 리뷰 반영, UI 점검 (한국어) |
 | [`docs/ideas.md`](docs/ideas.md) · [`docs/ui-issues.md`](docs/ui-issues.md) | 기능 아이디어 백로그 · 작은 UI 문제 목록 |
+| [`docs/keymap.md`](docs/keymap.md) | 단축키 전체, 비어 있는 키, 새 단축키 제안 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 설계 결정, 모듈 구성, 단계별 변경 기록 (영문) |
 | [`docs/specs/`](docs/specs) | 원래 기획서와 요청 목록 원문 |
 
