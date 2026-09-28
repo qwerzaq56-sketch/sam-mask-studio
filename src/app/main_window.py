@@ -20,7 +20,6 @@ from typing import Callable, List, Optional
 from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QPushButton,
     QHBoxLayout,
     QVBoxLayout,
     QWidget,
