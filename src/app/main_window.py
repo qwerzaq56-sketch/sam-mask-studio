@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.canvas import Canvas, Overlay
+from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import ExportDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
@@ -135,11 +136,13 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(2000)
         self.tabs = QTabWidget()
+        self.batch_panel = BatchPanel()
         self.tabs.addTab(self.detection_panel, "Prompt / Detection")
+        self.tabs.addTab(self.batch_panel, "Batch")
         self.tabs.addTab(self.propagation_panel, "Propagation")
         self.tabs.addTab(self.log_view, "Logs")
         bottom_dock = self._dock(
-            "Prompt / Detection / Propagation / Logs", self.tabs, Qt.DockWidgetArea.BottomDockWidgetArea
+            "Prompt / Detection / Batch / Propagation / Logs", self.tabs, Qt.DockWidgetArea.BottomDockWidgetArea
         )
         self.resizeDocks([left_dock, right_dock], [330, 400], Qt.Orientation.Horizontal)
         self.resizeDocks([bottom_dock], [280], Qt.Orientation.Vertical)
@@ -297,12 +300,16 @@ class MainWindow(QMainWindow):
         d = self.detection_panel
         d.detect_requested.connect(self.detect)
         d.checks_changed.connect(self.on_detection_checks)
-        d.add_requested.connect(lambda: self._do(self.session.add_checked_detections))
+        d.add_requested.connect(lambda how: self._do(lambda: self.session.add_checked_detections(how)))
         d.clear_requested.connect(lambda: self._do(self.session.clear_detections))
-        d.batch_requested.connect(self.run_batch)
-        d.batch_stop_requested.connect(lambda: self.stop_job(discard=False))
-        d.batch_cancel_requested.connect(lambda: self.stop_job(discard=True))
-        d.navigate_requested.connect(self.go_to)
+        d.preview_toggled.connect(lambda _on: self.refresh())
+        b = self.batch_panel
+        b.batch_requested.connect(self.run_batch)
+        b.batch_stop_requested.connect(lambda: self.stop_job(discard=False))
+        b.batch_cancel_requested.connect(lambda: self.stop_job(discard=True))
+        b.navigate_requested.connect(self.go_to)
+        c.candidates_clicked.connect(self.on_candidates_clicked)
+        c.candidates_boxed.connect(self.on_candidates_boxed)
 
         pp = self.propagation_panel
         pp.propagate_requested.connect(self.propagate)
@@ -415,7 +422,9 @@ class MainWindow(QMainWindow):
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel):
             w.setEnabled(has_folder and not busy)
         self.detection_panel.setEnabled(has_folder)
-        self.detection_panel.set_busy(busy)  # locks its own controls while busy; batch Cancel stays usable
+        self.detection_panel.set_busy(busy)
+        self.batch_panel.setEnabled(has_folder)
+        self.batch_panel.set_busy(busy)  # locks its own controls while busy; Stop / Cancel stay usable
         self.propagation_panel.run_btn.setEnabled(has_folder and not busy)
 
         mode_text = {
@@ -481,8 +490,11 @@ class MainWindow(QMainWindow):
                     self.properties_panel.set_preview(
                         int((added & taken).sum()), int((removed & taken).sum()), int(added.sum()), int(removed.sum())
                     )
+        preview = self.detection_panel.preview_btn.isChecked()
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
-            overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
+            if preview:
+                overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
+        self.canvas.candidates_pickable = preview and bool(s.detections)
         self.canvas.set_overlays(overlays)
 
     # ------------------------------------------------------------------
@@ -509,7 +521,7 @@ class MainWindow(QMainWindow):
         self.settings.save(self.settings_path)
         self.images_panel.set_images(self.session.keys)
         self.propagation_panel.set_images(self.session.keys)
-        self.detection_panel.set_image_count(len(self.session.keys))
+        self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.setWindowTitle(f"SAM Mask Studio — {folder}")
         loaded = len(self.session.project.objects)
@@ -1023,6 +1035,18 @@ class MainWindow(QMainWindow):
         self._start(Task(run), done, failed)
         self.refresh()
 
+    def on_candidates_clicked(self, x: float, y: float, on: bool) -> None:
+        """Shift+click checks the candidate under the cursor, Ctrl+click unchecks it."""
+        i = self.session.detection_at(x, y)
+        if i is not None and self.session.check_detections([i], on):
+            self.refresh()
+
+    def on_candidates_boxed(self, x0: float, y0: float, x1: float, y1: float, on: bool) -> None:
+        """Shift+drag checks the candidates (mostly) inside the box, Ctrl+drag unchecks them."""
+        s = self.session
+        if s.check_detections(s.detections_in_box((x0, y0, x1, y1)), on):
+            self.refresh()
+
     def on_detection_checks(self, checked: List[bool]) -> None:
         """Checking candidates only changes their overlays: redraw the canvas, nothing else."""
         self.session.detection_checked = list(checked)
@@ -1050,8 +1074,8 @@ class MainWindow(QMainWindow):
         s.finish_editing()
         text = ", ".join(labels)
         self._busy = f"SAM3 batch: {text} on {len(indices)} image(s)…"
-        self.detection_panel.set_busy(True, self._busy + ("" if engine.sam3_ready else " (loading SAM3 first)"))
-        self.detection_panel.batch_begin(len(indices))
+        self.batch_panel.set_busy(True, self._busy + ("" if engine.sam3_ready else " (loading SAM3 first)"))
+        self.batch_panel.batch_begin(len(indices))
         self.log(f"Batch masking {text} on {len(indices)} image(s), min score {threshold:.2f}")
 
         def run(cancel, progress):
@@ -1061,15 +1085,15 @@ class MainWindow(QMainWindow):
 
         def on_frame(idx, hits):
             found = any(h.mask is not None for h in hits.values())
-            self.detection_panel.batch_frame(idx, f"{s.keys[idx]}   {summarize(hits)}", found)
+            self.batch_panel.batch_frame(idx, f"{s.keys[idx]}   {summarize(hits)}", found)
 
         def finish(results, outcome):
             self._busy = None
             self._prop_worker = None
             if self._discard:
                 self._discard = False
-                self.detection_panel.set_busy(False)
-                self.detection_panel.batch_end(f"Cancelled: nothing added ({len(results)} image(s) discarded)")
+                self.batch_panel.set_busy(False)
+                self.batch_panel.batch_end(f"Cancelled: nothing added ({len(results)} image(s) discarded)")
                 self.log("Batch masking cancelled — results discarded")
                 self.refresh()
                 return
@@ -1079,8 +1103,8 @@ class MainWindow(QMainWindow):
             msg = f"{outcome}: {len(results)} image(s) processed, {found} with detections" + (
                 f" → {names}" if names else " — nothing above the score threshold"
             )
-            self.detection_panel.set_busy(False)
-            self.detection_panel.batch_end(msg)
+            self.batch_panel.set_busy(False)
+            self.batch_panel.batch_end(msg)
             (self.warn if outcome.startswith("Failed") else self.log)(
                 msg + (" — Ctrl+Z undoes the whole batch" if made else "")
             )
@@ -1182,7 +1206,7 @@ class MainWindow(QMainWindow):
         self._discard = discard
         w.cancel()
         if self._job == "batch":
-            self.detection_panel.batch_stopping()
+            self.batch_panel.batch_stopping()
         else:
             self.propagation_panel.stopping()
         self.log("Cancelling — results will be discarded…" if discard else "Stopping — keeping the results so far…")

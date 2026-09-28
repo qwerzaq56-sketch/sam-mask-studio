@@ -91,8 +91,8 @@ def test_batch_stop_keeps_and_cancel_discards(qapp, win, button, kept):
     engine.detect_many = gated
     win.run_batch(["person"], "all", 0, -1, 0.5)
     wait_until(qapp, entered.is_set)
-    getattr(win.detection_panel, button).click()
-    assert not win.detection_panel.stop_btn.isEnabled()
+    getattr(win.batch_panel, button).click()
+    assert not win.batch_panel.stop_btn.isEnabled()
     gate.set()
     wait_until(qapp, lambda: win._busy is None)
     objs = win.session.project.objects
@@ -348,7 +348,7 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
     styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
     assert styles()["guide"][25, 25] and styles()["guide"][35, 35]  # both holes, gray
-    win.canvas.set_brush_size(8)
+    win.canvas.set_brush_size(40)  # a few image px: covers the hole whatever the rounding
 
     def stroke(x, y, mods=Qt.KeyboardModifier.NoModifier):
         QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, mods, canvas_pos(win, x, y))
@@ -640,7 +640,7 @@ def test_paint_mode_picks_are_undoable(qapp, win):
     p.fill_area.setValue(5)
     p.mode_paint_btn.click()
     p.tool_btns["fill_holes"].click()
-    win.canvas.set_brush_size(8)
+    win.canvas.set_brush_size(40)  # a few image px: covers the hole whatever the rounding
 
     def stroke(x, y, mods=Qt.KeyboardModifier.NoModifier):
         QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, mods, canvas_pos(win, x, y))
@@ -760,3 +760,65 @@ def test_mode_buttons_only_switch(qapp, win):
     p.mode_paint_btn.click()
     assert not s.editing_frame().mask[25, 25] and s.auto_mode == "paint" and p.mode_paint_btn.isChecked()
     p.mode_fill_btn.click()
+
+
+# --- Phase 3: detections — separate Batch tab, preview, add modes, viewport picking ---
+
+
+@pytest.mark.parametrize(
+    "how, names",
+    [("each", ["person #1", "person #2", "car #1", "car #2"]), ("merged", ["person #1"]),
+     ("per_label", ["person #1", "car #1"])],
+)
+def test_add_detections_each_merged_per_prompt(qapp, win, how, names):
+    win.detection_panel.prompt.setText("person, car")
+    win.detection_panel.detect_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    s = win.session
+    assert len(s.detections) == 4
+    {"each": win.detection_panel.add_btn, "merged": win.detection_panel.merge_btn,
+     "per_label": win.detection_panel.per_label_btn}[how].click()
+    qapp.processEvents()
+    assert [o.name for o in s.project.objects] == names and s.detections == []
+    if how == "merged":
+        m = s.project.objects[0].mask(s.key)
+        assert m[10, 10] and m[30, 10] and m[10, 35]  # every candidate in one mask
+    win.undo()
+    assert s.project.objects == []  # one undo step
+
+
+def test_preview_toggle_and_viewport_picking(qapp, win):
+    from tests.app.test_gui import canvas_pos
+
+    win.detection_panel.prompt.setText("person, car")
+    win.detection_panel.detect_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    s = win.session
+    cands = lambda: [o for o in win.canvas._overlays if o.style.startswith("candidate")]  # noqa: E731
+    assert len(cands()) == 4 and win.canvas.candidates_pickable
+    win.detection_panel.preview_btn.click()  # off
+    assert cands() == [] and not win.canvas.candidates_pickable
+    win.detection_panel.preview_btn.click()  # on again
+
+    ctrl, shift = Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.ShiftModifier
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 10, 10))  # Ctrl+click unchecks
+    assert s.detection_checked == [False, True, True, True]
+    assert not win.detection_panel.item(0).checkState(0) == Qt.CheckState.Checked  # the tree follows
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, shift, canvas_pos(win, 10, 10))  # Shift+click checks
+    assert s.detection_checked == [True, True, True, True]
+    # Ctrl+drag a box around the "car" column (x 30..50) unchecks both cars
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 28, 2))
+    QTest.mouseMove(win.canvas, canvas_pos(win, 52, 40))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, ctrl, canvas_pos(win, 52, 40))
+    assert s.detection_checked == [True, True, False, False]
+    assert s.project.objects == []  # picking never creates an Object
+
+
+def test_batch_tab_has_its_own_prompt(qapp, win):
+    assert win.tabs.indexOf(win.batch_panel) >= 0 and win.tabs.indexOf(win.detection_panel) >= 0
+    win.detection_panel.prompt.setText("car")
+    win.batch_panel.prompt.setText("person")
+    win.batch_panel.batch_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    assert [o.name for o in win.session.project.objects] == ["person #1"]
+    assert win.detection_panel.prompt.text() == "car"
