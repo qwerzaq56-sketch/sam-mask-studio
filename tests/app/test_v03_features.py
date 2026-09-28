@@ -101,3 +101,27 @@ def test_batch_stop_keeps_and_cancel_discards(qapp, win, button, kept):
         assert len(objs) == 1 and len(objs[0].frames) == kept
     else:
         assert objs == [] and not win.session.project.can_undo
+
+
+# --- Autosave writes in the background ------------------------------------------
+
+
+def test_background_autosave_and_failed_job_is_rewritten(qapp, win):
+    from src.core.storage import ProjectStore
+
+    make_objects(win, 2)
+    win.save(background=True)
+    assert win._save_task is not None
+    win._save_task.wait()
+    store = win.session.store
+    again = ProjectStore(store.image_dir, store.max_side).load(win.session.keys)
+    assert [o.name for o in again.objects] == [o.name for o in win.session.project.objects]
+
+    # a job that fails leaves the project unsaved, so the next save writes it all again
+    oid = win.session.project.objects[0].id
+    win.session.remove_frame(oid)
+    job = store.prepare(win.session.project)
+    store.failed(job)
+    assert not store.is_saved(win.session.project)
+    job2 = store.prepare(win.session.project)
+    assert {k for k in job2.written_keys} >= set(job.written_keys)

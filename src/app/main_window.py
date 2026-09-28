@@ -92,7 +92,8 @@ class MainWindow(QMainWindow):
         self._autosave = QTimer(self)
         self._autosave.setSingleShot(True)
         self._autosave.setInterval(self.settings.autosave_ms)
-        self._autosave.timeout.connect(self.save)
+        self._autosave.timeout.connect(lambda: self.save(background=True))
+        self._save_task: Optional[Task] = None
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -466,13 +467,48 @@ class MainWindow(QMainWindow):
         if self.session.key is not None:
             self.go_to(max(0, min(len(self.session.keys) - 1, self.session.index + delta)))
 
-    def save(self, force: bool = False) -> None:
+    def save(self, force: bool = False, background: bool = False) -> None:
+        """Write the project's changes; *background* writes the PNGs off the UI thread.
+
+        Autosave runs in the background (the first save after a batch or a
+        propagation can be thousands of masks); explicit saves, navigation and
+        closing write directly, after any background save has finished.
+        """
         self._autosave.stop()
+        store = self.session.store
+        if store is None:
+            return
+        running = self._save_task
+        if running is not None and running.isRunning():
+            if background:
+                self._autosave.start()  # try again once the current write is done
+                return
+            running.wait()
         try:
-            if self.session.save(force=force) and force:
-                self.log("Saved")
+            job = store.prepare(self.session.project, force=force)
         except OSError as e:
             self.log(f"Save failed: {e}")
+            return
+        if job is None:
+            return
+        if not background:
+            try:
+                job.run()
+                if force:
+                    self.log("Saved")
+            except OSError as e:
+                store.failed(job)
+                self.log(f"Save failed: {e}")
+            return
+
+        def failed(msg):
+            store.failed(job)
+            self.log(f"Save failed: {msg}")
+
+        task = Task(job.run)
+        self._save_task = task
+        task.failed.connect(failed)
+        task.start()
 
     def closeEvent(self, event):
         if self._prop_worker is not None and self._prop_worker.isRunning():
