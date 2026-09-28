@@ -125,3 +125,77 @@ def test_background_autosave_and_failed_job_is_rewritten(qapp, win):
     assert not store.is_saved(win.session.project)
     job2 = store.prepare(win.session.project)
     assert {k for k in job2.written_keys} >= set(job.written_keys)
+
+
+# --- Edit layer tools: Fill Holes / Remove Specks / Object Fill, limited to a region ---
+
+
+def test_refine_tools_are_separate_and_grow_to_edges():
+    import cv2
+    import numpy as np
+
+    from src.core.refine import fill_holes, grow_to_edges, remove_specks, within
+
+    m = np.zeros((60, 60), bool)
+    m[10:40, 10:40] = True
+    m[20, 20] = False  # hole
+    m[50, 50] = True  # speck
+    assert fill_holes(m, 5)[20, 20] and fill_holes(m, 5)[50, 50]
+    assert not remove_specks(m, 5)[50, 50] and not remove_specks(m, 5)[20, 20]
+
+    img = np.full((200, 200, 3), (40, 60, 80), np.uint8)
+    cv2.circle(img, (100, 100), 60, (220, 200, 90), -1)
+    truth = np.zeros((200, 200), np.uint8)
+    cv2.circle(truth, (100, 100), 60, 1, -1)
+    seed = np.zeros((200, 200), np.uint8)
+    cv2.circle(seed, (100, 100), 45, 1, -1)
+    grown = grow_to_edges(img, seed > 0, 25)
+    assert grown.sum() > 0.97 * truth.sum() and not (grown & ~(truth > 0)).any()
+    assert not grow_to_edges(img, seed > 0, 5)[100, 38]  # growth is capped at max_grow
+
+    region = np.zeros((200, 200), bool)
+    region[:, 100:] = True
+    half = within(region, seed > 0, grown)
+    assert half[100, 150] and not half[100, 50]
+
+
+def test_region_painted_with_brush_limits_the_tools(qapp, win):
+    import numpy as np
+
+    from tests.app.test_gui import canvas_pos
+
+    s = win.session
+    win.new_object()
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 30, 30))
+    t = s.editing_frame().mask.copy()
+    t[25, 25] = t[35, 35] = False  # two holes, one on each side
+    s.brush(t)
+    win.refresh()
+    win.properties_panel.region_btn.click()  # paint the region: turns the brush on
+    assert win.canvas.paint_region and win.canvas.brush_mode
+    win.canvas.set_brush_size(40)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 36, 36))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 36, 36))
+    qapp.processEvents()
+    assert s.region is not None and s.region[35, 35] and not s.region[25, 25]
+    assert s.editing_frame().mask.sum() == t.sum()  # painting the region left the mask alone
+    win.properties_panel.refine_area.setValue(5)
+    win.properties_panel.fill_btn.click()
+    m = s.editing_frame().mask
+    assert m[35, 35] and not m[25, 25]  # only the hole inside the region
+    win.properties_panel.clear_region_btn.click()
+    assert s.region is None and "whole mask" in win.properties_panel.scope_label.text()
+    win.properties_panel.fill_btn.click()
+    assert s.editing_frame().mask[25, 25]
+    win.finish_editing()
+    assert not win.canvas.paint_region and s.region is None
+
+
+def test_object_fill_button(qapp, win):
+    s = win.session
+    win.new_object()
+    s.click(40, 30)
+    before = s.editing_frame().mask.sum()
+    win.refresh()
+    win.properties_panel.object_fill_btn.click()
+    assert s.editing_frame().mask.sum() >= before  # never shrinks (a flat test image may not grow)

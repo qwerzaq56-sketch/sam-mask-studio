@@ -209,7 +209,7 @@ def test_refine_button(win, qapp):
     s.brush(t)
     win.refresh()
     win.properties_panel.refine_area.setValue(10)
-    win.properties_panel.refine_btn.click()
+    win.properties_panel.fill_btn.click()
     qapp.processEvents()
     assert s.editing_frame().mask[30, 30]
 
