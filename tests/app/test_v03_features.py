@@ -822,3 +822,33 @@ def test_batch_tab_has_its_own_prompt(qapp, win):
     wait_until(qapp, lambda: win._busy is None)
     assert [o.name for o in win.session.project.objects] == ["person #1"]
     assert win.detection_panel.prompt.text() == "car"
+
+
+# --- Phase 4: Objects without a mask here are hidden; linked Objects are marked -----
+
+
+def test_objects_list_hides_empty_and_marks_linked(qapp, win):
+    import numpy as np
+
+    from src.core.project import FrameState
+
+    s = win.session
+    a, b = make_objects(win, 2)  # both on image 0
+    s.project.set_frame(b, s.keys[1], FrameState.from_mask(np.ones((60, 80), bool)))  # b also on image 1
+    s.go_to(1)
+    s.start_new_object()
+    c = s.click(40, 30)  # only on image 1
+    s.finish_editing()
+    win.refresh()
+    panel = win.objects_panel
+    rows = lambda: [panel.tree.topLevelItem(i).data(0, 0x0100) for i in range(panel.tree.topLevelItemCount())]  # noqa: E731
+    assert rows() == [b, c] and panel.shown_label.text() == "2 of 3 shown"
+    link = {panel.tree.topLevelItem(i).data(0, 0x0100): panel.tree.topLevelItem(i).text(1) for i in range(2)}
+    assert link == {b: "🔗 2", c: ""}
+    panel.show_all.setChecked(True)
+    assert rows() == [a, b, c] and panel.shown_label.text() == ""
+    panel.show_all.setChecked(False)
+    win.toggle_edit(a)  # editing an Object with no mask here keeps it listed
+    assert a in rows()
+    win.finish_editing()
+    assert a not in rows()

@@ -272,6 +272,10 @@ Then: the mode buttons only switch modes; Apply & Recompute (or Enter) is the on
   (`Session.detection_at`: smallest mask under the point; `detections_in_box`: ≥ half inside).
 - `later()` timers are children of their widget (a deleted widget's signal crashed the test run).
 
+**P4 — Objects list** (`v0.3-p4`): the data model is unchanged (an Object spans every image, per
+spec 03). The list shows only Objects with a mask on this image (plus the one in Edit); `Show all
+Objects` lists every one. A second column shows `🔗 n` for Objects with masks on n > 1 images.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
