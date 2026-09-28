@@ -897,9 +897,13 @@ class MainWindow(QMainWindow):
             tool = ""  # the active auto tool again = Esc: drop its result and leave it
         if tool != self._tool:
             self.close_tool()
+        new_auto = tool in AUTO_TOOLS and tool != self._tool
         self._tool = tool
         auto = tool in AUTO_TOOLS
         self.session.set_auto_tool(tool if auto else None)
+        if new_auto and self.session.auto_mode != "fill":  # every auto tool starts in Fill mode
+            self.session.set_auto_mode("fill")
+            self.properties_panel._set_mode("fill")
         if on:
             self.canvas.set_brush_tool(tool)
             if self.canvas.region_mode and not auto:

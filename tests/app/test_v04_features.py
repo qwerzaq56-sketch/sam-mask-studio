@@ -287,3 +287,22 @@ def test_enter_sets_the_reference(qapp, win):
     assert win.session.index == 2
     assert win.eventFilter(win.canvas, enter)  # again on the reference: back to none
     assert win._reference is None
+
+
+# --- p10: every auto tool starts in Fill mode --------------------------------------
+
+
+def test_auto_tool_starts_in_fill_mode(qapp, win):
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    s = win.session
+    p = win.properties_panel
+    p.tool_btns["grow"].click()
+    p.mode_paint_btn.click()
+    assert s.auto_mode == "paint" and win.canvas.brush_mode
+    p.tool_btns["shrink"].click()  # another auto tool: back to Fill
+    assert s.auto_mode == "fill" and p.mode_fill_btn.isChecked() and not win.canvas.brush_mode
+    p.mode_paint_btn.click()
+    win.escape()
+    p.tool_btns["grow"].click()  # after leaving too
+    assert s.auto_mode == "fill"
