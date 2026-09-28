@@ -913,12 +913,15 @@ def test_reference_selection_pin_and_all(qapp, win):
     win.go_to(0)
     lst = win.images_panel.list
     lst.itemDoubleClicked.emit(lst.item(1))  # image 1 is the reference now
-    assert win._reference == 1 and "◎" in pp.reference.text() and lst.item(1).text()[2] == "◎"
+    assert win._reference == 1 and "◎" in pp.reference.text() and "◎" in lst.item(1).text()
+    assert lst.item(1).text().split()[0] == "2"  # rows start with their image ID
     lst.clearSelection()
     for i in (3, 4):
         lst.item(i).setSelected(True)
     pp.pin_btn.click()  # pin images 3, 4
-    assert win._pinned == [3, 4] and "2 image(s) pinned" in pp.pin_label.text()
+    assert win._pinned == [3, 4] and pp.pin_label.text().startswith("Pinned: 4–5 (2 image(s))")
+    assert lst.item(3).background().color() == __import__("src.app.images_panel", fromlist=["x"]).PIN_COLOR
+    assert lst.item(3).text().endswith("📌") and not lst.item(2).text().endswith("📌")
     lst.clearSelection()  # the pin survives
     assert pp.scope_value() == "selection"
     pp.run_btn.click()
@@ -966,3 +969,30 @@ def test_stop_then_cancel_or_resume(qapp, win):
     release2.set()
     wait_until(qapp, lambda: win._busy is None)
     assert "Cancelled" in pp.phase.text()
+
+
+def test_id_ranges_and_range_scope_by_ids(qapp, win):
+    from src.core.propagation import format_ids, parse_id_range
+
+    assert parse_id_range("5 ~ 45", 50) == (4, 44) and parse_id_range("45-5", 50) == (4, 44)
+    assert parse_id_range("7", 50) == (6, 6)
+    for bad in ("", "a~b", "0~3", "3~99"):
+        with pytest.raises(ValueError):
+            parse_id_range(bad, 50)
+    assert format_ids([2, 3, 4, 11, 13, 14]) == "3–5, 12, 14–15"
+
+    s = win.session
+    pp = win.propagation_panel
+    win.go_to(2)
+    win.new_object()
+    s.click(30, 30)
+    win.finish_editing()
+    pp.scope.setCurrentIndex(pp.scope.findData("range"))
+    assert pp.range_edit.text() == "1 ~ 5" and pp.ref_hint.text().startswith("Double-click")
+    pp.range_edit.setText("2 ~ 4")  # IDs 2..4 = images 1..3, reference 2 (ID 3)
+    pp.run_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    assert set(s.project.objects[0].frames) == {s.keys[1], s.keys[2], s.keys[3]}
+    pp.range_edit.setText("9 ~ 12")
+    pp.run_btn.click()
+    assert "1 to 5" in pp.phase.text()  # an out-of-range ID is reported, nothing runs

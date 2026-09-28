@@ -102,3 +102,34 @@ def existing_targets(frames_by_obj: dict, keys: List[str], plan: PropagationPlan
 def reference_mask(frames: dict, key: str) -> Optional[np.ndarray]:
     fs = frames.get(key)
     return fs.mask if fs is not None else None
+
+
+def parse_id_range(text: str, count: int) -> Tuple[int, int]:
+    """``"5 ~ 45"`` (1-based image IDs; ``~`` or ``-``) -> 0-based ``(start, end)``.
+
+    A single ID means just that image. Raises ValueError with a readable message.
+    """
+    parts = [t for t in text.replace("~", "-").replace(" ", "").split("-") if t]
+    if len(parts) not in (1, 2) or not all(t.isdigit() for t in parts):
+        raise ValueError(f"Type the range as image IDs, e.g. 5 ~ 45 (1 ~ {count})")
+    a, b = int(parts[0]), int(parts[-1])
+    a, b = min(a, b), max(a, b)
+    if a < 1 or b > count:
+        raise ValueError(f"Image IDs go from 1 to {count}")
+    return a - 1, b - 1
+
+
+def format_ids(indices) -> str:
+    """0-based indices -> compact 1-based IDs: ``[2, 3, 4, 11] -> "3–5, 12"``."""
+    ids = sorted({i + 1 for i in indices})
+    out, run = [], []
+    for i in ids:
+        if run and i == run[-1] + 1:
+            run.append(i)
+            continue
+        if run:
+            out.append(f"{run[0]}–{run[-1]}" if len(run) > 1 else str(run[0]))
+        run = [i]
+    if run:
+        out.append(f"{run[0]}–{run[-1]}" if len(run) > 1 else str(run[0]))
+    return ", ".join(out)
