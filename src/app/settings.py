@@ -30,6 +30,7 @@ class Settings:
     outline_width: float = 1.0  # screen px
     show_edit_changes: bool = False  # tint what the edit layer added (green) / removed (red)
     frame_list_names: bool = True  # the Frame List shows file names (else only IDs and marks)
+    marks_one_object: bool = False  # frame marks for the shown Object only (else every Object)
 
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":

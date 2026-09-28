@@ -139,6 +139,7 @@ SHORTCUTS = (
         ("Left / PgUp", "Previous image (not while editing)"),
         ("Up / Down", "Previous / next Object with a mask on this image (Edit follows)"),
         ("S", "Scroll the frame list and strip to the current frame (also ⌖; Go to ID: type + Enter)"),
+        ("[ / ]", "Previous / next ⚠ or ✕ image (with the Frame List's 1 on: also – = no mask of the Object)"),
         ("Double-click an image", "Make it the propagation reference (◎); again: back to the current image"),
         ("Shift / Ctrl-click images", "Pick the images for the Selection propagation scope (📌 Pin keeps them)"),
     )),

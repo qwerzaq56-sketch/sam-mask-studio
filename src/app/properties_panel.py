@@ -165,9 +165,9 @@ class PropertiesPanel(QWidget):
         self.title = QLabel("No Object selected")
         self.title.setWordWrap(True)
         self.hint = QLabel(
-            "Pick an Object's <b>Edit</b>, or <b>+ New Object from Points</b>.<br>"
+            "Pick an Object's <b>Points</b> (E), or <b>+ New Object from Points</b>.<br>"
             "Left click = positive, right click = negative, drag = box.<br>"
-            "Hand edits go to the <b>Edit layer</b> below (Brush: B)."
+            "Hand edits go to the <b>Edit Layer</b> tab (Paint: D)."
         )
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: gray;")

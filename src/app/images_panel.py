@@ -5,7 +5,8 @@ image, the picked images, ◎ and 📌 are always the same in both.
 The strip:
 
 Each tile shows the image, its 1-based ID, its status mark (spec 02 §13: ✕
-failed, ⚠ warning, ★ manual, ✓ propagated), ◎ for the propagation reference
+failed, ⚠ warning, ★ manual, ✓ propagated; colored, counted in the summary
+labels, and for one Object only with – where it has no mask), ◎ for the propagation reference
 and 📌 when pinned, and the file name. Click opens an image, Shift/Ctrl-click
 picks several (batch masking, the propagation Selection), double-click makes
 it the propagation reference. Thumbnails are cached on disk (in the project's
@@ -24,6 +25,7 @@ from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QLabel,
     QListView,
     QListWidget,
     QStyledItemDelegate,
@@ -42,9 +44,28 @@ PRIORITY = (
 )
 
 
-def image_marks(project: Project) -> Dict[str, str]:
+NO_MASK = "–"  # marks for one Object: it has no mask on this image
+PROBLEMS = ("✕", "⚠", NO_MASK)  # what [ / ] jump between
+MARK_COLORS = {  # the mark's text color in both views (✓ keeps the default)
+    "✕": QColor(215, 40, 40),
+    "⚠": QColor(215, 130, 0),
+    "★": QColor(40, 110, 220),
+    NO_MASK: QColor(150, 150, 150),
+}
+LEGEND = "★ edited here · ✓ propagated · ⚠ suspicious (area jumped) · ✕ empty after propagation"
+LEGEND_ONE = LEGEND + " · – the Object has no mask here"
+
+
+def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
+    """Each image's most important status of the Object masks on it.
+
+    With *only* (an Object id) just that Object counts, and every image
+    without its mask is marked ``–``.
+    """
     seen: Dict[str, set] = {}
     for o in project.objects:
+        if only is not None and o.id != only:
+            continue
         for k, fs in o.frames.items():
             if fs.mask is not None:
                 seen.setdefault(k, set()).add(fs.status)
@@ -120,6 +141,8 @@ class ImagesPanel(QWidget):
         self._reference: Optional[int] = None
         self._pinned: Set[int] = set()
         self._marks: Dict[str, str] = {}
+        self._only: Optional[int] = None  # marks for this Object only (None: every Object)
+        self._summaries: List[QLabel] = []
         self._loaded: Set[int] = set()  # rows whose thumbnail is set (or queued)
         self._pending: List[int] = []  # rows to read, nearest first
         self._cache: Optional[Path] = None  # thumbnail cache folder
@@ -143,7 +166,7 @@ class ImagesPanel(QWidget):
         self.list.itemDoubleClicked.connect(lambda it: self.reference_requested.emit(self.list.row(it)))
         self.list.setToolTip(
             "Click: open the image · Shift/Ctrl-click: pick images (batch / propagation Selection)\n"
-            "Double-click: make it the propagation reference (◎) · shaded tiles are pinned (📌)"
+            "Double-click: make it the propagation reference (◎) · shaded tiles are pinned (📌)\n" + LEGEND_ONE
         )
         self.list.horizontalScrollBar().valueChanged.connect(lambda _v: self._visible_timer.start())
         self._visible_timer = QTimer(self)
@@ -206,10 +229,18 @@ class ImagesPanel(QWidget):
     def status_mark(self, i: int) -> str:
         return self._marks.get(self._keys[i], " ")
 
-    def update_marks(self, project: Project) -> None:
-        """Mark each image with the most important status of the Object masks on it."""
-        self._marks = image_marks(project)
+    def update_marks(self, project: Project, only: Optional[int] = None) -> None:
+        """Mark each image with the most important status of the Object masks on it.
+
+        *only*: an Object id — its marks alone, ``–`` where it has no mask.
+        """
+        marks = image_marks(project, only)
+        if only is not None:
+            marks = {k: marks.get(k, NO_MASK) for k in self._keys}
+        self._marks = marks
+        self._only = only
         self._retext()
+        self._summarize()
 
     def _retext(self) -> None:
         for i in range(min(self.list.count(), len(self._keys))):
@@ -217,6 +248,45 @@ class ImagesPanel(QWidget):
             it = self.list.item(i)
             if it.text() != text:
                 it.setText(text)
+                color = MARK_COLORS.get(self._marks.get(self._keys[i], ""))
+                it.setForeground(QBrush(color) if color is not None else QBrush())
+
+    def summary_label(self) -> QLabel:
+        """A new label with the mark counts (``★3 ✓40 ⚠2 ✕0``), kept up to date."""
+        label = QLabel()
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setMinimumWidth(10)
+        self._summaries.append(label)
+        self._summarize()
+        return label
+
+    def _summarize(self) -> None:
+        counts: Dict[str, int] = {}
+        for k in self._keys:
+            m = self._marks.get(k)
+            if m:
+                counts[m] = counts.get(m, 0) + 1
+        order = ["★", "✓", "⚠", "✕"] + ([NO_MASK] if self._only is not None else [])
+        parts = []
+        for m in order:
+            c = MARK_COLORS.get(m)
+            style = f" style='color: {c.name()}'" if c is not None and counts.get(m) else ""
+            parts.append(f"<span{style}>{m}{counts.get(m, 0)}</span>")
+        text = " ".join(parts)
+        problems = "⚠ ✕ –" if self._only is not None else "⚠ ✕"
+        tip = f"{LEGEND_ONE if self._only is not None else LEGEND}\n[ / ]: previous / next {problems} image"
+        for label in self._summaries:
+            label.setText(text)
+            label.setToolTip(tip)
+
+    def problem_frame(self, start: int, step: int) -> Optional[int]:
+        """The next image (after *start*, going *step* = ±1, wrapping) marked ⚠ / ✕ / –; None if there is none."""
+        n = len(self._keys)
+        for d in range(1, n + 1):
+            i = (start + step * d) % n
+            if self._marks.get(self._keys[i]) in PROBLEMS:
+                return i
+        return None
 
     def set_reference(self, index: Optional[int]) -> None:
         """Mark the propagation reference with ◎ (shown on the next update_marks)."""
