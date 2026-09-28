@@ -42,17 +42,17 @@ BRUSH_TOOLS = (
     ("remove_specks", "Remove Specks", "Drag over an area; on release its specks are removed"),
     ("object_fill", "Object Fill", "Drag over an area; on release the mask grows to the object's edges there"),
 )
-TOOL_CELLS = {  # grid row, column; row 1 holds the Restore options
+TOOL_CELLS = {  # grid row, column; the Restore options sit beside Restore
     "paint": (0, 0),
-    "restore": (0, 1),
-    "fill_holes": (2, 0),
-    "remove_specks": (2, 1),
-    "object_fill": (3, 0),
+    "object_fill": (0, 1),
+    "fill_holes": (1, 0),
+    "remove_specks": (1, 1),
+    "restore": (2, 0),
 }
 RESTORE_MODES = (
-    ("both", "Restore: added and removed"),
-    ("added", "Restore: remove what was added"),
-    ("removed", "Restore: bring back what was removed"),
+    ("both", "Added + removed"),
+    ("added", "Remove added"),
+    ("removed", "Bring back removed"),
 )
 POINT_ROLE = Qt.ItemDataRole.UserRole
 
@@ -155,7 +155,7 @@ class PropertiesPanel(QWidget):
         for value, text in RESTORE_MODES:
             self.restore_mode.addItem(text, value)
         self.restore_mode.setToolTip("What the Restore brush brings back to the point/prompt mask")
-        tools.addWidget(self.restore_mode, 1, 0, 1, 2)
+        tools.addWidget(self.restore_mode, 2, 1)
         self.brush_btn = self.tool_btns["paint"]
         self.brush_size = QLabel("")
         self.brush_size.setStyleSheet("color: gray;")
@@ -214,9 +214,9 @@ class PropertiesPanel(QWidget):
         self.scope_label.setStyleSheet("color: gray;")
         abox = QGroupBox("Apply at once")
         ag = QGridLayout(abox)
-        ag.addWidget(self.fill_btn, 0, 0)
-        ag.addWidget(self.specks_btn, 0, 1)
-        ag.addWidget(self.object_fill_btn, 1, 0, 1, 2)
+        ag.addWidget(self.object_fill_btn, 0, 0, 1, 2)
+        ag.addWidget(self.fill_btn, 1, 0)
+        ag.addWidget(self.specks_btn, 1, 1)
         ag.addWidget(self.region_btn, 2, 0)
         ag.addWidget(self.clear_region_btn, 2, 1)
         ag.addWidget(self.scope_label, 3, 0, 1, 2)
