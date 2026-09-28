@@ -23,7 +23,9 @@ def test_open_folder_sets_first_image_and_engine(session):
 
 
 def test_idle_click_never_creates_an_object_once_objects_exist(session):
-    session.click(10, 10)  # the very first Object comes from a plain click
+    assert session.click(10, 10) is None  # not even the first one
+    session.start_new_object()
+    session.click(10, 10)
     session.finish_editing()
     assert session.click(40, 40) is None
     assert len(session.project.objects) == 1

@@ -160,8 +160,8 @@ class Canvas(QWidget):
     point_picked = pyqtSignal(int)
     point_moved = pyqtSignal(int, float, float)  # index, new x, y (dragged)
     point_deleted = pyqtSignal(int)  # double-clicked
-    candidates_clicked = pyqtSignal(float, float, bool)  # x, y, check (Shift) / uncheck (Ctrl)
-    candidates_boxed = pyqtSignal(float, float, float, float, bool)  # a drag box, check / uncheck
+    candidates_clicked = pyqtSignal(float, float, str)  # x, y, "add" | "toggle" (Shift) | "remove" (Ctrl)
+    candidates_boxed = pyqtSignal(float, float, float, float, str)  # a drag box, same ops
     object_picked = pyqtSignal(float, float)
     brush_finished = pyqtSignal(object)  # bool mask
     region_box = pyqtSignal(float, float, float, float, bool)  # x0, y0, x1, y1, subtract
@@ -205,8 +205,9 @@ class Canvas(QWidget):
         self._pan_from: Optional[Tuple[QPointF, QPointF]] = None
         self._space_held = False
         self._point_drag: Optional[Tuple[int, QPointF, bool]] = None  # index, press pos, moved
-        self.candidates_pickable = False  # Detections are shown: Shift / Ctrl click or drag picks them
-        self._cand_pick: Optional[bool] = None  # the press picks candidates: check (True) / uncheck
+        # Select on Image: left clicks / drags pick Detections (and do nothing else)
+        self.candidates_pickable = False
+        self._cand_pick: Optional[str] = None  # the press picks candidates: add | toggle | remove
         self._press: Optional[Tuple[QPointF, Qt.MouseButton]] = None
         self._drag_to: Optional[QPointF] = None
         self._mouse: Optional[QPointF] = None
@@ -480,8 +481,11 @@ class Canvas(QWidget):
         if self._drag_to is not None and self._press is not None and not self._brush.is_drawing:
             x0, y0 = self.to_image(self._press[0])
             x1, y1 = self.to_image(self._drag_to)
-            removing = (self.mode == Mode.EDIT and self.region_mode and self._alt()) or self._cand_pick is False
-            self._draw_box(painter, (x0, y0, x1, y1), QColor(*ALT_COLOR) if removing else QColor(255, 255, 255))
+            removing = (self.mode == Mode.EDIT and self.region_mode and self._alt()) or self._cand_pick == "remove"
+            color = QColor(*ALT_COLOR) if removing else QColor(255, 220, 0) if self._cand_pick == "toggle" else QColor(
+                255, 255, 255
+            )
+            self._draw_box(painter, (x0, y0, x1, y1), color)
         if self.mode == Mode.EDIT:
             for i, pt in enumerate(self.points):
                 q = self.to_widget(pt.x, pt.y)
@@ -513,6 +517,8 @@ class Canvas(QWidget):
         for ov in self._overlays:
             if ov.style == "candidate":
                 lines.append((self._info.outline(ov.mask), QColor(*ov.color), 1.0))
+            elif ov.style == "candidate_off":  # unchecked: faint fill, but the outline still shows where it is
+                lines.append((self._info.outline(ov.mask), QColor(*ov.color, 150), 1.0))
         if self._region is not None:
             lines.append((self._info.outline(self._region), QColor(*REGION_COLOR), 1.0))
         if self.outline_visible:
@@ -594,11 +600,12 @@ class Canvas(QWidget):
                 self._drag_to = None
             return
         ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
-        if self.mode != Mode.EDIT and self.candidates_pickable and btn == Qt.MouseButton.LeftButton and (shift or ctrl):
-            self._cand_pick = shift and not ctrl  # Shift checks, Ctrl unchecks
-            self._press = (pos, btn)
-            self._drag_to = None
-            return
+        if self.mode != Mode.EDIT and self.candidates_pickable:
+            if btn == Qt.MouseButton.LeftButton:
+                self._cand_pick = "remove" if ctrl else "toggle" if shift else "add"
+                self._press = (pos, btn)
+                self._drag_to = None
+            return  # while picking, clicks do nothing else
         if self.mode == Mode.EDIT and (self.brush_mode or shift):
             if btn != Qt.MouseButton.LeftButton:
                 return  # with the brush on, clicks never add points
@@ -691,13 +698,13 @@ class Canvas(QWidget):
         if btn != event.button():
             return
         if self._cand_pick is not None:
-            on, self._cand_pick = self._cand_pick, None
+            op, self._cand_pick = self._cand_pick, None
             if dragged:
                 x0, y0 = self._clamped(start)
                 x1, y1 = self._clamped(pos)
-                self.candidates_boxed.emit(float(x0), float(y0), float(x1), float(y1), on)
+                self.candidates_boxed.emit(float(x0), float(y0), float(x1), float(y1), op)
             elif self._inside(pos):
-                self.candidates_clicked.emit(*self.to_image(pos), on)
+                self.candidates_clicked.emit(*self.to_image(pos), op)
             return
         if dragged and self.mode != Mode.IDLE:
             x0, y0 = self._clamped(start)

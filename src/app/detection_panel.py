@@ -42,6 +42,7 @@ class DetectionPanel(QWidget):
     add_requested = pyqtSignal(str)  # "each" | "merged" | "per_label"
     clear_requested = pyqtSignal()
     preview_toggled = pyqtSignal(bool)
+    select_toggled = pyqtSignal(bool)  # Select on Image
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -78,8 +79,15 @@ class DetectionPanel(QWidget):
         self.preview_btn = QPushButton("Preview")
         self.preview_btn.setCheckable(True)
         self.preview_btn.setChecked(True)
-        self.preview_btn.setToolTip("Show the candidates on the image (Shift+click / drag picks, Ctrl unpicks)")
+        self.preview_btn.setToolTip("Show the candidates on the image")
         self.preview_btn.toggled.connect(self.preview_toggled)
+        self.select_btn = QPushButton("Select on Image")
+        self.select_btn.setCheckable(True)
+        self.select_btn.setToolTip(
+            "Pick candidates on the image: click / drag = add, Shift = toggle, Ctrl = remove.\n"
+            "Turns on after a detection; Edit is blocked while it is on."
+        )
+        self.select_btn.toggled.connect(self.select_toggled)
         self.add_btn = QPushButton("Add Each")
         self.add_btn.setToolTip("One Object per checked candidate")
         self.add_btn.clicked.connect(lambda: self.add_requested.emit("each"))
@@ -92,7 +100,7 @@ class DetectionPanel(QWidget):
         self.clear_btn = QPushButton("Discard")
         self.clear_btn.clicked.connect(self.clear_requested)
         row = QHBoxLayout()  # one row, so the buttons stay visible in a short dock
-        for b in (self.all_btn, self.none_btn, self.preview_btn):
+        for b in (self.all_btn, self.none_btn, self.preview_btn, self.select_btn):
             row.addWidget(b)
         row.addStretch(1)
         for b in (self.clear_btn, self.add_btn, self.merge_btn, self.per_label_btn):
