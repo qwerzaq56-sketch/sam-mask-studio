@@ -20,6 +20,10 @@ from typing import Callable, List, Optional
 from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QPushButton,
+    QHBoxLayout,
+    QVBoxLayout,
+    QWidget,
     QAbstractScrollArea,
     QAbstractSlider,
     QAbstractSpinBox,
@@ -101,6 +105,7 @@ class MainWindow(QMainWindow):
         self._tool = ""  # the Edit Layer tool in use ("" = none)
         self._auto_gen = 0  # newest auto-tool computation; older results are dropped
         self._auto_shown = 0  # the computation whose result is on screen
+        self._goto_fields: List[QLineEdit] = []  # Frame List, frame strip
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._loading_models = False
 
@@ -152,7 +157,14 @@ class MainWindow(QMainWindow):
         right_dock = self._dock("Properties", self.properties_panel, Qt.DockWidgetArea.RightDockWidgetArea)
         frames_dock = self._dock("Frames", self.images_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
         # the one-line frame list: a narrow column left of the Objects (same model / selection as the strip)
-        list_dock = self._dock("Frame List", self.images_panel.frame_list, Qt.DockWidgetArea.LeftDockWidgetArea)
+        list_box = QWidget()  # the list with its Go-to / Focus row underneath
+        lb = QVBoxLayout(list_box)
+        lb.setContentsMargins(0, 0, 0, 0)
+        lb.setSpacing(2)
+        lb.addWidget(self.images_panel.frame_list, 1)
+        lb.addLayout(self._frame_tools())
+        self.images_panel.layout().addLayout(self._frame_tools())  # and under the strip
+        list_dock = self._dock("Frame List", list_box, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.splitDockWidget(list_dock, left_dock, Qt.Orientation.Horizontal)
         self.names_btn = QToolButton()  # left of the close button: fold the file names away
         self.names_btn.setText("Aa")
@@ -160,10 +172,7 @@ class MainWindow(QMainWindow):
         self.names_btn.setAutoRaise(True)
         self.names_btn.setToolTip("Show the file names (off: only IDs and marks, a narrow list)")
         self.names_btn.toggled.connect(self.set_frame_names)
-        list_tools = self._frame_tools()
-        self._list_goto = list_tools[0]  # hidden while the names are folded: the column is narrow then
-        list_dock.setTitleBarWidget(DockTitleBar(list_dock, [*list_tools, self.names_btn]))
-        frames_dock.setTitleBarWidget(DockTitleBar(frames_dock, self._frame_tools()))
+        list_dock.setTitleBarWidget(DockTitleBar(list_dock, [self.names_btn]))
         self._list_dock = list_dock
         view_menu = self.menuBar().addMenu("&View")
         for d in (list_dock, left_dock, right_dock, frames_dock):
@@ -281,7 +290,6 @@ class MainWindow(QMainWindow):
         self.act_shortcuts.triggered.connect(self.show_shortcuts)
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
-        self._list_goto.setVisible(self.settings.frame_list_names)
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
@@ -813,20 +821,26 @@ class MainWindow(QMainWindow):
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
         self.settings.save(self.settings_path)
 
-    def _frame_tools(self) -> list:
-        """Goto (type an ID + Enter) and Focus buttons for a frame dock's title bar."""
+    def _frame_tools(self) -> QHBoxLayout:
+        """The row under a frame view: Go to ID (type + Enter) and Focus (S)."""
         goto = QLineEdit()
         goto.setPlaceholderText("Go to ID")
         goto.setToolTip("Type an image ID and press Enter to open it")
-        goto.setMinimumWidth(56)
-        goto.setMaximumWidth(72)
+        goto.setMinimumWidth(30)  # it may get narrow with the folded Frame List
+        goto.setMaximumWidth(90)
         goto.returnPressed.connect(lambda: self.goto_frame(goto))
-        focus = QToolButton()
-        focus.setText("⌖")
-        focus.setAutoRaise(True)
-        focus.setToolTip("Scroll to the current frame (S)")
+        focus = QPushButton("S")
+        focus.setToolTip("Focus: scroll to the current frame (S)")
+        focus.setMinimumWidth(0)
+        focus.setMaximumWidth(40)
         focus.clicked.connect(self.focus_frame)
-        return [goto, focus]
+        self._goto_fields.append(goto)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(goto, 1)
+        row.addWidget(focus)
+        row.addStretch(1)
+        return row
 
     def focus_frame(self) -> None:
         """S: scroll the frame list and strip to the current frame."""
@@ -846,7 +860,6 @@ class MainWindow(QMainWindow):
     def set_frame_names(self, on: bool) -> None:
         """Frame List: file names on, or folded to the IDs and marks (the column narrows)."""
         self.images_panel.set_names_visible(on)
-        self._list_goto.setVisible(on)  # folded: the strip's Go-to field remains
         self.resizeDocks([self._list_dock], [210 if on else 80], Qt.Orientation.Horizontal)
         self.settings.frame_list_names = bool(on)
         self.settings.save(self.settings_path)
