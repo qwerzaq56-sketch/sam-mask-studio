@@ -20,6 +20,7 @@ from typing import Callable, List, Optional
 from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QAbstractScrollArea,
     QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QScrollBar,
     QSplitter,
     QTabWidget,
     QToolBar,
@@ -583,10 +585,16 @@ class MainWindow(QMainWindow):
                 if not event.isAutoRepeat():
                     self.canvas.set_final_peek(t == QEvent.Type.KeyPress)
                 return True
-        if t == QEvent.Type.Wheel and isinstance(obj, (QAbstractSlider, QAbstractSpinBox)):
-            parent = obj.parentWidget()
-            if parent is not None:
-                QApplication.sendEvent(parent, event)  # on up to the scroll area
+        if (
+            t == QEvent.Type.Wheel
+            and isinstance(obj, (QAbstractSlider, QAbstractSpinBox))
+            and not isinstance(obj, QScrollBar)  # scroll areas scroll through their scroll bars
+        ):
+            area = obj.parentWidget()
+            while area is not None and not isinstance(area, QAbstractScrollArea):
+                area = area.parentWidget()
+            if area is not None:
+                QApplication.sendEvent(area.verticalScrollBar(), event)  # the panel scrolls instead
             return True
         return super().eventFilter(obj, event)
 

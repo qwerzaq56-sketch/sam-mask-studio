@@ -438,8 +438,20 @@ def test_z_held_peeks_and_the_wheel_leaves_sliders_alone(qapp, win):
     before = field.value()
     wheel = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(), QPoint(0, 120), Qt.MouseButton.NoButton,
                         Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
-    assert win.eventFilter(field.slider, wheel)
-    assert field.value() == before
+    p = win.properties_panel
+    p.tabs.setCurrentIndex(p.layer_tab)
+    win.resize(1200, 500)  # short enough for the Edit Layer tab to scroll
+    qapp.processEvents()
+    bar = p.tabs.currentWidget().verticalScrollBar()
+    assert bar.maximum() > 0
+    bar.setValue(0)
+    assert win.eventFilter(field.slider, wheel) is True
+    assert field.value() == before  # the slider keeps its value...
+    down = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(), QPoint(0, -120), Qt.MouseButton.NoButton,
+                       Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    win.eventFilter(field.spin, down)
+    assert bar.value() > 0  # ...and the panel scrolls instead
+    assert not win.eventFilter(bar, down)  # the scroll bar itself is left alone
 
 
 def test_help_shortcuts_window_and_apply_button(qapp, win):
