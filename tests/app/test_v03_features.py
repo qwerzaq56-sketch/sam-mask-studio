@@ -873,3 +873,95 @@ def test_objects_list_hides_empty_and_marks_linked(qapp, win):
     assert a in rows()
     win.finish_editing()
     assert a not in rows()
+
+
+# --- Propagation: reference by double-click, Selection / Range / All, Pin, Resume -----
+
+
+def test_plan_over_picked_frames_skips_the_others():
+    from src.core.propagation import Direction, PropagationPlan
+
+    p = PropagationPlan.of_frames([7, 1, 9, 4], reference=5, direction=Direction.BOTH)
+    assert p.sequence == [1, 4, 5, 7, 9] and p.backward == [4, 1] and p.forward == [7, 9]
+    assert PropagationPlan(1, 4, 2, Direction.BOTH).sequence == [1, 2, 3, 4]  # a range still works
+
+
+def gated_propagate(release, entered, after: int):
+    """fake_propagate that blocks after *after* frames until *release* is set."""
+    from tests.fakes import fake_propagate
+
+    def run(*a, cancel=None, **kw):
+        for n, item in enumerate(fake_propagate(*a, cancel=cancel, **kw)):
+            if n == after:
+                entered.set()
+                release.wait(5)
+                if cancel and cancel():
+                    return
+            yield item
+
+    return run
+
+
+def test_reference_selection_pin_and_all(qapp, win):
+    s = win.session
+    pp = win.propagation_panel
+    win.go_to(1)
+    win.new_object()
+    s.click(30, 30)
+    win.finish_editing()
+    win.go_to(0)
+    lst = win.images_panel.list
+    lst.itemDoubleClicked.emit(lst.item(1))  # image 1 is the reference now
+    assert win._reference == 1 and "◎" in pp.reference.text() and lst.item(1).text()[2] == "◎"
+    lst.clearSelection()
+    for i in (3, 4):
+        lst.item(i).setSelected(True)
+    pp.pin_btn.click()  # pin images 3, 4
+    assert win._pinned == [3, 4] and "2 image(s) pinned" in pp.pin_label.text()
+    lst.clearSelection()  # the pin survives
+    assert pp.scope_value() == "selection"
+    pp.run_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    obj = s.project.objects[0]
+    assert set(k for k, fs in obj.frames.items()) == {s.keys[1], s.keys[3], s.keys[4]}  # 2 skipped
+    pp.scope.setCurrentIndex(pp.scope.findData("all"))
+    win.ask = lambda *a: True
+    pp.run_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    assert len(s.project.objects[0].frames) == 5
+
+
+def test_stop_then_cancel_or_resume(qapp, win):
+    import threading
+
+    s = win.session
+    pp = win.propagation_panel
+    win.new_object()
+    s.click(30, 30)  # on image 0
+    win.finish_editing()
+    release, entered = threading.Event(), threading.Event()
+    win.propagate_fn = gated_propagate(release, entered, after=2)
+    pp.scope.setCurrentIndex(pp.scope.findData("all"))
+    pp.run_btn.click()
+    wait_until(qapp, entered.is_set)
+    pp.stop_btn.click()
+    assert pp.cancel_btn.isEnabled()  # Cancel still works after Stop
+    release.set()
+    wait_until(qapp, lambda: win._busy is None)
+    obj = s.project.objects[0]
+    assert len(obj.frames) == 3 and pp.resume_btn.isEnabled()  # 0 + frames 1, 2
+    win.propagate_fn = __import__("tests.fakes", fromlist=["fake_propagate"]).fake_propagate
+    pp.resume_btn.click()  # continues from frame 2 over 3, 4
+    wait_until(qapp, lambda: win._busy is None)
+    assert len(s.project.objects[0].frames) == 5 and not pp.resume_btn.isEnabled()
+
+    release2, entered2 = threading.Event(), threading.Event()
+    win.propagate_fn = gated_propagate(release2, entered2, after=1)
+    win.ask = lambda *a: True
+    pp.run_btn.click()
+    wait_until(qapp, entered2.is_set)
+    pp.stop_btn.click()
+    pp.cancel_btn.click()  # Stop, then Cancel: nothing is kept
+    release2.set()
+    wait_until(qapp, lambda: win._busy is None)
+    assert "Cancelled" in pp.phase.text()

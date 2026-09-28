@@ -792,14 +792,19 @@ class Session:
     # Propagation
     # ------------------------------------------------------------------
 
-    def plan(self, start: int, end: int, direction: Direction) -> PropagationPlan:
-        return PropagationPlan(start=start, end=end, current=self.index, direction=direction)
+    def plan(self, start: int, end: int, direction: Direction, reference: Optional[int] = None) -> PropagationPlan:
+        ref = self.index if reference is None else reference
+        return PropagationPlan(start=start, end=end, current=ref, direction=direction)
 
-    def seeds(self) -> Dict[int, np.ndarray]:
-        """Checked Objects' selected masks on the current image (the reference)."""
+    def seeds(self, index: Optional[int] = None, ids: Optional[Iterable[int]] = None) -> Dict[int, np.ndarray]:
+        """Masks on the reference image (default: the current one) of the checked Objects
+        (or of *ids*, whatever their check box)."""
+        key = self.keys[index] if index is not None and 0 <= index < len(self.keys) else self.key
+        wanted = set(ids) if ids is not None else None
         out = {}
         for o in self.project.objects:
-            m = o.mask(self.key) if (o.included and self.key) else None
+            use = o.id in wanted if wanted is not None else o.included
+            m = o.mask(key) if (use and key) else None
             if m is not None and m.any():
                 out[o.id] = m
         return out

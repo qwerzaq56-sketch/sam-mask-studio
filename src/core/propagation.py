@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -19,32 +19,47 @@ class Direction(str, Enum):
 
 @dataclass(frozen=True)
 class PropagationPlan:
-    """Sequence indices to fill, walking outward from ``current``.
+    """Sequence indices to fill, walking outward from ``current`` (the reference frame).
 
-    ``start``/``end`` only bound the range; ``current`` is the reference frame
-    and is never re-processed.
+    ``start``/``end`` bound the range; ``current`` is never re-processed. With
+    ``frames`` only those images are used (e.g. picked in the Images list):
+    they are treated as one sequence, skipping the images in between.
     """
 
     start: int
     end: int
     current: int
     direction: Direction
+    frames: Optional[Tuple[int, ...]] = None
 
     def __post_init__(self):
         if not (self.start <= self.current <= self.end):
             raise ValueError(f"Current image ({self.current}) must lie within Start..End ({self.start}..{self.end}).")
 
+    @staticmethod
+    def of_frames(frames: Sequence[int], reference: int, direction: Direction) -> "PropagationPlan":
+        """A plan over just *frames* (plus the reference), in sequence order."""
+        fs = tuple(sorted(set(frames) | {reference}))
+        return PropagationPlan(fs[0], fs[-1], reference, direction, fs)
+
+    @property
+    def sequence(self) -> List[int]:
+        """The frames the model loads, in order (the reference included)."""
+        lo, hi = self.window
+        base = self.frames if self.frames is not None else range(self.start, self.end + 1)
+        return [i for i in sorted(set(base) | {self.current}) if lo <= i <= hi]
+
     @property
     def forward(self) -> List[int]:
         if self.direction == Direction.BACKWARD:
             return []
-        return list(range(self.current + 1, self.end + 1))
+        return [i for i in self.sequence if i > self.current]
 
     @property
     def backward(self) -> List[int]:
         if self.direction == Direction.FORWARD:
             return []
-        return list(range(self.current - 1, self.start - 1, -1))
+        return [i for i in self.sequence if i < self.current][::-1]
 
     @property
     def targets(self) -> List[int]:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Sequence
+from typing import Dict, Optional, Sequence
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QAbstractItemView, QListWidget, QVBoxLayout, QWidget
@@ -29,6 +29,7 @@ def image_marks(project: Project) -> Dict[str, str]:
 
 class ImagesPanel(QWidget):
     navigate_requested = pyqtSignal(int)
+    reference_requested = pyqtSignal(int)  # double-click: the propagation reference
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,6 +39,8 @@ class ImagesPanel(QWidget):
         # Ctrl/Shift-click selects several images for batch masking; the clicked one becomes current.
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.currentRowChanged.connect(self._on_row)
+        self.list.itemDoubleClicked.connect(lambda it: self.reference_requested.emit(self.list.row(it)))
+        self._reference: Optional[int] = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.list)
@@ -54,10 +57,14 @@ class ImagesPanel(QWidget):
         marks = image_marks(project)
         for i, k in enumerate(self._keys):
             mark = marks.get(k, " ")
-            text = f"{mark}  {k}"
+            text = f"{mark} {'◎' if i == self._reference else ' '} {k}"
             it = self.list.item(i)
             if it is not None and it.text() != text:
                 it.setText(text)
+
+    def set_reference(self, index: Optional[int]) -> None:
+        """Mark the propagation reference with ◎ (shown on the next update_marks)."""
+        self._reference = index
 
     def set_current(self, index: int) -> None:
         if self.list.currentRow() == index:
