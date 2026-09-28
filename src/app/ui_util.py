@@ -87,13 +87,14 @@ class DockTitleBar(QWidget):
     def __init__(self, dock: QDockWidget, extra: Sequence[QWidget] = ()):
         super().__init__(dock)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(6, 2, 2, 2)
-        lay.setSpacing(2)
+        lay.setContentsMargins(4, 2, 2, 2)
+        lay.setSpacing(1)
         title = QLabel(dock.windowTitle())
         title.setMinimumWidth(0)  # the title may be clipped so the dock can get narrow
         title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         lay.addWidget(title, 1)
         for w in extra:
+            w.setFixedWidth(20)  # compact, so a folded Frame List stays narrow
             lay.addWidget(w)
         style = self.style()
         for icon, tip, slot in (
@@ -104,5 +105,6 @@ class DockTitleBar(QWidget):
             b.setIcon(style.standardIcon(icon))
             b.setToolTip(tip)
             b.setAutoRaise(True)
+            b.setFixedWidth(20)
             b.clicked.connect(slot)
             lay.addWidget(b)
