@@ -298,25 +298,7 @@ class MainWindow(QMainWindow):
         project = s.project
         busy = self._busy is not None
 
-        overlays: List[Overlay] = []
-        edit_layer = None
-        for o in project.objects:
-            m = o.mask(key) if key else None
-            if m is None:
-                continue
-            if o.id == s.editing:
-                edit_layer = Overlay(m, o.color, "edit")
-            else:
-                overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
-        if edit_layer is not None:
-            overlays.append(edit_layer)
-            layer = s.editing_frame().edit if s.editing_frame() is not None else None
-            if layer is not None:  # show what the hand edits changed
-                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
-                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
-        for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
-            overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
-        self.canvas.set_overlays(overlays)
+        self._update_overlays()
         self.canvas.set_final(project.final_mask(key) if key else None)
 
         fs = s.editing_frame()
@@ -382,6 +364,30 @@ class MainWindow(QMainWindow):
         )
         if s.store is not None and not s.store.is_saved(project):
             self._autosave.start()
+
+    def _update_overlays(self) -> None:
+        """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""
+        s = self.session
+        key = s.key
+        overlays: List[Overlay] = []
+        edit_layer = None
+        for o in s.project.objects:
+            m = o.mask(key) if key else None
+            if m is None:
+                continue
+            if o.id == s.editing:
+                edit_layer = Overlay(m, o.color, "edit")
+            else:
+                overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
+        if edit_layer is not None:
+            overlays.append(edit_layer)
+            layer = s.editing_frame().edit if s.editing_frame() is not None else None
+            if layer is not None:  # show what the hand edits changed
+                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
+        for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
+            overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
+        self.canvas.set_overlays(overlays)
 
     # ------------------------------------------------------------------
     # Folder / navigation / saving
@@ -673,8 +679,9 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def on_detection_checks(self, checked: List[bool]) -> None:
+        """Checking candidates only changes their overlays: redraw the canvas, nothing else."""
         self.session.detection_checked = list(checked)
-        self.refresh()
+        self._update_overlays()
 
     def run_batch(self, labels: List[str], scope: str, start: int, end: int, threshold: float) -> None:
         """Batch masking: SAM3 over many images, one Object per label (spec: prompt-based bulk masking)."""
