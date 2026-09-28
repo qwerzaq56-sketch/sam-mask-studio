@@ -99,10 +99,11 @@ class Session:
         self._region_undo: List[Tuple[int, Optional[np.ndarray]]] = []  # (depth, region before)
         self._region_redo: List[Tuple[int, int, Optional[np.ndarray]]] = []  # (depth, actions, region)
         # Auto tools (object_fill | fill_holes | remove_specks): one result computed from the
-        # mask, shown as a green/red preview that is written in when the tool closes (Fill)
-        # or as a gray guide that brush strokes paint in (Brush). Switching modes keeps it.
+        # mask. Fill takes all of it; Paint takes the parts picked with strokes (the rest is
+        # gray). Nothing is written until the tool closes; switching modes keeps both.
         self.auto_tool: Optional[str] = None
-        self.auto_mode = "brush"
+        self.auto_mode = "fill"
+        self._picked: Optional[np.ndarray] = None  # Paint mode: the area strokes picked
         self._result: Optional[Tuple[str, np.ndarray, List[np.ndarray]]] = None  # (tool, target, masks it fits)
         self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
         self.detections: List[Detection] = []
@@ -356,6 +357,7 @@ class Session:
         self._region_undo.clear()
         self._region_redo.clear()
         self._result = None
+        self._picked = None
 
     # ------------------------------------------------------------------
     # Auto tools: one result, shown as a Fill preview or a Brush guide
@@ -364,10 +366,11 @@ class Session:
     def set_auto_tool(self, tool: Optional[str]) -> None:
         if tool != self.auto_tool:
             self._result = None
+            self._picked = None
         self.auto_tool = tool
 
     def set_auto_mode(self, mode: str) -> None:
-        """Brush <-> Fill: the same result, shown the other way."""
+        """Fill <-> Paint: the same result and the same picks, shown the other way."""
         self.auto_mode = mode
 
     def auto_base(self) -> Optional[np.ndarray]:
@@ -410,7 +413,7 @@ class Session:
         self._result = (self.auto_tool, target, [base])
 
     def auto_changes(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """(added, removed): what the result would change, inside the region."""
+        """(added, removed): everything the result would change, inside the region."""
         fs = self.editing_frame()
         r = self._result
         if fs is None or fs.mask is None or r is None or r[0] != self.auto_tool:
@@ -419,33 +422,32 @@ class Session:
         inside = self.region if self.region is not None else True
         return target & ~m & inside, m & ~target & inside
 
-    def paint_guide(self, area: np.ndarray) -> bool:
-        """A Brush-mode stroke: take the result where *area* was painted (inside the region)."""
-        fs = self.editing_frame()
-        r = self._result
-        if r is None or fs is None or fs.mask is None:
+    def auto_taken(self) -> Optional[np.ndarray]:
+        """Where the result will be written when the tool closes (Fill: all of it; Paint: the picks)."""
+        added, removed = self.auto_changes()
+        if added is None:
+            return None
+        changed = added | removed
+        if self.auto_mode == "fill":
+            return changed
+        return changed & self._picked if self._picked is not None else np.zeros_like(changed)
+
+    def pick(self, area: np.ndarray, unpick: bool = False) -> bool:
+        """A Paint-mode stroke: pick (or with *unpick*, drop) *area* of the result."""
+        if self._result is None:
             return False
-        if self.region is not None:
-            area = area & self.region
-        if not self._set_target(np.where(area, r[1], fs.mask)):
-            return False
-        r[2].append(self.editing_frame().mask)  # the guide still fits the painted mask
+        picked = self._picked if self._picked is not None else np.zeros(area.shape, bool)
+        self._picked = picked & ~area if unpick else picked | area
         return True
 
     def close_auto(self, apply: bool) -> bool:
-        """Leave the auto tool: Fill mode writes the preview in (one undo step) when *apply*.
-
-        Brush mode has nothing pending: what was painted is already in, the rest
-        of the guide is dropped.
-        """
-        r, fs = self._result, self.editing_frame()
-        self._result = None
+        """Leave the auto tool; with *apply*, write what it takes in (one undo step)."""
+        taken, fs, r = self.auto_taken(), self.editing_frame(), self._result
+        self._result = self._picked = None
         self.auto_tool = None
-        if not apply or self.auto_mode != "fill" or r is None or fs is None or fs.mask is None:
+        if not apply or taken is None or fs is None or not taken.any():
             return False
-        if all(fs.mask is not k for k in r[2]):
-            return False  # the mask changed underneath: the preview no longer fits
-        return self._set_target(freeze(within(self.region, fs.mask, r[1])))
+        return self._set_target(freeze(np.where(taken, r[1], fs.mask)))
 
     def add_region_box(self, box: Box, subtract: bool = False) -> None:
         """Add a dragged box to the tool region (or cut it out with *subtract*)."""

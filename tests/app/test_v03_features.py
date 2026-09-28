@@ -250,16 +250,16 @@ def test_mode_switch_keeps_the_same_area(qapp, win):
     s = holes_object(win)
     p = win.properties_panel
     p.refine_area.setValue(5)
-    p.mode_fill_btn.click()
+    assert p.mode == "fill" and p.mode_fill_btn.isChecked()  # Fill is the default
     p.tool_btns["fill_holes"].click()
-    fill_added, _ = s.auto_changes()
-    assert [o.style for o in win.canvas._overlays].count("layer_add") == 1
-    p.mode_brush_btn.click()  # the same area turns into the gray guide
-    guide = [o for o in win.canvas._overlays if o.style == "guide"]
-    assert guide and (guide[0].mask == fill_added).all() and win.canvas.brush_mode
-    assert not s.editing_frame().mask[25, 25]  # nothing was written by switching
+    added, _ = s.auto_changes()
+    styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
+    assert (styles()["layer_add"] == added).all() and not styles()["guide"].any()  # all of it, green
+    p.mode_paint_btn.click()  # the same area, now gray until picked
+    assert win.canvas.brush_mode and (styles()["guide"] == added).all() and not styles()["layer_add"].any()
+    assert not s.editing_frame().mask[25, 25]  # switching writes nothing
     p.mode_fill_btn.click()
-    assert (s.auto_changes()[0] == fill_added).all() and not win.canvas.brush_mode
+    assert (styles()["layer_add"] == added).all() and not win.canvas.brush_mode
 
 
 def test_object_fill_computes_in_the_background(qapp, win):
@@ -293,30 +293,36 @@ def test_merge_uses_first_selected_name(qapp, win):
     assert [o.name for o in win.session.project.objects] == ["Tripod"]
 
 
-def test_brush_mode_shows_a_guide_and_paints_it_in(qapp, win):
+def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     from tests.app.test_gui import canvas_pos
 
     s = holes_object(win)
     p = win.properties_panel
     p.refine_area.setValue(5)
-    assert p.mode == "brush"  # the default
+    p.mode_paint_btn.click()
     p.tool_btns["fill_holes"].click()
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
-    guide = [o for o in win.canvas._overlays if o.style == "guide"]
-    assert guide and guide[0].mask[25, 25] and guide[0].mask[35, 35]  # both holes, in gray
-    assert not s.editing_frame().mask[35, 35]  # nothing applied yet
+    styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
+    assert styles()["guide"][25, 25] and styles()["guide"][35, 35]  # both holes, gray
     win.canvas.set_brush_size(8)
-    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
-    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
-    qapp.processEvents()
+
+    def stroke(x, y, mods=Qt.KeyboardModifier.NoModifier):
+        QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, mods, canvas_pos(win, x, y))
+        assert win.canvas._tool_area is not None  # the area shows while dragging
+        QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, mods, canvas_pos(win, x, y))
+        qapp.processEvents()
+
+    stroke(35, 35)
+    assert styles()["layer_add"][35, 35] and styles()["guide"][25, 25]  # picked: green; the rest gray
+    assert not s.editing_frame().mask[35, 35]  # nothing written before leaving the tool
+    stroke(25, 25)
+    stroke(25, 25, Qt.KeyboardModifier.AltModifier)  # Alt+drag unpicks: back to gray
+    assert styles()["guide"][25, 25] and not styles()["layer_add"][25, 25]
+    p.tool_btns["fill_holes"].click()  # leaving the tool writes the picks in
     m = s.editing_frame().mask
-    assert m[35, 35] and not m[25, 25]  # only where painted
-    guide = [o for o in win.canvas._overlays if o.style == "guide"]
-    assert guide[0].mask[25, 25] and not guide[0].mask[35, 35]  # the rest stays gray
-    p.tool_btns["fill_holes"].click()  # leaving the tool drops the guide
-    assert not win.canvas.brush_mode and not [o for o in win.canvas._overlays if o.style == "guide"]
-    win.act_brush.trigger()  # B = Add / Subtract
-    assert win.canvas.brush_tool == "paint" and p.brush_btn.isChecked()
+    assert m[35, 35] and not m[25, 25]
+    win.act_brush.trigger()  # B = Paint
+    assert win.canvas.brush_tool == "paint" and p.brush_btn.isChecked() and p.brush_btn.text() == "Paint"
 
 
 # --- Final Mask preview: X toggles it, editing works inside it; Restore brush ----
@@ -327,7 +333,7 @@ def test_final_preview_toggle_and_editing_in_it(qapp, win):
 
     from tests.app.test_gui import canvas_pos
 
-    assert win.act_final.shortcut() == QKeySequence("X")
+    assert win.act_final.shortcut() == QKeySequence("Z")
     s = win.session
     win.new_object()
     s.click(30, 30)
@@ -411,3 +417,36 @@ def test_region_changes_undo_and_redo_in_order(qapp, win):
     win.finish_editing()
     win.undo()  # after leaving Edit, Ctrl+Z goes to the mask edits, not old regions
     assert s.region is None and not s.project.get(oid).mask(s.key)[50, 70]
+
+
+
+def test_space_peeks_at_the_final_mask(qapp, win):
+    from PyQt6.QtCore import QEvent
+    from PyQt6.QtGui import QKeyEvent
+
+    win.activateWindow()
+    win.canvas.setFocus()
+    press = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+    release = QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+    win.eventFilter(win.canvas, press)
+    assert win.canvas.showing_final and not win.act_final.isChecked()
+    win.eventFilter(win.canvas, release)
+    assert not win.canvas.showing_final
+
+
+def test_restore_is_live_while_dragging(qapp, win):
+    from tests.app.test_gui import canvas_pos
+
+    s = win.session
+    win.new_object()
+    s.click(30, 30)
+    t = s.editing_frame().mask.copy()
+    t[48:53, 68:73] = True
+    s.brush(t)
+    win.refresh()
+    win.properties_panel.tool_btns["restore"].click()
+    win.canvas.set_brush_size(40)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
+    assert not win.canvas._stroke_mask[50, 70]  # already restored on screen while dragging
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
+    assert not s.editing_frame().mask[50, 70]

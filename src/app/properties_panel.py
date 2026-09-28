@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QStackedWidget,
@@ -37,13 +38,15 @@ from src.app.objects_panel import later
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
+# the selected mode button stands out
+MODE_STYLE = "QPushButton:checked { background: #2f6fd6; color: white; font-weight: bold; }"
 # Direct brushes act as you paint; auto tools compute a result that is shown live
 # and either filled in at once (Fill mode) or painted in (Brush mode).
 DIRECT_TOOLS = ("paint", "restore")
 AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks")
 TOOL_TEXT = {
-    "paint": ("Add / Subtract", "Drag = add, Alt+drag = subtract (B)"),
-    "restore": ("Restore", "Drag over an area; on release the edit layer's changes there are undone"),
+    "paint": ("Paint", "Drag = add, Alt+drag = subtract (B)"),
+    "restore": ("Restore", "Drag to undo the edit layer's changes where you paint (see the box)"),
     "object_fill": ("Object Fill", "Grow the mask to the object's edges in the image"),
     "fill_holes": ("Fill Holes", "Fill holes enclosed by the mask"),
     "remove_specks": ("Remove Specks", "Remove separate small pieces (the main piece stays)"),
@@ -92,7 +95,7 @@ class PropertiesPanel(QWidget):
     clear_box_requested = pyqtSignal()
     finish_requested = pyqtSignal()
     brush_tool_selected = pyqtSignal(str)  # "" = no tool, else a DIRECT_TOOLS / AUTO_TOOLS name
-    auto_mode_changed = pyqtSignal(str)  # "brush" | "fill"
+    auto_mode_changed = pyqtSignal(str)  # "fill" | "paint"
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
@@ -174,17 +177,18 @@ class PropertiesPanel(QWidget):
         tg.addWidget(self.restore_mode, 1, 1)
         tg.addWidget(self.brush_size, 2, 0, 1, 2)
 
-        # Auto tools: a live result, filled in at once or painted in.
-        self.mode_brush_btn = QPushButton("Brush")
+        # Auto tools: one result; Fill takes all of it, Paint the parts you pick.
         self.mode_fill_btn = QPushButton("Fill")
+        self.mode_paint_btn = QPushButton("Paint")
         for b, value, tip in (
-            (self.mode_brush_btn, "brush", "The result is shown in gray; paint where you want it"),
-            (self.mode_fill_btn, "fill", "The result is previewed in green/red (inside the region, if any)\n"
-                                         "and written in when you leave the tool; Esc drops it"),
+            (self.mode_fill_btn, "fill", "Take the whole result (inside the region, if any)"),
+            (self.mode_paint_btn, "paint", "Pick parts of the result with the brush; Alt+drag unpicks"),
         ):
             b.setCheckable(True)
             b.setToolTip(tip)
+            b.setStyleSheet(MODE_STYLE)
             b.clicked.connect(lambda _on, v=value: self._set_mode(v, emit=True))
+        self.mode_hint = note("")
         self.region_btn = QPushButton("Region Box")
         self.region_btn.setCheckable(True)
         self.region_btn.setToolTip(
@@ -196,19 +200,30 @@ class PropertiesPanel(QWidget):
         self.clear_region_btn.clicked.connect(self.clear_region_requested)
         self.scope_label = note("")
         abox = QGroupBox("Auto tools")
-        ag = QGridLayout(abox)
-        ag.addWidget(tool_button("object_fill"), 0, 0, 1, 3)
-        ag.addWidget(tool_button("fill_holes"), 1, 0, 1, 2)
-        ag.addWidget(tool_button("remove_specks"), 1, 2)
-        ag.addWidget(QLabel("Mode"), 2, 0)
-        ag.addWidget(self.mode_brush_btn, 2, 1)
-        ag.addWidget(self.mode_fill_btn, 2, 2)
-        ag.addWidget(QLabel("Region"), 3, 0)
-        ag.addWidget(self.region_btn, 3, 1)
-        ag.addWidget(self.clear_region_btn, 3, 2)
-        ag.addWidget(self.scope_label, 4, 0, 1, 3)
-        self.mode = "brush"
-        self._set_mode("brush")
+        av = QVBoxLayout(abox)
+        rows = (
+            (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
+            ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
+            (self.mode_hint, None),
+            ("Region", [self.region_btn, self.clear_region_btn]),
+            (self.scope_label, None),
+        )
+        for head, buttons in rows:
+            if buttons is None:
+                av.addWidget(head)
+                continue
+            row = QHBoxLayout()
+            if head:
+                label = QLabel(head)
+                label.setMinimumWidth(48)
+                row.addWidget(label)
+            for b in buttons:
+                b.setMinimumWidth(0)
+                b.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)  # shrink with the dock
+                row.addWidget(b, 1)
+            av.addLayout(row)
+        self.mode = "fill"
+        self._set_mode("fill")
 
         # Settings of the selected auto tool; any change is reported once it settles.
         self._settings_timer = QTimer(self)
@@ -371,7 +386,7 @@ class PropertiesPanel(QWidget):
         if not editing:
             self.set_brush_tool("")  # the window turns the canvas brush off itself
             self.set_region_mode(False)
-        for w in (self.mode_brush_btn, self.mode_fill_btn, self.region_btn):
+        for w in (self.mode_fill_btn, self.mode_paint_btn, self.region_btn):
             w.setEnabled(editing)
         self.apply_layer_btn.setEnabled(editing and layer is not None)
         self.delete_layer_btn.setEnabled(editing and layer is not None)
@@ -401,8 +416,14 @@ class PropertiesPanel(QWidget):
 
     def _set_mode(self, mode: str, emit: bool = False) -> None:
         self.mode = mode
-        self.mode_brush_btn.setChecked(mode == "brush")
         self.mode_fill_btn.setChecked(mode == "fill")
+        self.mode_paint_btn.setChecked(mode == "paint")
+        self.mode_hint.setText(
+            "Fill: the whole result is shown in green / red and applied when you leave the tool (Esc drops it)."
+            if mode == "fill"
+            else "Paint: drag over the gray to pick it (green / red), Alt+drag to unpick; "
+            "the picks are applied when you leave the tool."
+        )
         if emit:
             self.auto_mode_changed.emit(mode)
 
@@ -420,13 +441,16 @@ class PropertiesPanel(QWidget):
             "restore": self.restore_mode.currentData(),
         }
 
-    def set_preview(self, added: int, removed: int, busy: bool = False) -> None:
-        """What the auto tool changes (Fill) or would change where painted (Brush)."""
+    def set_preview(self, added: int, removed: int, total_added: int = 0, total_removed: int = 0,
+                    busy: bool = False) -> None:
+        """What leaving the tool will apply (and, in Paint mode, how much of the result that is)."""
         if busy:
             self.preview_label.setText("Computing…")
             return
-        verb = "Will apply" if self.mode == "fill" else "Available"
-        self.preview_label.setText(f"{verb}: +{added:,} px / −{removed:,} px")
+        text = f"Will apply: +{added:,} px / −{removed:,} px"
+        if self.mode == "paint":
+            text += f"  (of +{total_added:,} / −{total_removed:,})"
+        self.preview_label.setText(text)
 
     def set_region(self, region: Optional[np.ndarray]) -> None:
         has = region is not None
