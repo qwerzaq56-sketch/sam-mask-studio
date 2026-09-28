@@ -175,10 +175,10 @@ def test_brush_mode_layer_apply_and_delete(win, qapp):
     fs = s.editing_frame()
     assert fs.mask[50, 70] and fs.points and fs.edit is not None
     assert "Layer: +" in win.properties_panel.layer_label.text()
-    # Ctrl+drag = subtract
+    # Alt+drag = subtract
     q = canvas_pos(win, 30, 30)
-    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, q)
-    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, q)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, q)
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, q)
     assert not s.editing_frame().mask[30, 30]
     # a right click with the brush on adds no point
     n = len(s.editing_frame().points)

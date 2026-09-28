@@ -263,3 +263,61 @@ def test_tool_brush_applies_only_where_painted(qapp, win):
     assert not win.canvas.brush_mode
     win.act_brush.trigger()  # B = Paint
     assert win.canvas.brush_tool == "paint" and p.brush_btn.isChecked()
+
+
+# --- Final Mask preview: X toggles it, editing works inside it; Restore brush ----
+
+
+def test_final_preview_toggle_and_editing_in_it(qapp, win):
+    from PyQt6.QtGui import QKeySequence
+
+    from tests.app.test_gui import canvas_pos
+
+    assert win.act_final.shortcut() == QKeySequence("X")
+    s = win.session
+    win.new_object()
+    s.click(30, 30)
+    win.refresh()
+    win.act_final.trigger()
+    assert win.canvas.showing_final
+    win.act_brush.trigger()
+    win.canvas.set_brush_size(10)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
+    qapp.processEvents()
+    assert s.editing_frame().mask[50, 70]  # painted while the Final Mask was shown
+    assert win.canvas._final[50, 70]  # and the preview shows it
+    win.canvas.grab()
+    win.act_final.trigger()
+    assert not win.canvas.showing_final
+
+
+@pytest.mark.parametrize(
+    "mode, added_px, removed_px",  # afterwards: is the added pixel on? is the removed pixel on?
+    [("added", False, False), ("removed", True, True), ("both", False, True)],
+)
+def test_restore_brush_modes(qapp, win, mode, added_px, removed_px):
+    import numpy as np
+
+    from tests.app.test_gui import canvas_pos
+
+    s = win.session
+    win.new_object()
+    s.click(30, 30)
+    prompt = s.editing_frame().mask.copy()
+    t = prompt.copy()
+    t[48:53, 68:73] = True  # added
+    t[28:33, 28:33] = False  # removed
+    s.brush(t)
+    win.refresh()
+    p = win.properties_panel
+    p.restore_mode.setCurrentIndex(p.restore_mode.findData(mode))
+    p.tool_btns["restore"].click()
+    win.canvas.set_brush_size(800)  # one dab covers everything
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 50, 40))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 50, 40))
+    qapp.processEvents()
+    m = s.editing_frame().mask
+    assert m[50, 70] == added_px and m[30, 30] == removed_px
+    if mode == "both":
+        assert np.array_equal(m, prompt) and s.editing_frame().edit is None

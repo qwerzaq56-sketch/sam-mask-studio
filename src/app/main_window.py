@@ -168,13 +168,13 @@ class MainWindow(QMainWindow):
         self.act_redo = self._action("Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
         self.act_export = self._action("Export", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
         self.act_final = self._action(
-            "Preview Final Mask", self.toggle_final, ["F"], "Show the Final Mask (hold Alt to peek)", True
+            "Preview Final Mask", self.toggle_final, ["X"], "Show the Final Mask (editing keeps working)", True
         )
         self.act_brush = self._action(
             "Brush",
             self.set_brush,
             ["B"],
-            "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, Ctrl+wheel = size",
+            "Brush editing on the edited Object: drag = add, Alt+drag = subtract, Ctrl+wheel = size",
             True,
         )
         self.act_outline = self._action(
@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_outline)
         tb.addWidget(self.outline_width)
+        tb.addSeparator()
         tb.addAction(self.act_changes)
         tb.addSeparator()
         tb.addAction(self.act_settings)
@@ -397,14 +398,14 @@ class MainWindow(QMainWindow):
         if mode == Mode.NEW_OBJECT and s.mode == Mode.IDLE:
             mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
-            mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
+            mode_text = "BRUSH — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
             if self.canvas.brush_tool != "paint":
                 mode_text = (
                     f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — drag over the area,"
                     " release to apply · Ctrl+wheel: size · wheel: zoom"
                 )
         if s.mode == Mode.EDIT and self.canvas.region_mode:
-            mode_text = "REGION BOX — drag: add a box to the region · Ctrl+drag: remove a box"
+            mode_text = "REGION BOX — drag: add a box to the region · Alt+drag: remove a box"
         self.mode_label.setText(self._busy or mode_text)
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine

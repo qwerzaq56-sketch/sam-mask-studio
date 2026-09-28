@@ -346,15 +346,33 @@ class Session:
         self.set_region(region)
 
     def tool_result(
-        self, tool: str, max_area: int = 200, max_grow: int = 20, sensitivity: int = 50
+        self,
+        tool: str,
+        max_area: int = 200,
+        max_grow: int = 20,
+        sensitivity: int = 50,
+        restore: str = "both",
     ) -> Optional[np.ndarray]:
-        """The edited mask with *tool* applied everywhere (None when there is no mask).
+        """The edited mask with *tool* applied everywhere (None when there is nothing to do).
 
-        ``fill_holes`` | ``remove_specks`` | ``object_fill``. Brush tools show it
-        only where a stroke passes; the buttons apply it inside the region.
+        ``fill_holes`` | ``remove_specks`` | ``object_fill`` | ``restore``. Brush
+        tools apply it only where a stroke passed; the buttons inside the region.
+        ``restore`` undoes the edit layer: ``added`` drops the pixels it added,
+        ``removed`` brings back the pixels it removed, ``both`` does both.
         """
         fs = self.editing_frame()
-        if fs is None or fs.mask is None:
+        if fs is None:
+            return None
+        if tool == "restore":
+            if fs.edit is None:
+                return None
+            if restore == "added":
+                return fs.mask & ~fs.edit.add
+            if restore == "removed":
+                return fs.mask | fs.edit.sub
+            p = fs.prompt_mask
+            return p if p is not None else np.zeros(fs.edit.add.shape, bool)
+        if fs.mask is None:
             return None
         m = fs.mask
         if tool == "fill_holes":
@@ -371,7 +389,8 @@ class Session:
         fs = self.editing_frame()
         if target is None or fs is None or not area.any():
             return False
-        return self._set_target(within(area, fs.mask, target))
+        before = fs.mask if fs.mask is not None else np.zeros(area.shape, bool)
+        return self._set_target(within(area, before, target))
 
     def _tool(self, tool: str, **settings) -> bool:
         """Apply a tool to the edited frame (inside the region, if any) as part of the edit layer."""
