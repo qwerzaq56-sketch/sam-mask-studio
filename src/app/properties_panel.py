@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -57,6 +58,10 @@ class PropertiesPanel(QWidget):
     clear_points_requested = pyqtSignal()
     clear_box_requested = pyqtSignal()
     finish_requested = pyqtSignal()
+    brush_toggled = pyqtSignal(bool)
+    refine_requested = pyqtSignal(int)  # max hole / speck area in working-resolution px
+    apply_layer_requested = pyqtSignal()
+    delete_layer_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -65,8 +70,8 @@ class PropertiesPanel(QWidget):
         self.title.setWordWrap(True)
         self.hint = QLabel(
             "Pick an Object's <b>Edit</b>, or <b>+ New Object from Points</b>.<br>"
-            "Left click = positive, right click = negative, drag = box,<br>"
-            "Shift+drag = brush, Ctrl+Shift+drag = erase."
+            "Left click = positive, right click = negative, drag = box.<br>"
+            "Hand edits go to the <b>Edit layer</b> below (Brush: B)."
         )
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: gray;")
@@ -97,6 +102,45 @@ class PropertiesPanel(QWidget):
         pl.addWidget(self.box_label)
         pl.addLayout(row)
 
+        # --- edit layer (hand edits on top of the prompt-based mask)
+        self.brush_btn = QPushButton("Brush")
+        self.brush_btn.setCheckable(True)
+        self.brush_btn.setToolTip(
+            "Brush editing (B): drag = add, Ctrl+drag = subtract, wheel = size, Ctrl+wheel = zoom"
+        )
+        self.brush_btn.toggled.connect(self._on_brush)
+        self.brush_size = QLabel("")
+        self.brush_size.setStyleSheet("color: gray;")
+        self.refine_area = QSpinBox()
+        self.refine_area.setRange(1, 1_000_000)
+        self.refine_area.setValue(200)
+        self.refine_area.setSuffix(" px")
+        self.refine_area.setToolTip("Holes and separate specks up to this area are filled / removed")
+        self.refine_btn = QPushButton("Fill Holes / Remove Specks")
+        self.refine_btn.clicked.connect(lambda: self.refine_requested.emit(int(self.refine_area.value())))
+        self.layer_label = QLabel("Layer: none")
+        self.apply_layer_btn = QPushButton("Apply Layer")
+        self.apply_layer_btn.setToolTip("Make the edited mask the main mask (points are cleared; new points refine it)")
+        self.apply_layer_btn.clicked.connect(self.apply_layer_requested)
+        self.delete_layer_btn = QPushButton("Delete Layer")
+        self.delete_layer_btn.setToolTip("Discard the hand edits and go back to the point/prompt mask")
+        self.delete_layer_btn.clicked.connect(self.delete_layer_requested)
+        lbox = QGroupBox("Edit layer")
+        ll = QVBoxLayout(lbox)
+        r1 = QHBoxLayout()
+        r1.addWidget(self.brush_btn)
+        r1.addWidget(self.brush_size, 1)
+        r2 = QHBoxLayout()
+        r2.addWidget(self.refine_area)
+        r2.addWidget(self.refine_btn, 1)
+        r3 = QHBoxLayout()
+        r3.addWidget(self.apply_layer_btn)
+        r3.addWidget(self.delete_layer_btn)
+        ll.addLayout(r1)
+        ll.addLayout(r2)
+        ll.addWidget(self.layer_label)
+        ll.addLayout(r3)
+
         self.finish_btn = QPushButton("Finish Editing")
         self.finish_btn.setToolTip("Esc")
         self.finish_btn.clicked.connect(self.finish_requested)
@@ -107,6 +151,7 @@ class PropertiesPanel(QWidget):
         lay.addWidget(self.hint)
         lay.addWidget(vbox, 2)
         lay.addWidget(pbox, 2)
+        lay.addWidget(lbox)
         lay.addWidget(self.finish_btn)
         self.show_frame(None, None, None, None)
 
@@ -169,9 +214,32 @@ class PropertiesPanel(QWidget):
         self.clear_box_btn.setEnabled(editing and frame is not None and frame.box is not None)
         self.points.setEnabled(has_points)
         self.variants.setEnabled(obj is not None)
+        layer = frame.edit if frame is not None else None
+        self.layer_label.setText(
+            f"Layer: +{layer.added:,} px / −{layer.removed:,} px" if layer is not None else "Layer: none"
+        )
+        self.brush_btn.setEnabled(editing)
+        if not editing:
+            self.set_brush(False)  # the window turns the canvas brush off itself
+        self.refine_btn.setEnabled(editing and frame is not None and frame.mask is not None)
+        self.refine_area.setEnabled(editing)
+        self.apply_layer_btn.setEnabled(editing and layer is not None)
+        self.delete_layer_btn.setEnabled(editing and layer is not None)
         self.finish_btn.setEnabled(editing or new_mode)
         self.finish_btn.setText("Cancel New Object" if new_mode else "Finish Editing")
         self._updating = False
+
+    def set_brush(self, on: bool) -> None:
+        """Reflect the brush state without re-emitting."""
+        self.brush_btn.blockSignals(True)
+        self.brush_btn.setChecked(on)
+        self.brush_btn.blockSignals(False)
+
+    def set_brush_size(self, px: int) -> None:
+        self.brush_size.setText(f"size {px}px · wheel to change")
+
+    def _on_brush(self, on: bool) -> None:
+        self.brush_toggled.emit(on)
 
     def _on_variant(self, row: int) -> None:
         if not self._updating and row >= 0:

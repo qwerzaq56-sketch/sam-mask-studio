@@ -22,9 +22,11 @@ def test_open_folder_sets_first_image_and_engine(session):
     assert session.engine.image is session.image
 
 
-def test_idle_click_never_creates_an_object(session):
-    assert session.click(10, 10) is None
-    assert session.project.objects == []
+def test_idle_click_never_creates_an_object_once_objects_exist(session):
+    session.click(10, 10)  # the very first Object comes from a plain click
+    session.finish_editing()
+    assert session.click(40, 40) is None
+    assert len(session.project.objects) == 1
 
 
 def test_new_object_from_point_then_edit_and_delete_point(session):
@@ -73,8 +75,10 @@ def test_variant_select_and_brush(session):
     painted[0:5, 0:5] = True
     session.brush(painted)
     fs = session.editing_frame()
-    assert fs.points == () and fs.mask.sum() == 25 and fs.base_mask is fs.mask
-    session.click(70, 50)  # later clicks refine from the brushed prior
+    # the stroke is an edit layer on top of the kept point prompt
+    assert len(fs.points) == 1 and fs.mask.sum() == 25 and fs.prompt_mask is small and fs.edit is not None
+    session.apply_edit()  # baked in: becomes the prior for later clicks
+    session.click(70, 50)
     assert session.engine.calls[-1][2] is True and session.editing_frame().mask[0, 0]
 
 

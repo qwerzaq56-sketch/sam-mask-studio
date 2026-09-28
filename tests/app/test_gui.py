@@ -46,9 +46,14 @@ def click(win, x, y, button=Qt.MouseButton.LeftButton, mods=Qt.KeyboardModifier.
     QTest.mouseClick(win.canvas, button, mods, canvas_pos(win, x, y))
 
 
-def test_idle_canvas_click_creates_nothing(win):
+def test_first_click_creates_object_then_idle_clicks_create_nothing(win):
+    assert win.canvas.mode == Mode.NEW_OBJECT  # no Objects yet: a click starts the first one
     click(win, 20, 20)
-    assert win.session.project.objects == []
+    assert len(win.session.project.objects) == 1 and win.session.mode == Mode.EDIT
+    win.finish_editing()
+    assert win.canvas.mode == Mode.IDLE
+    click(win, 60, 40)
+    assert len(win.session.project.objects) == 1
     assert win.canvas.isEnabled() and win.image_label.text().startswith("1/5")
 
 
@@ -101,7 +106,7 @@ def test_brush_paints_edited_object(win):
     QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, shift, p)
     QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, shift, p)
     fs = win.session.editing_frame()
-    assert fs.mask[50, 70] and fs.points == ()
+    assert fs.mask[50, 70] and len(fs.points) == 1 and fs.edit is not None  # Shift stroke -> edit layer
 
 
 def test_variant_rows_in_objects_panel_select_variant(win):
@@ -118,14 +123,126 @@ def test_variant_rows_in_objects_panel_select_variant(win):
 def test_detect_add_selected_as_objects(win, qapp):
     win.detect("person")
     wait_until(qapp, lambda: win._busy is None)
-    assert win.detection_panel.list.count() == 2
-    win.detection_panel.list.item(1).setCheckState(Qt.CheckState.Unchecked)
+    assert win.detection_panel.tree.topLevelItemCount() == 1
+    win.detection_panel.item(1).setCheckState(0, Qt.CheckState.Unchecked)
     qapp.processEvents()
     assert win.session.detection_checked == [True, False]
     win.detection_panel.add_btn.click()
     qapp.processEvents()
     assert [o.name for o in win.session.project.objects] == ["person #1"]
-    assert win.detection_panel.list.count() == 0
+    assert win.detection_panel.tree.topLevelItemCount() == 0
+
+
+def test_comma_prompt_detects_each_label_grouped(win, qapp):
+    win.detection_panel.prompt.setText("person, car ,  tripod")
+    win.detection_panel.detect_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    tree = win.detection_panel.tree
+    assert [tree.topLevelItem(i).text(0) for i in range(3)] == ["person  (2)", "car  (2)", "tripod  (2)"]
+    tree.topLevelItem(1).setCheckState(0, Qt.CheckState.Unchecked)  # the label row unchecks its group
+    qapp.processEvents()
+    assert win.session.detection_checked == [True, True, False, False, True, True]
+    win.detection_panel.add_btn.click()
+    qapp.processEvents()
+    assert [o.name for o in win.session.project.objects] == ["person #1", "person #2", "tripod #1", "tripod #2"]
+
+
+def test_brush_mode_layer_apply_and_delete(win, qapp):
+    win.new_object()
+    click(win, 30, 30)
+    s = win.session
+    prompt = s.editing_frame().mask.copy()
+    win.act_brush.trigger()
+    assert win.canvas.brush_mode and win.properties_panel.brush_btn.isChecked()
+    size0 = win.canvas.brush_size
+    wheel = QTest  # wheel = size while the brush is on
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtGui import QWheelEvent
+
+    ev = QWheelEvent(QPointF(canvas_pos(win, 40, 40)), QPointF(), QPoint(), QPoint(0, 120),
+                     Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    qapp.sendEvent(win.canvas, ev)
+    assert win.canvas.brush_size > size0 and win.canvas.zoom == 1.0
+    ev = QWheelEvent(QPointF(canvas_pos(win, 40, 40)), QPointF(), QPoint(), QPoint(0, 120),
+                     Qt.MouseButton.NoButton, Qt.KeyboardModifier.ControlModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    qapp.sendEvent(win.canvas, ev)
+    assert win.canvas.zoom > 1.0  # Ctrl+wheel zooms
+    win.canvas.set_zoom(1.0)
+    del wheel
+
+    # plain drag = add, and it goes to the layer (points stay)
+    p = canvas_pos(win, 70, 50)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, p)
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, p)
+    fs = s.editing_frame()
+    assert fs.mask[50, 70] and fs.points and fs.edit is not None
+    assert "Layer: +" in win.properties_panel.layer_label.text()
+    # Ctrl+drag = subtract
+    q = canvas_pos(win, 30, 30)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, q)
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, q)
+    assert not s.editing_frame().mask[30, 30]
+    # a right click with the brush on adds no point
+    n = len(s.editing_frame().points)
+    click(win, 10, 10, Qt.MouseButton.RightButton)
+    assert len(s.editing_frame().points) == n
+    # Delete Layer -> back to the point mask
+    win.properties_panel.delete_layer_btn.click()
+    qapp.processEvents()
+    assert s.editing_frame().edit is None and np.array_equal(s.editing_frame().mask, prompt)
+    win.undo()
+    assert s.editing_frame().edit is not None
+    # Apply Layer -> the edited mask becomes the main mask
+    win.properties_panel.apply_layer_btn.click()
+    qapp.processEvents()
+    fs = s.editing_frame()
+    assert fs.edit is None and fs.points == () and fs.mask[50, 70] and not fs.mask[30, 30]
+    # leaving Edit turns the brush off
+    win.finish_editing()
+    assert not win.canvas.brush_mode and not win.act_brush.isChecked()
+
+
+def test_refine_button(win, qapp):
+    win.new_object()
+    click(win, 30, 30)
+    s = win.session
+    t = s.editing_frame().mask.copy()
+    t[30, 30] = False
+    s.brush(t)
+    win.refresh()
+    win.properties_panel.refine_area.setValue(10)
+    win.properties_panel.refine_btn.click()
+    qapp.processEvents()
+    assert s.editing_frame().mask[30, 30]
+
+
+def test_batch_masking_all_images(win, qapp):
+    win.detection_panel.prompt.setText("person, none")
+    win.detection_panel.threshold.setValue(0.7)
+    win.detection_panel.batch_btn.click()  # scope defaults to All images
+    wait_until(qapp, lambda: win._busy is None)
+    s = win.session
+    assert [o.name for o in s.project.objects] == ["person #1"]
+    person = s.project.objects[0]
+    assert len(person.frames) == 5 and person.frames[s.keys[0]].mask[10, 10]
+    assert not person.frames[s.keys[0]].mask[30, 10]  # 0.6 detection below threshold
+    res = win.detection_panel.results
+    assert res.count() == 5 and res.item(2).text().startswith("✓")
+    res.itemClicked.emit(res.item(3))
+    assert s.index == 3
+    win.undo()
+    assert s.project.objects == []
+
+
+def test_batch_selected_images(win, qapp):
+    lst = win.images_panel.list
+    lst.clearSelection()
+    lst.item(1).setSelected(True)
+    lst.item(3).setSelected(True)
+    win.run_batch(["person"], "selected", 0, -1, 0.5)
+    wait_until(qapp, lambda: win._busy is None)
+    person = win.session.project.objects[0]
+    assert sorted(person.frames) == [win.session.keys[1], win.session.keys[3]]
 
 
 def test_rename_include_duplicate_merge_delete(win, qapp):

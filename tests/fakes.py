@@ -52,12 +52,22 @@ class FakeEngine:
 
     def detect(self, text: str) -> List[Detection]:
         assert self.image is not None
-        h, w = self.image.shape[:2]
+        return self.detect_many(self.image, [text])
+
+    def detect_many(self, image: np.ndarray, labels: Sequence[str]) -> List[Detection]:
+        """Two candidates per label (scores 0.95 and 0.6), placed in a column per label.
+
+        A label containing "none" finds nothing, to exercise empty results.
+        """
+        h, w = image.shape[:2]
         dets = []
-        for i, score in enumerate((0.95, 0.6)):
-            m = np.zeros((h, w), bool)
-            m[5 + 20 * i : 15 + 20 * i, 5:25] = True
-            dets.append(Detection(text, score, freeze(m), mask_box(m)))
+        for j, text in enumerate(labels):
+            if "none" in text:
+                continue
+            for i, score in enumerate((0.95, 0.6)):
+                m = np.zeros((h, w), bool)
+                m[5 + 20 * i : 15 + 20 * i, 5 + 25 * j : 25 + 25 * j] = True
+                dets.append(Detection(text, score, freeze(m), mask_box(m)))
         return dets
 
 

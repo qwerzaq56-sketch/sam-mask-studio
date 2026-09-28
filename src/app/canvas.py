@@ -8,11 +8,13 @@ depends on the mode the main window sets:
 * NEW_OBJECT  left click / drag report ``clicked`` / ``box_drawn``
 * EDIT        left / right click report positive / negative ``clicked``,
               clicking a drawn point reports ``point_picked``, dragging reports
-              ``box_drawn``, Shift+drag paints and Ctrl+Shift+drag erases the
-              edited Object's mask (``brush_finished``)
+              ``box_drawn``. With the Brush on (``brush_mode``) a drag paints
+              and Ctrl+drag subtracts on the edited Object (``brush_finished``);
+              Shift+drag / Ctrl+Shift+drag do the same without turning it on.
 
-Middle-drag or Space+drag pans, the wheel zooms at the cursor, Shift+wheel
-changes the brush size, and holding Alt shows the Final Mask.
+Middle-drag or Space+drag pans, the wheel zooms at the cursor, and holding Alt
+shows the Final Mask. With the Brush on, the wheel sets the brush size and
+Ctrl+wheel zooms; otherwise Shift+wheel sets the size.
 """
 
 from __future__ import annotations
@@ -34,7 +36,15 @@ CLICK_SLOP = 4.0  # screen px a press may move and still count as a click
 POINT_RADIUS = 5.0  # screen px
 POINT_HIT = 9.0
 
-ALPHA = {"normal": 105, "edit": 140, "faint": 40, "candidate": 120, "candidate_off": 35}
+ALPHA = {
+    "normal": 105,
+    "edit": 140,
+    "faint": 40,
+    "candidate": 120,
+    "candidate_off": 35,
+    "layer_add": 150,  # pixels the edit layer forces on
+    "layer_sub": 110,  # pixels the edit layer forces off
+}
 
 
 @dataclass(frozen=True)
@@ -84,6 +94,7 @@ class Canvas(QWidget):
     object_picked = pyqtSignal(float, float)
     brush_finished = pyqtSignal(object)  # bool mask
     zoom_changed = pyqtSignal(float)
+    brush_size_changed = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -110,6 +121,7 @@ class Canvas(QWidget):
         self._mouse: Optional[QPointF] = None
 
         self.brush_size = 30  # screen px diameter
+        self.brush_mode = False  # Brush editing turned on (only acts in EDIT)
         self._brush = BrushEngine()
 
         self.setMinimumSize(320, 240)
@@ -168,6 +180,27 @@ class Canvas(QWidget):
             self._brush.cancel()
         self._update_cursor()
         self.update()
+
+    def set_brush_mode(self, on: bool) -> None:
+        self.brush_mode = on
+        if not on and self._brush.is_drawing:
+            self._finish_stroke()
+        self._update_cursor()
+        self.update()
+
+    def set_brush_size(self, px: int) -> None:
+        self.brush_size = max(2, min(800, int(px)))
+        self.brush_size_changed.emit(self.brush_size)
+        self.update()
+
+    def _brush_on(self) -> bool:
+        """Brush strokes are what a left drag does right now."""
+        return self.mode == Mode.EDIT and (self.brush_mode or self._shift())
+
+    def _finish_stroke(self) -> None:
+        m = self._brush.finalize_stroke()
+        if m is not None:
+            self.brush_finished.emit(m > 0)
 
     def set_prompts(self, points: Sequence[Point], selected: Optional[int], box: Optional[Box]) -> None:
         self.points = tuple(points)
@@ -282,7 +315,7 @@ class Canvas(QWidget):
                 painter.setPen(QPen(QColor(255, 255, 255), 1.5))
                 painter.setBrush(QColor(40, 200, 60) if pt.positive else QColor(230, 40, 40))
                 painter.drawEllipse(q, POINT_RADIUS, POINT_RADIUS)
-        if self.mode == Mode.EDIT and self._mouse is not None and self._shift():
+        if self._mouse is not None and self._brush_on():
             painter.setPen(QPen(QColor(255, 255, 255), 1, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
@@ -319,7 +352,9 @@ class Canvas(QWidget):
         return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
 
     def _update_cursor(self) -> None:
-        if self.mode in (Mode.NEW_OBJECT, Mode.EDIT):
+        if self.mode == Mode.EDIT and self.brush_mode:
+            self.setCursor(Qt.CursorShape.BlankCursor)  # the brush circle is the cursor
+        elif self.mode in (Mode.NEW_OBJECT, Mode.EDIT):
             self.setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.unsetCursor()
@@ -335,15 +370,15 @@ class Canvas(QWidget):
             self._pan_from = (pos, QPointF(self._pan))
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
-        if (
-            btn == Qt.MouseButton.LeftButton
-            and self.mode == Mode.EDIT
-            and event.modifiers() & Qt.KeyboardModifier.ShiftModifier
-        ):
+        mods = event.modifiers()
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        if self.mode == Mode.EDIT and (self.brush_mode or shift):
+            if btn != Qt.MouseButton.LeftButton:
+                return  # with the brush on, clicks never add points
             x, y = self._clamped(pos)
             base = self.edit_mask()
             h, w = self.image.shape[:2]
-            erase = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+            erase = bool(mods & Qt.KeyboardModifier.ControlModifier)
             start = base.astype(np.uint8) * 255 if base is not None else None
             m = self._brush.start_stroke(x, y, 0 if erase else 255, start, (h, w), self._brush_radius())
             self._rebuild_overlay(replace_edit=m > 0)
@@ -381,9 +416,7 @@ class Canvas(QWidget):
             self._update_cursor()
             return
         if self._brush.is_drawing:
-            m = self._brush.finalize_stroke()
-            if m is not None:
-                self.brush_finished.emit(m > 0)
+            self._finish_stroke()
             return
         if self._press is None:
             return
@@ -414,10 +447,15 @@ class Canvas(QWidget):
         delta = event.angleDelta().y() or event.angleDelta().x()
         if not delta:
             return
-        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+        mods = event.modifiers()
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        if self.mode == Mode.EDIT and self.brush_mode:
+            resize = not ctrl  # Brush on: wheel = size, Ctrl+wheel = zoom
+        else:
+            resize = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        if resize:
             step = max(2, int(self.brush_size * 0.1))
-            self.brush_size = max(2, min(800, self.brush_size + (step if delta > 0 else -step)))
-            self.update()
+            self.set_brush_size(self.brush_size + (step if delta > 0 else -step))
             return
         self.set_zoom(self.zoom * (1.15 if delta > 0 else 1 / 1.15), event.position())
 
@@ -456,10 +494,8 @@ class Canvas(QWidget):
             self._space_held = False
             self._update_cursor()
         elif k == Qt.Key.Key_Shift:
-            if self._brush.is_drawing:
-                m = self._brush.finalize_stroke()
-                if m is not None:
-                    self.brush_finished.emit(m > 0)
+            if self._brush.is_drawing and not self.brush_mode:
+                self._finish_stroke()  # a Shift stroke ends when Shift is let go
             self.update()
         else:
             super().keyReleaseEvent(event)
@@ -467,8 +503,6 @@ class Canvas(QWidget):
     def focusOutEvent(self, event):
         self._alt_held = self._space_held = False
         if self._brush.is_drawing:
-            m = self._brush.finalize_stroke()
-            if m is not None:
-                self.brush_finished.emit(m > 0)
+            self._finish_stroke()
         self.update()
         super().focusOutEvent(event)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import cached_property
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -37,6 +38,7 @@ class Source(str, Enum):
     """How an Object was created."""
 
     SAM3_DETECTION = "SAM3_DETECTION"
+    SAM3_BATCH = "SAM3_BATCH"  # one Object per label from a multi-image text prompt run
     SAM2_POINT = "SAM2_POINT"
     SAM2_BOX = "SAM2_BOX"
     MERGED = "MERGED"
@@ -84,13 +86,45 @@ class Variant:
 
 
 @dataclass(frozen=True)
+class EditLayer:
+    """Hand edits kept apart from the prompt-based mask (brush strokes, hole filling).
+
+    Stored as a difference: ``add`` pixels are forced on, ``sub`` pixels forced
+    off, on top of whatever the prompts produce. Deleting the layer therefore
+    returns exactly to the prompt-based mask, and re-running SAM2 after a new
+    point keeps the hand edits on top.
+    """
+
+    add: np.ndarray
+    sub: np.ndarray
+
+    @property
+    def added(self) -> int:
+        return int(self.add.sum())
+
+    @property
+    def removed(self) -> int:
+        return int(self.sub.sum())
+
+    @staticmethod
+    def between(prompt: Optional[np.ndarray], target: np.ndarray) -> Optional["EditLayer"]:
+        """The layer that turns *prompt* into *target* (None when they are equal)."""
+        t = target.astype(bool)
+        p = prompt if prompt is not None and prompt.shape == t.shape else np.zeros(t.shape, bool)
+        add, sub = t & ~p, p & ~t
+        if not add.any() and not sub.any():
+            return None
+        return EditLayer(freeze(add), freeze(sub))
+
+
+@dataclass(frozen=True)
 class FrameState:
     """An Object's prompts and mask candidates on one image.
 
     ``base_mask`` is a mask that did not come from this frame's prompts (a SAM3
-    detection, a propagated or merged mask, or a brush edit). SAM2 refinement
-    uses it as the starting prior, and it is what the frame shows when there
-    are no prompts.
+    detection, a propagated, merged or applied-edit mask). SAM2 refinement uses
+    it as the starting prior, and it is what the frame shows when there are no
+    prompts. ``edit`` is an optional hand-edit layer applied on top.
     """
 
     points: Tuple[Point, ...] = ()
@@ -99,17 +133,32 @@ class FrameState:
     variants: Tuple[Variant, ...] = ()
     selected: int = 0
     status: FrameStatus = FrameStatus.MANUAL
+    edit: Optional[EditLayer] = None
 
     @property
     def has_prompts(self) -> bool:
         return bool(self.points) or self.box is not None
 
     @property
-    def mask(self) -> Optional[np.ndarray]:
-        """The frame's current mask: the selected Variant, else the base mask."""
+    def prompt_mask(self) -> Optional[np.ndarray]:
+        """The mask from prompts alone: the selected Variant, else the base mask."""
         if self.variants:
             return self.variants[min(self.selected, len(self.variants) - 1)].mask
         return self.base_mask
+
+    @cached_property
+    def mask(self) -> Optional[np.ndarray]:
+        """The frame's current mask: the prompt mask with the edit layer applied.
+
+        Cached, so repeated reads return the same (immutable) array — the
+        autosaver relies on array identity to skip unchanged masks.
+        """
+        base = self.prompt_mask
+        if self.edit is None:
+            return base
+        if base is None:
+            return freeze(self.edit.add & ~self.edit.sub)
+        return freeze((base | self.edit.add) & ~self.edit.sub)
 
     @staticmethod
     def from_mask(mask: np.ndarray, score: float = 1.0, status: FrameStatus = FrameStatus.MANUAL) -> "FrameState":
@@ -288,6 +337,20 @@ class Project:
         for d in detections:
             fs = FrameState.from_mask(d.mask, d.score)
             obj = self._alloc(self._new_name(d.label), Source.SAM3_DETECTION, {key: fs})
+            self.objects.append(obj)
+            ids.append(obj.id)
+        return ids
+
+    def add_label_objects(self, frames_by_label: Dict[str, Dict[str, FrameState]], source: Source) -> List[int]:
+        """Create one Object per label with frames on many images (one undo step for all)."""
+        filled = {label: frames for label, frames in frames_by_label.items() if frames}
+        if not filled:
+            return []
+        self._checkpoint()
+        ids = []
+        for label, frames in filled.items():
+            ordered = {k: frames[k] for k in self.image_keys if k in frames}
+            obj = self._alloc(self._new_name(label), source, ordered)
             self.objects.append(obj)
             ids.append(obj.id)
         return ids

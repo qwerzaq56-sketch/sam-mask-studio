@@ -123,7 +123,7 @@ class MainWindow(QMainWindow):
             "Prompt / Detection / Propagation / Logs", self.tabs, Qt.DockWidgetArea.BottomDockWidgetArea
         )
         self.resizeDocks([left_dock, right_dock], [330, 320], Qt.Orientation.Horizontal)
-        self.resizeDocks([bottom_dock], [230], Qt.Orientation.Vertical)
+        self.resizeDocks([bottom_dock], [280], Qt.Orientation.Vertical)
 
         self.mode_label = QLabel()
         self.image_label = QLabel()
@@ -164,6 +164,13 @@ class MainWindow(QMainWindow):
         self.act_final = self._action(
             "Preview Final Mask", self.toggle_final, ["F"], "Show the Final Mask (hold Alt to peek)", True
         )
+        self.act_brush = self._action(
+            "Brush",
+            self.set_brush,
+            ["B"],
+            "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, wheel = size",
+            True,
+        )
         self.act_erp = self._action("ERP", lambda: None, tip="ERP / 360° input — planned for a later version")
         self.act_erp.setEnabled(False)
         self.act_settings = self._action("Settings", self.show_settings)
@@ -174,6 +181,7 @@ class MainWindow(QMainWindow):
             tb.addAction(a)
         tb.addSeparator()
         tb.addAction(self.act_final)
+        tb.addAction(self.act_brush)
         tb.addAction(self.act_erp)
         tb.addSeparator()
         tb.addAction(self.act_settings)
@@ -198,6 +206,7 @@ class MainWindow(QMainWindow):
         c.point_picked.connect(self.on_point_selected)
         c.object_picked.connect(self.on_object_picked)
         c.brush_finished.connect(self.on_brush)
+        c.brush_size_changed.connect(lambda px: self.properties_panel.set_brush_size(px))
 
         o = self.objects_panel
         o.include_toggled.connect(lambda oid, on: self._do(lambda: self.session.project.set_included(oid, on)))
@@ -218,12 +227,19 @@ class MainWindow(QMainWindow):
         p.clear_points_requested.connect(lambda: self._prompt(self.session.clear_points))
         p.clear_box_requested.connect(lambda: self._prompt(self.session.clear_box))
         p.finish_requested.connect(self.finish_editing)
+        p.brush_toggled.connect(self.set_brush)
+        p.refine_requested.connect(lambda area: self._layer(lambda: self.session.refine(area), "Refined"))
+        p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
+        p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))
 
         d = self.detection_panel
         d.detect_requested.connect(self.detect)
         d.checks_changed.connect(self.on_detection_checks)
         d.add_requested.connect(lambda: self._do(self.session.add_checked_detections))
         d.clear_requested.connect(lambda: self._do(self.session.clear_detections))
+        d.batch_requested.connect(self.run_batch)
+        d.batch_cancel_requested.connect(self.cancel_propagation)
+        d.navigate_requested.connect(self.go_to)
 
         pp = self.propagation_panel
         pp.propagate_requested.connect(self.propagate)
@@ -294,6 +310,10 @@ class MainWindow(QMainWindow):
                 overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
         if edit_layer is not None:
             overlays.append(edit_layer)
+            layer = s.editing_frame().edit if s.editing_frame() is not None else None
+            if layer is not None:  # show what the hand edits changed
+                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
             overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.set_overlays(overlays)
@@ -302,13 +322,18 @@ class MainWindow(QMainWindow):
         fs = s.editing_frame()
         self.canvas.set_prompts(fs.points if fs else (), s.selected_point, fs.box if fs else None)
         editing_obj = project.get(s.editing) if s.editing is not None else None
+        mode = s.effective_mode
         if s.mode == Mode.EDIT and editing_obj is not None:
-            banner = f"Editing: {editing_obj.name}"
+            banner = f"Editing: {editing_obj.name}" + ("  ·  BRUSH" if self.canvas.brush_mode else "")
         elif s.mode == Mode.NEW_OBJECT:
             banner = "New Object: click or drag a box"
+        elif mode == Mode.NEW_OBJECT:
+            banner = "Click or drag a box to create the first Object"
         else:
             banner = ""
-        self.canvas.set_mode(s.mode, banner)
+        if mode != Mode.EDIT and self.canvas.brush_mode:
+            self.set_brush(False, redraw=False)
+        self.canvas.set_mode(mode, banner)
 
         self.objects_panel.set_objects(project.objects, key, s.editing)
         shown = project.get(self.shown_object_id()) if self.shown_object_id() is not None else None
@@ -330,16 +355,22 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(project.can_redo and not busy)
         self.act_save.setEnabled(has_folder)
         self.act_export.setEnabled(has_folder and not busy)
+        self.act_brush.setEnabled(s.mode == Mode.EDIT and not busy)
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel):
             w.setEnabled(has_folder and not busy)
-        self.detection_panel.setEnabled(has_folder and not busy)
+        self.detection_panel.setEnabled(has_folder)
+        self.detection_panel.set_busy(busy)  # locks its own controls while busy; batch Cancel stays usable
         self.propagation_panel.run_btn.setEnabled(has_folder and not busy)
 
         mode_text = {
             Mode.IDLE: "Ready — use an Object's Edit, + New Object from Points (N), or a SAM3 prompt",
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
-            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · Shift+drag: brush · Delete: point · Esc: finish",
+            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · B: brush · Delete: point · Esc: finish",
         }[s.mode]
+        if mode == Mode.NEW_OBJECT and s.mode == Mode.IDLE:
+            mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
+        if s.mode == Mode.EDIT and self.canvas.brush_mode:
+            mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · wheel: size · Ctrl+wheel: zoom · B: brush off"
         self.mode_label.setText(self._busy or mode_text)
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine
@@ -376,6 +407,7 @@ class MainWindow(QMainWindow):
         self.settings.save(self.settings_path)
         self.images_panel.set_images(self.session.keys)
         self.propagation_panel.set_images(self.session.keys)
+        self.detection_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.setWindowTitle(f"SAM Mask Studio — {folder}")
         loaded = len(self.session.project.objects)
@@ -476,10 +508,29 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def on_click(self, x: float, y: float, positive: bool) -> None:
-        if self.session.mode == Mode.NEW_OBJECT and not positive:
+        if self.session.effective_mode == Mode.NEW_OBJECT and not positive:
             self.log("A new Object starts from a positive (left) click or a box")
             return
         self._prompt(lambda: self.session.click(x, y, positive))
+
+    def set_brush(self, on: bool, redraw: bool = True) -> None:
+        """Turn Brush editing on/off (only possible while an Object is in Edit)."""
+        on = bool(on) and self.session.mode == Mode.EDIT and not self._busy
+        self.canvas.set_brush_mode(on)
+        self.act_brush.setChecked(on)
+        self.properties_panel.set_brush(on)
+        self.properties_panel.set_brush_size(self.canvas.brush_size)
+        if on:
+            self.canvas.setFocus()
+        if redraw:
+            self.refresh()
+
+    def _layer(self, fn, message: str) -> None:
+        """Run an edit-layer change on the edited Object and report whether it did anything."""
+        if fn():
+            self.log(message)
+        self.session.sync()
+        self.refresh()
 
     def on_point_selected(self, index: int) -> None:
         self.session.select_point(index)
@@ -580,29 +631,36 @@ class MainWindow(QMainWindow):
     # SAM3 detection
     # ------------------------------------------------------------------
 
-    def detect(self, text: str) -> None:
+    def detect(self, labels) -> None:
+        """SAM3 on the current image, one prompt per label (``["person", "car"]`` or ``"person, car"``)."""
+        from src.core.prompts import split_labels
+
+        labels = split_labels(labels) if isinstance(labels, str) else list(labels)
         s = self.session
-        if s.key is None or self._busy:
+        if s.key is None or self._busy or not labels:
             return
         engine = s.engine
         if engine is None:
             self.warn("Models are not loaded yet (check the SAM2 checkpoint in Settings).")
             return
-        self._busy = f'SAM3: detecting "{text}"…'
+        text = ", ".join(labels)
+        image = s.image
+        self._busy = f"SAM3: detecting {text}…"
         self.detection_panel.set_busy(
-            True, f'SAM3: detecting "{text}"…' + ("" if engine.sam3_ready else " (loading SAM3 first)")
+            True, f"SAM3: detecting {text}…" + ("" if engine.sam3_ready else " (loading SAM3 first)")
         )
 
         def run():
             if not engine.sam3_ready:
                 engine.load_sam3()
-            return engine.detect(text)
+            return engine.detect_many(image, labels)
 
         def done(dets):
             self._busy = None
             s.set_detections(dets)
-            self.detection_panel.set_busy(False, f'{len(dets)} candidate(s) for "{text}" — check the ones to keep')
-            self.log(f'SAM3 "{text}": {len(dets)} detection(s)')
+            counts = ", ".join(f"{lb} {sum(1 for d in dets if d.label == lb)}" for lb in labels)
+            self.detection_panel.set_busy(False, f"{len(dets)} candidate(s) — {counts}. Check the ones to keep")
+            self.log(f"SAM3 {counts}")
             self.refresh()
 
         def failed(msg):
@@ -616,6 +674,65 @@ class MainWindow(QMainWindow):
 
     def on_detection_checks(self, checked: List[bool]) -> None:
         self.session.detection_checked = list(checked)
+        self.refresh()
+
+    def run_batch(self, labels: List[str], scope: str, start: int, end: int, threshold: float) -> None:
+        """Batch masking: SAM3 over many images, one Object per label (spec: prompt-based bulk masking)."""
+        from src.engine.batch import batch_detect, summarize
+
+        s = self.session
+        if s.key is None or self._busy or not labels:
+            return
+        engine = s.engine
+        if engine is None:
+            self.warn("Models are not loaded yet (check the SAM2 checkpoint in Settings).")
+            return
+        indices = s.batch_indices(scope, start, end, self.images_panel.selected_rows())
+        if not indices:
+            self.warn(
+                "No images to process"
+                + (" — select images in the Images list (Ctrl/Shift-click)." if scope == "selected" else ".")
+            )
+            return
+        paths, max_side = list(s.paths), s.max_side
+        s.finish_editing()
+        text = ", ".join(labels)
+        self._busy = f"SAM3 batch: {text} on {len(indices)} image(s)…"
+        self.detection_panel.set_busy(True, self._busy + ("" if engine.sam3_ready else " (loading SAM3 first)"))
+        self.detection_panel.batch_begin(len(indices))
+        self.log(f"Batch masking {text} on {len(indices)} image(s), min score {threshold:.2f}")
+
+        def run(cancel, progress):
+            if not engine.sam3_ready:
+                engine.load_sam3()
+            return batch_detect(engine, paths, indices, labels, max_side, threshold, cancel=cancel, progress=progress)
+
+        def on_frame(idx, hits):
+            found = any(h.mask is not None for h in hits.values())
+            self.detection_panel.batch_frame(idx, f"{s.keys[idx]}   {summarize(hits)}", found)
+
+        def finish(results, outcome):
+            self._busy = None
+            self._prop_worker = None
+            made = s.apply_batch(results) if results else {}
+            names = ", ".join(s.project.get(oid).name for oid in made.values())
+            found = sum(1 for hits in results.values() if any(h.mask is not None for h in hits.values()))
+            msg = f"{outcome}: {len(results)} image(s) processed, {found} with detections" + (
+                f" → {names}" if names else " — nothing above the score threshold"
+            )
+            self.detection_panel.set_busy(False)
+            self.detection_panel.batch_end(msg)
+            (self.warn if outcome.startswith("Failed") else self.log)(
+                msg + (" — Ctrl+Z undoes the whole batch" if made else "")
+            )
+            self.refresh()
+
+        w = PropagationWorker(run, self)
+        w.frame_done.connect(on_frame)
+        w.finished_ok.connect(lambda results, cancelled: finish(results, "Cancelled" if cancelled else "Done"))
+        w.failed.connect(lambda msg, partial: finish(partial, f"Failed: {msg}"))
+        self._prop_worker = w
+        w.start()
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -688,7 +805,7 @@ class MainWindow(QMainWindow):
     def cancel_propagation(self) -> None:
         if self._prop_worker is not None:
             self._prop_worker.cancel()
-            self.log("Cancelling propagation…")
+            self.log("Cancelling…")
 
     # ------------------------------------------------------------------
     # Export / settings

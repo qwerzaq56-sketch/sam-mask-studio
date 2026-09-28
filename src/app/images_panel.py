@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, Sequence
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QListWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QListWidget, QVBoxLayout, QWidget
 
 from src.core.project import FrameStatus, Project
 
@@ -35,6 +35,8 @@ class ImagesPanel(QWidget):
         self._keys: list = []
         self._updating = False
         self.list = QListWidget()
+        # Ctrl/Shift-click selects several images for batch masking; the clicked one becomes current.
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.currentRowChanged.connect(self._on_row)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
@@ -58,9 +60,14 @@ class ImagesPanel(QWidget):
                 it.setText(text)
 
     def set_current(self, index: int) -> None:
+        if self.list.currentRow() == index:
+            return  # keep a multi-selection intact
         self._updating = True
         self.list.setCurrentRow(index)
         self._updating = False
+
+    def selected_rows(self) -> list:
+        return sorted(self.list.row(it) for it in self.list.selectedItems())
 
     def _on_row(self, row: int) -> None:
         if not self._updating and row >= 0:

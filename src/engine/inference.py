@@ -141,20 +141,37 @@ class InferenceEngine:
 
     def detect(self, text: str) -> List[Detection]:
         """SAM3 text prompt on the current image -> candidate Detections (score-sorted)."""
-        text = text.strip()
-        if not text:
+        if self._image is None:
+            raise RuntimeError("No image set.")
+        return self.detect_many(self._image, [text])
+
+    def detect_many(self, image: np.ndarray, labels: Sequence[str]) -> List[Detection]:
+        """SAM3 on any working-resolution image, one text prompt per label.
+
+        Does not touch the image SAM2 is editing, so it can run over other
+        frames (batch masking) while the current image stays as it is.
+        Detections are grouped by label in the given order, score-sorted within.
+        """
+        labels = [t.strip() for t in labels if t and t.strip()]
+        if not labels:
             return []
+        out: List[Detection] = []
         with self.lock:
-            self._ensure_sam3_image()
-            masks, scores = self._sam3.predict_mask_from_text(text)
-        dets = []
-        for m, s in zip(masks, scores):
-            mb = freeze(m)
-            if not mb.any():
-                continue
-            dets.append(Detection(label=text, score=float(s), mask=mb, box=mask_box(mb)))
-        dets.sort(key=lambda d: d.score, reverse=True)
-        return dets
+            if self._sam3 is None:
+                raise RuntimeError("SAM3 is not loaded yet.")
+            if self._sam3_image is not image:
+                self._sam3.set_image_from_array(image, 0)
+                self._sam3_image = image
+            for label in labels:
+                masks, scores = self._sam3.predict_mask_from_text(label)
+                dets = []
+                for m, s in zip(masks, scores, strict=False):
+                    mb = freeze(m)
+                    if mb.any():
+                        dets.append(Detection(label=label, score=float(s), mask=mb, box=mask_box(mb)))
+                dets.sort(key=lambda d: d.score, reverse=True)
+                out.extend(dets)
+        return out
 
     def release(self) -> None:
         with self.lock:

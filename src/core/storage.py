@@ -25,7 +25,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.core.project import FrameState, FrameStatus, MaskObject, Point, Project, Source, Variant, freeze
+from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, Source, Variant, freeze
 
 FORMAT_VERSION = 1
 
@@ -97,16 +97,22 @@ class ProjectStore:
         for o in project.objects:
             frames_json = {}
             for key, fs in o.frames.items():
-                m = fs.mask
+                # The main PNG is the prompt-based mask; an edit layer is stored beside it
+                # as <key>.add.png / <key>.sub.png so it can still be deleted after a reload.
+                m = fs.prompt_mask
                 if m is not None:
                     live[(o.id, key)] = m
-                sel = fs.variants[fs.selected] if fs.variants else None
+                if fs.edit is not None:
+                    live[(o.id, key + ".add")] = fs.edit.add
+                    live[(o.id, key + ".sub")] = fs.edit.sub
+                sel = fs.variants[min(fs.selected, len(fs.variants) - 1)] if fs.variants else None
                 frames_json[key] = {
                     "points": [[p.x, p.y, 1 if p.positive else 0] for p in fs.points],
                     "box": list(fs.box) if fs.box else None,
                     "status": fs.status.value,
                     "score": sel.score if sel else None,
                     "has_mask": m is not None,
+                    "edit": fs.edit is not None,
                 }
             objects_json.append(
                 {
@@ -173,6 +179,16 @@ class ProjectStore:
                     if raw is not None:
                         mask = freeze(raw)
                         self._written[(oid, key)] = mask
+                edit = None
+                if fj.get("edit"):
+                    parts = []
+                    for suffix in (".add", ".sub"):
+                        raw = _read_png(self.mask_path(oid, key + suffix))
+                        parts.append(freeze(raw) if raw is not None else None)
+                        if raw is not None:
+                            self._written[(oid, key + suffix)] = parts[-1]
+                    if all(p is not None for p in parts):
+                        edit = EditLayer(parts[0], parts[1])
                 points = tuple(Point(float(x), float(y), bool(pos)) for x, y, pos in fj.get("points", []))
                 box = tuple(fj["box"]) if fj.get("box") else None
                 variants = (Variant(mask, float(fj.get("score") or 1.0)),) if mask is not None else ()
@@ -182,6 +198,7 @@ class ProjectStore:
                     base_mask=mask,
                     variants=variants,
                     status=FrameStatus(fj.get("status", "manual")),
+                    edit=edit,
                 )
             project.objects.append(
                 MaskObject(

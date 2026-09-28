@@ -16,9 +16,21 @@ from typing import Callable, Dict, Iterable, List, Optional, Protocol, Sequence,
 
 import numpy as np
 
-from src.core.project import Box, Detection, FrameState, FrameStatus, Point, Project, Source, Variant, freeze
+from src.core.project import (
+    Box,
+    Detection,
+    EditLayer,
+    FrameState,
+    FrameStatus,
+    Point,
+    Project,
+    Source,
+    Variant,
+)
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
+from src.core.refine import fill_holes_and_specks
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
+from src.engine.batch import LabelHit
 from src.engine.imageio import find_images, read_rgb, to_working
 
 DEFAULT_MAX_SIDE = 1024
@@ -41,9 +53,11 @@ class Engine(Protocol):
 
     def detect(self, text: str) -> List[Detection]: ...
 
+    def detect_many(self, image: np.ndarray, labels: Sequence[str]) -> List[Detection]: ...
+
 
 class Mode(str, Enum):
-    IDLE = "idle"  # clicks never create or change anything
+    IDLE = "idle"  # clicks never create or change anything (except the very first Object)
     NEW_OBJECT = "new"  # the next click / box creates an Object
     EDIT = "edit"  # clicks add prompts to the Object being edited
 
@@ -166,6 +180,17 @@ class Session:
 
     finish_editing = cancel_mode
 
+    @property
+    def effective_mode(self) -> Mode:
+        """The mode clicks act in.
+
+        While the project has no Objects at all, a click or box in IDLE starts
+        the first one (there is nothing it could be refining yet).
+        """
+        if self.mode == Mode.IDLE and self.key is not None and not self.project.objects:
+            return Mode.NEW_OBJECT
+        return self.mode
+
     def sync(self) -> None:
         """Drop edit state that no longer matches the project (after undo/redo/delete)."""
         if self.editing is not None and self.project.get(self.editing) is None:
@@ -211,12 +236,14 @@ class Session:
     def click(self, x: float, y: float, positive: bool = True) -> Optional[int]:
         """A canvas click in working-resolution pixels. Returns the Object id it affected.
 
-        In IDLE nothing happens: a plain click never silently creates an Object.
+        In IDLE nothing happens once Objects exist: a plain click never silently
+        creates an Object that could have been meant as a refinement.
         """
-        if self.key is None or self.mode == Mode.IDLE:
+        mode = self.effective_mode
+        if self.key is None or mode == Mode.IDLE:
             return None
         p = Point(float(x), float(y), positive)
-        if self.mode == Mode.NEW_OBJECT:
+        if mode == Mode.NEW_OBJECT:
             if not positive:
                 return None  # an Object cannot start from a background point
             return self._create(FrameState(points=(p,)), Source.SAM2_POINT)
@@ -228,9 +255,10 @@ class Session:
         """A box dragged on the canvas: creates an Object (New) or sets the edited frame's box."""
         x0, y0, x1, y1 = box
         box = (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
-        if self.key is None or self.mode == Mode.IDLE:
+        mode = self.effective_mode
+        if self.key is None or mode == Mode.IDLE:
             return None
-        if self.mode == Mode.NEW_OBJECT:
+        if mode == Mode.NEW_OBJECT:
             return self._create(FrameState(box=box), Source.SAM2_BOX)
         self._update(lambda fs: dataclasses.replace(fs, box=box))
         return self.editing
@@ -271,23 +299,60 @@ class Session:
         if obj_id is not None and self.key is not None:
             self.project.select_variant(obj_id, self.key, index)
 
-    def brush(self, mask: np.ndarray) -> bool:
-        """Replace the edited frame's mask with a brushed one.
+    # ------------------------------------------------------------------
+    # Edit layer (brush, hole filling) — kept apart from the prompt-based mask
+    # ------------------------------------------------------------------
 
-        The brushed mask becomes the frame's base mask (the prior for later SAM2
-        clicks), and the prompts are cleared so the mask shown is exactly what
-        was painted.
-        """
+    def _set_target(self, target: np.ndarray) -> bool:
+        """Make the edited frame show *target* by storing its difference as the edit layer."""
         if self.editing is None or self.key is None:
             return False
         fs = self.editing_frame() or FrameState()
-        m = freeze(mask)
+        layer = EditLayer.between(fs.prompt_mask, target)
+        if layer is None and fs.edit is None:
+            return False
+        self.project.set_frame(self.editing, self.key, dataclasses.replace(fs, edit=layer, status=FrameStatus.MANUAL))
+        return True
+
+    def brush(self, mask: np.ndarray) -> bool:
+        """A finished brush stroke: *mask* is what the edited frame should now show.
+
+        The change goes into the edit layer; the points, box and Variants stay,
+        so deleting the layer returns to the prompt-based mask.
+        """
+        return self._set_target(mask)
+
+    def refine(self, max_area: int) -> bool:
+        """Fill holes and remove specks up to *max_area* px, as part of the edit layer."""
+        fs = self.editing_frame()
+        if fs is None or fs.mask is None:
+            return False
+        return self._set_target(fill_holes_and_specks(fs.mask, max_area))
+
+    def discard_edit(self) -> bool:
+        """Delete the edit layer: back to the points/prompt-based mask."""
+        fs = self.editing_frame()
+        if fs is None or fs.edit is None:
+            return False
+        assert self.editing is not None and self.key is not None
+        self.project.set_frame(self.editing, self.key, dataclasses.replace(fs, edit=None))
+        return True
+
+    def apply_edit(self) -> bool:
+        """Bake the edit layer in: the edited mask becomes the frame's main mask.
+
+        It becomes the base mask (SAM2's prior), the old prompts are cleared,
+        and new points refine from the edited result.
+        """
+        fs = self.editing_frame()
+        if fs is None or fs.edit is None or fs.mask is None:
+            return False
+        assert self.editing is not None and self.key is not None
+        m = fs.mask
         self.project.set_frame(
             self.editing,
             self.key,
-            dataclasses.replace(
-                fs, points=(), box=None, base_mask=m, variants=(Variant(m, 1.0),), selected=0, status=FrameStatus.MANUAL
-            ),
+            FrameState(base_mask=m, variants=(Variant(m, 1.0),), status=FrameStatus.MANUAL),
         )
         self.selected_point = None
         return True
@@ -340,6 +405,37 @@ class Session:
         ids = self.project.add_detections(self.key, chosen)
         self.clear_detections()
         return ids
+
+    def batch_indices(self, scope: str, start: int = 0, end: int = -1, selected: Sequence[int] = ()) -> List[int]:
+        """Image indices for a batch run: ``current`` | ``all`` | ``range`` (start..end) | ``selected``."""
+        n = len(self.keys)
+        if scope == "current":
+            return [self.index] if self.key is not None else []
+        if scope == "all":
+            return list(range(n))
+        if scope == "range":
+            end = n - 1 if end < 0 else end
+            lo, hi = max(0, min(start, end)), min(n - 1, max(start, end))
+            return list(range(lo, hi + 1))
+        if scope == "selected":
+            return sorted({i for i in selected if 0 <= i < n})
+        raise ValueError(f"Unknown batch scope: {scope}")
+
+    def apply_batch(self, results: Dict[int, Dict[str, "LabelHit"]]) -> Dict[str, int]:
+        """Store batch detections as one Object per label (one undo step). Returns {label: object id}."""
+        by_label: Dict[str, Dict[str, FrameState]] = {}
+        for idx, hits in results.items():
+            key = self.keys[idx]
+            for label, hit in hits.items():
+                by_label.setdefault(label, {})
+                if hit.mask is not None:
+                    by_label[label][key] = FrameState.from_mask(
+                        hit.mask, score=hit.best_score, status=FrameStatus.PROPAGATED
+                    )
+        ids = self.project.add_label_objects(by_label, Source.SAM3_BATCH)
+        created = [label for label, frames in by_label.items() if frames]
+        self.sync()
+        return dict(zip(created, ids, strict=True))
 
     # ------------------------------------------------------------------
     # Propagation
