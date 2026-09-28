@@ -16,8 +16,6 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional
 
-import numpy as np
-
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -80,8 +78,6 @@ class MainWindow(QMainWindow):
         self._prop_worker: Optional[PropagationWorker] = None
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._loading_models = False
-        self._look: Optional[list] = None  # [yaw, pitch, fov] of the 360° perspective view, None = off
-        self._shown_points: List[int] = []  # canvas point index -> frame point index
 
         self.setWindowTitle("SAM Mask Studio")
         self.resize(1500, 950)
@@ -175,15 +171,8 @@ class MainWindow(QMainWindow):
             "Brush editing on the edited Object: drag = add, Ctrl+drag = subtract, wheel = size",
             True,
         )
-        self.act_pano = self._action(
-            "360° View",
-            self.toggle_pano,
-            ["V"],
-            "Look around a 360° (ERP) image in a perspective view: drag with the middle button or "
-            "Space+drag to turn, wheel for the field of view. Masks stay in ERP.",
-            True,
-        )
-        self.act_pano.setEnabled(False)
+        self.act_erp = self._action("ERP", lambda: None, tip="ERP / 360° input — planned for a later version")
+        self.act_erp.setEnabled(False)
         self.act_settings = self._action("Settings", self.show_settings)
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
@@ -193,7 +182,7 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_final)
         tb.addAction(self.act_brush)
-        tb.addAction(self.act_pano)
+        tb.addAction(self.act_erp)
         tb.addSeparator()
         tb.addAction(self.act_settings)
         self.addToolBar(tb)
@@ -213,10 +202,8 @@ class MainWindow(QMainWindow):
     def _connect(self) -> None:
         c = self.canvas
         c.clicked.connect(self.on_click)
-        c.box_drawn.connect(self.on_box)
-        c.point_picked.connect(lambda i: self.on_point_selected(self._shown_points[i] if i < len(self._shown_points) else i))
-        c.look_dragged.connect(self.on_look)
-        c.fov_wheel.connect(self.on_fov)
+        c.box_drawn.connect(lambda x0, y0, x1, y1: self._prompt(lambda: self.session.drag_box((x0, y0, x1, y1))))
+        c.point_picked.connect(self.on_point_selected)
         c.object_picked.connect(self.on_object_picked)
         c.brush_finished.connect(self.on_brush)
         c.brush_size_changed.connect(lambda px: self.properties_panel.set_brush_size(px))
@@ -305,92 +292,12 @@ class MainWindow(QMainWindow):
     # Refresh
     # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # 360° perspective view (ERP folders): the canvas shows a rendered view,
-    # everything the session holds stays in ERP pixels.
-    # ------------------------------------------------------------------
-
-    def display_view(self):
-        """The perspective View the canvas shows, or None for the flat image / ERP."""
-        if self._look is None or not self.session.erp or self.session.image is None:
-            return None
-        from src.core.erp import View
-
-        yaw, pitch, fov = self._look
-        w = max(64, min(1600, self.canvas.width()))
-        h = max(64, int(w * self.canvas.height() / max(1, self.canvas.width())))
-        return View(yaw, pitch, fov, w, h)
-
-    def _disp(self, mask):
-        """ERP mask -> what the canvas shows."""
-        view = self.display_view()
-        if mask is None or view is None:
-            return mask
-        from src.core.erp import render_view
-
-        return render_view(mask, view)
-
-    def _to_erp(self, x: float, y: float):
-        view = self.display_view()
-        if view is None:
-            return x, y
-        from src.core.erp import view_point_to_erp
-
-        return view_point_to_erp(x, y, self.session.image.shape[:2], view)
-
-    def toggle_pano(self, on: bool) -> None:
-        """Switch the canvas between the ERP and a perspective view you can look around in."""
-        on = bool(on) and self.session.erp
-        if on and self._look is None:
-            self._look = [0.0, 0.0, 90.0]
-        elif not on:
-            self._look = None
-        self.act_pano.setChecked(on)
-        self.canvas.set_pano(on)
-        self._show_image()
-        self.refresh()
-
-    def on_look(self, dx: float, dy: float) -> None:
-        view = self.display_view()
-        if view is None:
-            return
-        deg = view.fov / max(1, view.width)
-        self._look[0] = (self._look[0] - dx * deg + 180) % 360 - 180
-        self._look[1] = max(-89.9, min(89.9, self._look[1] + dy * deg))
-        self._show_image()
-        self._redraw_canvas()
-
-    def on_fov(self, delta: int) -> None:
-        if self._look is None:
-            return
-        self._look[2] = max(30.0, min(140.0, self._look[2] * (0.9 if delta > 0 else 1 / 0.9)))
-        self._show_image()
-        self._redraw_canvas()
-
-    def _show_image(self, reset: bool = True) -> None:
-        view = self.display_view()
-        if view is None:
-            self.canvas.set_image(self.session.image, reset_view=reset)
-        else:
-            from src.core.erp import render_view
-
-            self.canvas.set_image(render_view(self.session.image, view), reset_view=False)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self._look is not None:
-            QTimer.singleShot(0, lambda: (self._show_image(), self._redraw_canvas()))
-
-    # ------------------------------------------------------------------
-    # Refresh
-    # ------------------------------------------------------------------
-
-    def _redraw_canvas(self) -> None:
-        """Overlays, Final Mask, prompts, mode banner (all mapped into the perspective view if one is on)."""
+    def refresh(self) -> None:
         s = self.session
         key = s.key
         project = s.project
-        disp = self._disp
+        busy = self._busy is not None
+
         overlays: List[Overlay] = []
         edit_layer = None
         for o in project.objects:
@@ -398,39 +305,22 @@ class MainWindow(QMainWindow):
             if m is None:
                 continue
             if o.id == s.editing:
-                edit_layer = Overlay(disp(m), o.color, "edit")
+                edit_layer = Overlay(m, o.color, "edit")
             else:
-                overlays.append(Overlay(disp(m), o.color, "normal" if o.included else "faint"))
+                overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
         if edit_layer is not None:
             overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             if layer is not None:  # show what the hand edits changed
-                overlays.append(Overlay(disp(layer.add), (80, 255, 120), "layer_add"))
-                overlays.append(Overlay(disp(layer.sub), (255, 60, 60), "layer_sub"))
+                overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
+                overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
         for i, (det, on) in enumerate(zip(s.detections, s.detection_checked, strict=True)):
-            overlays.append(Overlay(disp(det.mask), candidate_color(i), "candidate" if on else "candidate_off"))
+            overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.set_overlays(overlays)
-        self.canvas.set_final(disp(project.final_mask(key)) if key else None)
+        self.canvas.set_final(project.final_mask(key) if key else None)
 
         fs = s.editing_frame()
-        view = self.display_view()
-        if view is None:
-            self._shown_points = list(range(len(fs.points))) if fs else []
-            self.canvas.set_prompts(fs.points if fs else (), s.selected_point, fs.box if fs else None)
-        else:
-            from src.core.erp import erp_point_to_view
-            from src.core.project import Point
-
-            pts, idx = [], []
-            for i, p in enumerate(fs.points if fs else ()):
-                q = erp_point_to_view(p.x, p.y, s.image.shape[:2], view)
-                if q is not None and -50 <= q[0] <= view.width + 50 and -50 <= q[1] <= view.height + 50:
-                    pts.append(Point(q[0], q[1], p.positive))
-                    idx.append(i)
-            self._shown_points = idx
-            sel = idx.index(s.selected_point) if s.selected_point in idx else None
-            self.canvas.set_prompts(pts, sel, None)  # ERP boxes are not drawn in the perspective view
-
+        self.canvas.set_prompts(fs.points if fs else (), s.selected_point, fs.box if fs else None)
         editing_obj = project.get(s.editing) if s.editing is not None else None
         mode = s.effective_mode
         if s.mode == Mode.EDIT and editing_obj is not None:
@@ -441,28 +331,9 @@ class MainWindow(QMainWindow):
             banner = "Click or drag a box to create the first Object"
         else:
             banner = ""
-        if view is not None:
-            banner = (banner + "   " if banner else "") + (
-                f"360° view  yaw {self._look[0]:.0f}°  pitch {self._look[1]:.0f}°  fov {self._look[2]:.0f}°"
-            )
         if mode != Mode.EDIT and self.canvas.brush_mode:
             self.set_brush(False, redraw=False)
         self.canvas.set_mode(mode, banner)
-
-    def refresh(self) -> None:
-        s = self.session
-        key = s.key
-        project = s.project
-        busy = self._busy is not None
-
-        self._redraw_canvas()
-        editing_obj = project.get(s.editing) if s.editing is not None else None
-        mode = s.effective_mode
-        self.act_pano.setEnabled(s.erp)
-        if not s.erp and self._look is not None:
-            self._look = None
-            self.act_pano.setChecked(False)
-            self.canvas.set_pano(False)
 
         self.objects_panel.set_objects(project.objects, key, s.editing)
         shown = project.get(self.shown_object_id()) if self.shown_object_id() is not None else None
@@ -550,7 +421,7 @@ class MainWindow(QMainWindow):
         self.images_panel.set_images(self.session.keys)
         self.propagation_panel.set_images(self.session.keys)
         self.detection_panel.set_image_count(len(self.session.keys))
-        self._show_image()
+        self.canvas.set_image(self.session.image)
         self.setWindowTitle(f"SAM Mask Studio — {folder}")
         loaded = len(self.session.project.objects)
         self.log(f"Opened {folder} ({n} images" + (f", {loaded} saved Objects)" if loaded else ")"))
@@ -568,7 +439,7 @@ class MainWindow(QMainWindow):
             self.warn(str(e))
             return
         if moved:
-            self._show_image()
+            self.canvas.set_image(self.session.image)
         self.refresh()
 
     def step(self, delta: int) -> None:
@@ -653,25 +524,7 @@ class MainWindow(QMainWindow):
         if self.session.effective_mode == Mode.NEW_OBJECT and not positive:
             self.log("A new Object starts from a positive (left) click or a box")
             return
-        x, y = self._to_erp(x, y)
         self._prompt(lambda: self.session.click(x, y, positive))
-
-    def on_box(self, x0: float, y0: float, x1: float, y1: float) -> None:
-        view = self.display_view()
-        if view is not None:
-            # A rectangle in the view is not a rectangle in ERP: use the ERP bounds of its outline.
-            ts = np.linspace(0, 1, 12)
-            edge = [(x0 + t * (x1 - x0), y) for t in ts for y in (y0, y1)] + [
-                (x, y0 + t * (y1 - y0)) for t in ts for x in (x0, x1)
-            ]
-            pts = [self._to_erp(x, y) for x, y in edge]
-            us = [p[0] for p in pts]
-            if max(us) - min(us) > self.session.image.shape[1] / 2:
-                self.log("A box across the 360° seam is not supported — use points there")
-                return
-            vs = [p[1] for p in pts]
-            x0, y0, x1, y1 = min(us), min(vs), max(us), max(vs)
-        self._prompt(lambda: self.session.drag_box((x0, y0, x1, y1)))
 
     def set_brush(self, on: bool, redraw: bool = True) -> None:
         """Turn Brush editing on/off (only possible while an Object is in Edit)."""
@@ -697,7 +550,6 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def on_object_picked(self, x: float, y: float) -> None:
-        x, y = self._to_erp(x, y)
         key = self.session.key
         for o in reversed(self.session.project.objects):
             m = o.mask(key) if key else None
@@ -709,18 +561,6 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def on_brush(self, mask) -> None:
-        view = self.display_view()
-        if view is not None:
-            # Carry back only the pixels the stroke changed, so the rest of the mask is not resampled.
-            from src.core.erp import render_view, view_mask_to_erp
-
-            fs = self.session.editing_frame()
-            hw = self.session.image.shape[:2]
-            current = fs.mask if fs is not None and fs.mask is not None else np.zeros(hw, bool)
-            before = render_view(current, view)
-            added = view_mask_to_erp(mask & ~before, view, hw)
-            removed = view_mask_to_erp(~mask & before, view, hw)
-            mask = (current | added) & ~removed
         self._do(lambda: self.session.brush(mask))
 
     def on_properties_variant(self, index: int) -> None:
