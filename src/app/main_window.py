@@ -189,7 +189,8 @@ class MainWindow(QMainWindow):
         lb.setContentsMargins(0, 0, 0, 0)
         lb.setSpacing(2)
         lb.addWidget(self.images_panel.frame_list, 1)
-        lb.addWidget(self.images_panel.summary_label(wrap=True))  # ★ ✓ ⚠ ✕ counts
+        self._list_summary = self.images_panel.summary_label()  # ★ ✓ ⚠ ✕ counts (hidden when folded)
+        lb.addWidget(self._list_summary)
         lb.addLayout(self._frame_tools())
         strip_row = self._frame_tools()  # and under the strip, with its own counts
         strip_row.addWidget(self.images_panel.summary_label())
@@ -335,6 +336,7 @@ class MainWindow(QMainWindow):
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
         self._list_title.set_compact(not self.settings.frame_list_names)
+        self._list_summary.setVisible(self.settings.frame_list_names)
         self.marks_btn.setChecked(self.settings.marks_one_object)
         pp = self.properties_panel  # the foldable Edit Layer sections remember their state
         for box, name in ((pp.settings_box, "tool_settings_open"), (pp.layer_box, "layer_section_open")):
@@ -947,6 +949,7 @@ class MainWindow(QMainWindow):
         """Frame List: file names on, or folded to the IDs and marks (the column narrows)."""
         self.images_panel.set_names_visible(on)
         self._list_title.set_compact(not on)  # folded: no title / float button, the rest never clipped
+        self._list_summary.setVisible(on)  # folded: the counts would wrap; the Frames strip still has them
         self.resizeDocks([self._list_dock], [self._list_width(on)], Qt.Orientation.Horizontal)
         self.settings.frame_list_names = bool(on)
         self.settings.save(self.settings_path)
