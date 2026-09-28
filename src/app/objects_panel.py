@@ -214,7 +214,7 @@ class ObjectsPanel(QWidget):
                 item.child(i).setText(0, f"{'●' if i == sel else '○'}  Variant {i + 1}   {v.score:.3f}")
 
     def _edit_button(self, oid: int, editing: bool) -> QPushButton:
-        b = QPushButton("Editing" if editing else "Edit")
+        b = QPushButton("Editing" if editing else "Points")
         b.setCheckable(True)
         b.setChecked(editing)
         b.setToolTip("Finish Editing (Esc)" if editing else "Edit this Object with SAM2 points (E)")

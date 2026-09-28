@@ -1,7 +1,7 @@
 """Main window: wires the Session to the canvas and panels (spec 01 §5 layout).
 
 Toolbar (Open, Save, Undo, Redo, Export, Final Mask preview, Brush,
-Outline + width, Edit Changes) ·
+Outline + width, Show Changes) ·
 left Objects + Images · center canvas · right Properties · bottom
 Prompt/Detection, Propagation and Logs tabs · status bar with the mode.
 
@@ -13,6 +13,7 @@ action goes through ``Session`` and then ``refresh()`` redraws all views.
 
 from __future__ import annotations
 
+import html
 import time
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -54,6 +55,7 @@ from src.app.session import Mode, Session
 from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
+from src.core.project import Source
 from src.core.propagation import Direction, PropagationPlan
 from src.core.storage import default_export_dir
 from src.logging_config import get_logger
@@ -63,6 +65,15 @@ logger = get_logger(__name__)
 
 AUTO_ADD_COLOR = (255, 40, 220)  # magenta: an auto tool adds these pixels
 AUTO_SUB_COLOR = (130, 60, 255)  # purple: ...and removes these
+
+SOURCE_SHORT = {  # how an Object was made, in the work bar
+    Source.SAM3_DETECTION: "SAM3",
+    Source.SAM3_BATCH: "SAM3 batch",
+    Source.SAM2_POINT: "SAM2",
+    Source.SAM2_BOX: "SAM2 box",
+    Source.MERGED: "merged",
+    Source.DUPLICATE: "copy",
+}
 
 
 def default_engine_factory(settings: Settings):
@@ -128,7 +139,18 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         self.canvas = Canvas()
-        self.setCentralWidget(self.canvas)
+        # the work bar over the canvas: which frame, which Object, which tool - at a glance
+        self.work_bar = QLabel()
+        self.work_bar.setObjectName("work_bar")
+        self.work_bar.setTextFormat(Qt.TextFormat.RichText)
+        self.work_bar.setStyleSheet("#work_bar { padding: 3px 8px; font-weight: 600; border-bottom: 1px solid palette(mid); }")
+        center = QWidget()
+        cb = QVBoxLayout(center)
+        cb.setContentsMargins(0, 0, 0, 0)
+        cb.setSpacing(0)
+        cb.addWidget(self.work_bar)
+        cb.addWidget(self.canvas, 1)
+        self.setCentralWidget(center)
 
         # Layout: left = Objects over the Prompt / Batch / Propagation / Logs tabs;
         # center = canvas; right = Properties; bottom = the frames as a thumbnail strip.
@@ -259,7 +281,7 @@ class MainWindow(QMainWindow):
         self.outline_width.setToolTip("Outline width in screen pixels")
         self.outline_width.valueChanged.connect(lambda _v: self.set_outline(self.act_outline.isChecked()))
         self.act_changes = self._action(
-            "Edit Changes",
+            "Show Changes",
             self.set_show_changes,
             ["F"],
             tip="Tint what the edit layer added (green) and removed (red)",
@@ -494,7 +516,7 @@ class MainWindow(QMainWindow):
         self.propagation_panel.run_btn.setEnabled(has_folder and not busy)
 
         mode_text = {
-            Mode.IDLE: "Ready — use an Object's Edit, + New Object from Points (N), or a SAM3 prompt",
+            Mode.IDLE: "Ready — use an Object's Points button (E), + New Object from Points (N), or a SAM3 prompt",
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
             Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: brush · Delete: point · Esc: finish",
         }[s.mode]
@@ -510,6 +532,7 @@ class MainWindow(QMainWindow):
         if s.mode == Mode.EDIT and self.canvas.region_mode:
             mode_text = "REGION BOX — drag: add a box to the region · Alt+drag: remove a box"
         self.mode_label.setText(self._busy or mode_text)
+        self.work_bar.setText(self.work_status())
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine
         self.model_label.setText(
@@ -520,6 +543,44 @@ class MainWindow(QMainWindow):
         )
         if s.store is not None and not s.store.is_saved(project):
             self._autosave.start()
+
+    def work_status(self) -> str:
+        """The work bar's text: Frame n / N · file │ Object: name (source) │ Mode: what the image does now."""
+        s = self.session
+        if s.key is None:
+            return "No folder open — File ▸ Open (Ctrl+O)"
+        sep = "&nbsp;&nbsp;│&nbsp;&nbsp;"
+        frame = f"Frame {s.index + 1} / {len(s.keys)} · {html.escape(s.key)}"
+        ids = self.objects_panel.selected_ids()
+        oid = self.shown_object_id()
+        o = s.project.get(oid) if oid is not None else None
+        if o is not None:
+            r, g, b = o.color
+            src = SOURCE_SHORT.get(o.source, o.source.value)
+            obj = f"<span style='color: rgb({r},{g},{b})'>■</span> {html.escape(o.name)} ({src})"
+        elif len(ids) > 1:
+            obj = f"{len(ids)} selected"
+        else:
+            obj = "—"
+        if self._busy:
+            mode = self._busy
+        elif self.picking():
+            mode = "Select on Image"
+        elif s.mode == Mode.NEW_OBJECT:
+            mode = "New Object"
+        elif s.mode == Mode.EDIT:
+            tool = self._tool
+            if tool in AUTO_TOOLS:
+                mode = f"Auto · {tool.replace('_', ' ').title()} ({s.auto_mode.title()})"
+            elif tool:
+                mode = tool.replace("_", " ").title()
+            else:
+                mode = "Points"
+            if self.canvas.region_mode:
+                mode += " · Region Box"
+        else:
+            mode = "View"
+        return f"{frame}{sep}Object: {obj}{sep}Mode: {html.escape(mode)}"
 
     def _update_overlays(self) -> None:
         """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""
@@ -677,7 +738,7 @@ class MainWindow(QMainWindow):
             and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
             and self.isActiveWindow()
         ):
-            self.reapply_tool()  # Enter = Apply & Recompute
+            self.reapply_tool()  # Enter = Apply & Continue
             return True
         if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
@@ -1041,7 +1102,7 @@ class MainWindow(QMainWindow):
 
     def toggle_edit(self, oid: int) -> None:
         if self.session.editing != oid and self._no_edit_while_picking():
-            self.refresh()  # the row's Edit button springs back
+            self.refresh()  # the row's Points button springs back
             return
         self.close_tool()
         if self.session.editing == oid:

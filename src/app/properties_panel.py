@@ -262,7 +262,7 @@ class PropertiesPanel(QWidget):
         self.apply_auto_btn.setToolTip("Write the auto tool's result in (Fill: all of it, Paint: the picks) and leave it")
         self.apply_auto_btn.clicked.connect(self.auto_apply_requested)
         self.apply_auto_btn.setEnabled(False)
-        self.recompute_btn = QPushButton("Apply && Recompute")
+        self.recompute_btn = QPushButton("Apply && Continue")
         self.recompute_btn.setToolTip("Write the result in and compute the next one (Enter)")
         self.recompute_btn.clicked.connect(self.auto_recompute_requested)
         self.recompute_btn.setEnabled(False)
@@ -490,11 +490,11 @@ class PropertiesPanel(QWidget):
         self.mode_fill_btn.setChecked(mode == "fill")
         self.mode_paint_btn.setChecked(mode == "paint")
         self.mode_hint.setText(
-            "Fill: the result is shown in magenta (added) / purple (removed). Apply & Recompute or Enter applies it "
+            "Fill: the result is shown in magenta (added) / purple (removed). Apply & Continue or Enter applies it "
             "(and again for more); A switches to Paint with everything picked. Leaving the tool drops it."
             if mode == "fill"
             else "Paint: drag over the gray to pick it (magenta / purple), Alt+drag to unpick, A picks all / none. "
-            "Apply & Recompute or Enter applies the picks; leaving the tool drops them."
+            "Apply & Continue or Enter applies the picks; leaving the tool drops them."
         )
         if emit:
             self.auto_mode_changed.emit(mode)
