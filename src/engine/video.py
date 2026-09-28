@@ -30,8 +30,6 @@ def propagate(
     device: str = "cuda",
     cancel: Optional[Callable[[], bool]] = None,
     progress: Optional[ProgressFn] = None,
-    transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-    untransform: Optional[Callable[[np.ndarray, Tuple[int, int]], np.ndarray]] = None,
 ) -> Iterator[Tuple[int, Dict[int, np.ndarray]]]:
     """Propagate each seed mask (obj_id -> bool mask on ``plan.current``) through the plan.
 
@@ -42,10 +40,6 @@ def propagate(
     SAM2's video loader only reads a folder of numbered JPEGs, so the frames in
     the plan's window are written there at working resolution. Copies are used
     instead of symlinks, which need admin/Developer Mode on Windows.
-
-    ``transform`` maps each working frame to what SAM2 should track in (e.g. a
-    perspective view of an ERP); the seeds must then already be in that space,
-    and ``untransform(mask, working_hw)`` maps each result back.
     """
     from sam2.build_sam import build_sam2_video_predictor
 
@@ -66,8 +60,6 @@ def propagate(
                 return
             img = to_working(read_rgb(image_paths[idx]), max_side)
             sizes[idx] = img.shape[:2]
-            if transform is not None:
-                img = np.ascontiguousarray(transform(img))
             ok, buf = cv2.imencode(".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])
             if not ok:
                 raise IOError(f"JPEG encode failed: {image_paths[idx]}")
@@ -103,10 +95,7 @@ def propagate(
                     out = {}
                     for j, oid in enumerate(obj_ids):
                         m = (video_masks[j, 0] > 0.0).cpu().numpy()
-                        if untransform is not None:
-                            out[int(oid)] = untransform(m, sizes[idx])
-                        else:
-                            out[int(oid)] = resize_mask(m, sizes[idx])
+                        out[int(oid)] = resize_mask(m, sizes[idx])
                     done += 1
                     if progress:
                         progress(phase, done, total)

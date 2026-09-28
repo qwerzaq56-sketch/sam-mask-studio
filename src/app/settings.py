@@ -21,8 +21,6 @@ class Settings:
     sam2_checkpoint: str = str(ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt")
     sam3_checkpoint: str = str(ROOT / "checkpoints" / "sam3" / "sam3.pt")
     max_side: int = DEFAULT_MAX_SIDE
-    erp_max_side: int = 4096  # working width of 360° panoramas (masks are stored at this size)
-    erp_views: str = "cube6"  # SAM3 view preset for panoramas: cube6 | ring8 | fast4
     last_dir: Optional[str] = None
     autosave_ms: int = 1500
 

@@ -61,8 +61,7 @@ class PropagationWorker(QThread):
         results: Dict[int, Dict[int, Any]] = {}
         try:
             for idx, masks in self._run(cancel=lambda: self._cancel, progress=self.progress.emit):
-                # ERP propagation yields each frame once per Object: merge, don't overwrite
-                results.setdefault(idx, {}).update(masks)
+                results[idx] = masks
                 self.frame_done.emit(idx, masks)
                 if self._cancel:
                     break

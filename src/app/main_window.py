@@ -398,21 +398,8 @@ class MainWindow(QMainWindow):
             return False
         self.save()
         self.session.max_side = self.settings.max_side
-        self.session.erp_views = self.settings.erp_views
         try:
-            info = self.session.folder_info(folder)
-            projection = info["saved"]
-            if projection is None:
-                projection = "perspective"
-                if info["looks_erp"] and self.ask(
-                    "360° panorama?",
-                    "These images are 2:1 — they look like equirectangular (ERP) 360° panoramas.\n\n"
-                    "Open as ERP? Masks are made in ERP pixels while SAM runs on undistorted "
-                    "perspective views (switch the canvas to a perspective view with V).",
-                    "Open as ERP (360°)",
-                ):
-                    projection = "erp"
-            n = self.session.open_folder(folder, projection, self.settings.erp_max_side)
+            n = self.session.open_folder(folder)
         except (OSError, ValueError) as e:
             self.warn(str(e))
             return False
@@ -657,8 +644,8 @@ class MainWindow(QMainWindow):
             self.warn("Models are not loaded yet (check the SAM2 checkpoint in Settings).")
             return
         text = ", ".join(labels)
-        image, detector = s.image, s.detector()
-        self._busy = f"SAM3: detecting {text}…" + (f" ({s.erp_views} views)" if s.erp else "")
+        image = s.image
+        self._busy = f"SAM3: detecting {text}…"
         self.detection_panel.set_busy(
             True, f"SAM3: detecting {text}…" + ("" if engine.sam3_ready else " (loading SAM3 first)")
         )
@@ -666,7 +653,7 @@ class MainWindow(QMainWindow):
         def run():
             if not engine.sam3_ready:
                 engine.load_sam3()
-            return detector(engine, image, labels) if detector else engine.detect_many(image, labels)
+            return engine.detect_many(image, labels)
 
         def done(dets):
             self._busy = None
@@ -707,7 +694,7 @@ class MainWindow(QMainWindow):
                 + (" — select images in the Images list (Ctrl/Shift-click)." if scope == "selected" else ".")
             )
             return
-        paths, max_side, detector = list(s.paths), s.max_side, s.detector()
+        paths, max_side = list(s.paths), s.max_side
         s.finish_editing()
         text = ", ".join(labels)
         self._busy = f"SAM3 batch: {text} on {len(indices)} image(s)…"
@@ -718,9 +705,7 @@ class MainWindow(QMainWindow):
         def run(cancel, progress):
             if not engine.sam3_ready:
                 engine.load_sam3()
-            return batch_detect(
-                engine, paths, indices, labels, max_side, threshold, cancel=cancel, progress=progress, detect=detector
-            )
+            return batch_detect(engine, paths, indices, labels, max_side, threshold, cancel=cancel, progress=progress)
 
         def on_frame(idx, hits):
             found = any(h.mask is not None for h in hits.values())
@@ -778,12 +763,7 @@ class MainWindow(QMainWindow):
                 "Overwrite",
             ):
                 return
-        if self.propagate_fn is not None:
-            propagate = self.propagate_fn
-        elif s.erp:
-            from src.engine.panorama import propagate_erp as propagate  # each Object in its own view
-        else:
-            propagate = default_propagate()
+        propagate = self.propagate_fn or default_propagate()
         ckpt, paths, max_side = self.settings.sam2_checkpoint, list(s.paths), s.max_side
 
         s.finish_editing()
@@ -867,7 +847,6 @@ class MainWindow(QMainWindow):
         old = (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint)
         dlg.apply(self.settings)
         self.settings.save(self.settings_path)
-        self.session.erp_views = self.settings.erp_views
         if (
             old != (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint)
             and not self._busy

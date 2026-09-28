@@ -81,8 +81,6 @@ class Session:
     def __init__(self, engine: Optional[Engine] = None, max_side: int = DEFAULT_MAX_SIDE):
         self.engine = engine
         self.max_side = max_side
-        self.erp = False  # 360° panorama folder: masks in ERP pixels, SAM runs on perspective views
-        self.erp_views = "cube6"  # SAM3 view preset for ERP detection (core.erp.VIEW_PRESETS)
         self.image_dir: Optional[Path] = None
         self.paths: List[Path] = []
         self.store: Optional[ProjectStore] = None
@@ -110,39 +108,14 @@ class Session:
     def key(self) -> Optional[str]:
         return self.keys[self.index] if 0 <= self.index < len(self.keys) else None
 
-    @staticmethod
-    def folder_info(image_dir: Path) -> dict:
-        """What the window needs to decide how to open a folder (no images are decoded).
-
-        ``saved``: the projection of an existing project (it cannot change), or None.
-        ``looks_erp``: the first image is 2:1, i.e. probably a 360° panorama.
-        """
-        from src.core.erp import is_erp_shape
-
-        paths = find_images(image_dir)
-        saved = ProjectStore(image_dir, 0).peek()
-        looks = False
-        if paths:
-            h, w = original_size(paths[0])
-            looks = is_erp_shape(h, w)
-        return {"count": len(paths), "saved": saved["projection"] if saved else None, "looks_erp": looks}
-
-    def open_folder(self, image_dir: Path, projection: Optional[str] = None, erp_max_side: int = 4096) -> int:
-        """Open *image_dir* (loading its sidecar project, if any). Returns the image count.
-
-        A new project is created as ``projection`` ("perspective" or "erp"); an
-        existing one keeps the projection and working size it was made with.
-        """
+    def open_folder(self, image_dir: Path) -> int:
+        """Open *image_dir* (loading its sidecar project, if any). Returns the image count."""
         paths = find_images(image_dir)
         if not paths:
             raise FileNotFoundError(f"No images found in {image_dir}")
         self.image_dir = image_dir
         self.paths = paths
-        saved = ProjectStore(image_dir, 0).peek()
-        projection = (saved or {}).get("projection") or projection or "perspective"
-        self.erp = projection == "erp"
-        side = erp_max_side if self.erp else self.max_side
-        self.store = ProjectStore(image_dir, side, projection)
+        self.store = ProjectStore(image_dir, self.max_side)
         self.project = self.store.load([p.name for p in paths])
         self.max_side = self.store.max_side  # an existing project keeps its working resolution
         self._sizes.clear()
@@ -243,16 +216,7 @@ class Session:
 
     def _run(self, fs: FrameState) -> FrameState:
         """Recompute a frame's Variants from its full prompt set (seeded by its base mask)."""
-        engine = self._require_sam2() if fs.has_prompts else None
-        if engine is None:
-            variants = ()
-        elif self.erp:
-            from src.engine.panorama import erp_predict
-
-            assert self.image is not None
-            variants = erp_predict(engine, self.image, fs.points, fs.box, fs.base_mask)
-        else:
-            variants = engine.predict(fs.points, fs.box, fs.base_mask)
+        variants = self._require_sam2().predict(fs.points, fs.box, fs.base_mask) if fs.has_prompts else ()
         if not variants and fs.base_mask is not None:
             variants = (Variant(fs.base_mask, 1.0),)
         return dataclasses.replace(fs, variants=tuple(variants), selected=0, status=FrameStatus.MANUAL)
@@ -441,21 +405,6 @@ class Session:
         ids = self.project.add_detections(self.key, chosen)
         self.clear_detections()
         return ids
-
-    def detector(self) -> Optional[Callable]:
-        """``detect(engine, image, labels)`` for this folder: None = plain SAM3, else ERP multi-view."""
-        if not self.erp:
-            return None
-        from src.core.erp import preset_views
-        from src.engine.panorama import VIEW_SIZE, erp_detector
-
-        return erp_detector(preset_views(self.erp_views, VIEW_SIZE))
-
-    def detect_current(self, engine, labels: Sequence[str]) -> List[Detection]:
-        """SAM3 on the current image (ERP: over the view preset). Safe to call from a worker thread."""
-        assert self.image is not None
-        det = self.detector()
-        return det(engine, self.image, list(labels)) if det else engine.detect_many(self.image, list(labels))
 
     def batch_indices(self, scope: str, start: int = 0, end: int = -1, selected: Sequence[int] = ()) -> List[int]:
         """Image indices for a batch run: ``current`` | ``all`` | ``range`` (start..end) | ``selected``."""
