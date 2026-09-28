@@ -199,7 +199,7 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - The Apply-at-once buttons are gone (Fill mode replaces them).
 
 **P2.7 — tool exit as first proposed** (`v0.3-p2.7`; replaces P2.6's write-at-once Fill)
-- One result per auto tool (`Session._result`), shown two ways: Fill = green/red preview,
+- One result per auto tool (`Session._result`), shown two ways: Fill = magenta/purple preview,
   Brush = gray guide. Switching Brush <-> Fill keeps the same area; nothing is written by it.
 - A Fill preview is written in (one undo step) when the tool closes: clicking it again,
   another tool, Finish Editing, another Object / image, New Object. **Esc** drops the preview
@@ -211,7 +211,7 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Brush group: **Paint** (was Add / Subtract; Alt+drag subtracts) and **Restore** are live
   while dragging (Restore's result comes from `Canvas.tool_target_fn` at the press).
 - Auto tools in one row. Mode **Fill** (default) takes the whole result; **Paint** picks parts:
-  a drag shows its area (yellow), release picks it (green / red), Alt+drag unpicks (back to
+  a drag shows its area (yellow), release picks it (magenta / purple), Alt+drag unpicks (back to
   gray). Nothing is written until the tool closes (`Session.close_auto`, one undo step); the
   picks survive mode switches and setting changes. The selected mode button is highlighted and
   a line under it says what the mode does.

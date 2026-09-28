@@ -55,6 +55,10 @@ from src.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+AUTO_ADD_COLOR = (255, 40, 220)  # magenta: an auto tool adds these pixels
+AUTO_SUB_COLOR = (130, 60, 255)  # purple: ...and removes these
+
+
 def default_engine_factory(settings: Settings):
     from src.engine.inference import InferenceEngine
 
@@ -455,11 +459,12 @@ class MainWindow(QMainWindow):
             overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             added, removed = s.auto_changes()
-            if added is not None:  # the auto tool: taken parts green/red, the rest (Paint mode) gray
+            if added is not None:  # the auto tool: taken parts magenta / purple, the rest (Paint mode) gray
                 taken = s.auto_taken()
                 overlays.append(Overlay((added | removed) & ~taken, (170, 170, 170), "guide"))
-                overlays.append(Overlay(added & taken, (80, 255, 120), "layer_add"))
-                overlays.append(Overlay(removed & taken, (255, 60, 60), "layer_sub"))
+                # own colors, so they are never confused with the edit layer's green / red
+                overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "layer_add"))
+                overlays.append(Overlay(removed & taken, AUTO_SUB_COLOR, "layer_sub"))
             elif layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
