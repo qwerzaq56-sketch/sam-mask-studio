@@ -113,6 +113,23 @@ Verified locally (Windows 10, RTX 2060 Super 8 GB, torch 2.14 cu130, SAM2.1 tiny
   overwrite prompt, earlier frames untouched; merge; Final preview; COLMAP-named inverted export
   (20 files); close and reopen restores Objects and frames. `run.bat` launches the window.
 
+### v0.2.0 (user requests after v0.1.0)
+
+- **Edit layer** (`FrameState.edit`, `core/refine.py`): brush strokes and *Fill Holes / Remove
+  Specks* are stored as add/sub pixels on top of the point/prompt mask. *Delete Layer* returns
+  to the prompt mask; *Apply Layer* makes the edited mask the base mask (points cleared, new
+  points refine from it). Saved as `<key>.add.png` / `<key>.sub.png` beside the main PNG.
+- **Brush** (B): drag = add, Ctrl+drag = subtract, wheel = size, Ctrl+wheel = zoom; clicks add
+  no points while it is on. Shift+drag still works as a quick brush.
+- **Comma-separated prompts** (`core/prompts.py`): `person, car, tripod` is detected label by
+  label; the Detection list is a tree grouped per label.
+- **Batch masking** (`engine/batch.py`): all images / Start~End / images selected in the
+  Images list → one Object per label, each image = union of that label's detections above a
+  score threshold; one undo step; cancellable; per-image results clickable.
+- **First Object from a plain click** while the project has no Objects (`Session.effective_mode`).
+- A 360° (ERP) mode was tried and removed at the user's request (seam artefacts); the code is
+  kept at tag `erp-experiment`.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
