@@ -1039,3 +1039,18 @@ def test_frame_list_follows_the_strip_and_thumbnails_are_cached(qapp, win, tmp_p
     assert not fl.isVisibleTo(win)
     frame_list.trigger()
     assert fl.isVisibleTo(win)
+
+
+def test_frame_list_names_fold_away(qapp, win):
+    ip = win.images_panel
+    assert win.names_btn.isChecked() and ip.names_visible  # names shown by default
+    win.names_btn.click()
+    assert not ip.names_visible and not win.settings.frame_list_names
+    opt_text = lambda: (lambda o: (ip._delegate.initStyleOption(o, ip.frame_list.model().index(0, 0)), o.text)[1])(  # noqa: E731
+        __import__("PyQt6.QtWidgets", fromlist=["QStyleOptionViewItem"]).QStyleOptionViewItem()
+    )
+    assert opt_text().strip() == "1"  # only the ID (and marks)
+    win.names_btn.click()
+    assert "frame_000.png" in opt_text()
+    bar = win._list_dock.titleBarWidget()
+    assert win.names_btn.parent() is bar  # in the Frame List title bar

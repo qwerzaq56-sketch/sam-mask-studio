@@ -94,10 +94,13 @@ def cached_thumbnail(path: Path, cache: Optional[Path]) -> Optional[np.ndarray]:
 class OneLineDelegate(QStyledItemDelegate):
     """The vertical frame list: ``12  ★ ◎ 📌  name`` on one line, no thumbnail."""
 
+    names = True  # False: only the ID and the marks (a narrower list)
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         # Qt has already turned the line break into a line separator (U+2028)
-        option.text = option.text.replace(" ", "   ").replace("\n", "   ")
+        first, _, name = option.text.replace("\n", "\u2028").partition("\u2028")
+        option.text = f"{first}   {name}" if self.names else first
         option.icon = QIcon()
         option.features &= ~option.ViewItemFeature.HasDecoration
 
@@ -156,7 +159,8 @@ class ImagesPanel(QWidget):
         self.frame_list = QListView()
         self.frame_list.setModel(self.list.model())
         self.frame_list.setSelectionModel(self.list.selectionModel())
-        self.frame_list.setItemDelegate(OneLineDelegate(self.frame_list))
+        self._delegate = OneLineDelegate(self.frame_list)
+        self.frame_list.setItemDelegate(self._delegate)
         self.frame_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.frame_list.setUniformItemSizes(True)
         self.frame_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
@@ -225,6 +229,17 @@ class ImagesPanel(QWidget):
         for i in range(self.list.count()):
             self.list.item(i).setBackground(QBrush(PIN_COLOR) if i in pinned else QBrush())
         self._retext()
+
+    def set_names_visible(self, on: bool) -> None:
+        """Frame List: show the file names, or only the IDs and marks (a narrow column)."""
+        self._delegate.names = on
+        self.frame_list.setMinimumWidth(170 if on else 60)
+        self.frame_list.doItemsLayout()
+        self.frame_list.viewport().update()
+
+    @property
+    def names_visible(self) -> bool:
+        return self._delegate.names
 
     def set_current(self, index: int) -> None:
         if self.list.currentRow() == index:
