@@ -544,8 +544,8 @@ class PropertiesPanel(QWidget):
 
     def _on_variant(self, row: int) -> None:
         if not self._updating and row >= 0:
-            later(self.variant_selected, row)
+            later(self, self.variant_selected, row)
 
     def _on_point(self, item, _previous=None) -> None:
         if not self._updating and item is not None and item.data(POINT_ROLE) is not None:
-            later(self.point_selected, item.data(POINT_ROLE))
+            later(self, self.point_selected, item.data(POINT_ROLE))

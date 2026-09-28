@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
-from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -32,13 +32,19 @@ ID_ROLE = Qt.ItemDataRole.UserRole
 VARIANT_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
-def later(signal, *args) -> None:
-    """Emit on the next event-loop turn.
+def later(owner: QObject, signal, *args) -> None:
+    """Emit *signal* of *owner* on the next event-loop turn.
 
     Handlers rebuild this tree; doing that inside the tree's own signal (or a
     row button's ``clicked``) would delete the item or button still in use.
+    The timer is a child of *owner*, so it dies with it and never emits from
+    a deleted widget (that crashes rather than raising).
     """
-    QTimer.singleShot(0, lambda: signal.emit(*args))
+    t = QTimer(owner)
+    t.setSingleShot(True)
+    t.timeout.connect(lambda: signal.emit(*args))
+    t.timeout.connect(t.deleteLater)
+    t.start(0)
 
 
 def color_icon(rgb, size: int = 12) -> QIcon:
@@ -89,14 +95,14 @@ class ObjectsPanel(QWidget):
 
         self.new_btn = QPushButton("+ New Object from Points")
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
-        self.new_btn.clicked.connect(lambda: later(self.new_requested))
+        self.new_btn.clicked.connect(lambda: later(self, self.new_requested))
         self.merge_btn = QPushButton("Merge")
         self.merge_btn.setToolTip("Fuse the selected rows into one Object (Ctrl/Shift-click rows to select)")
-        self.merge_btn.clicked.connect(lambda: later(self.merge_requested, self.selected_ids()))
+        self.merge_btn.clicked.connect(lambda: later(self, self.merge_requested, self.selected_ids()))
         self.dup_btn = QPushButton("Duplicate")
-        self.dup_btn.clicked.connect(lambda: later(self.duplicate_requested, self.selected_ids()))
+        self.dup_btn.clicked.connect(lambda: later(self, self.duplicate_requested, self.selected_ids()))
         self.del_btn = QPushButton("Delete")
-        self.del_btn.clicked.connect(lambda: later(self.delete_requested, self.selected_ids()))
+        self.del_btn.clicked.connect(lambda: later(self, self.delete_requested, self.selected_ids()))
 
         ops = QHBoxLayout()
         for b in (self.merge_btn, self.dup_btn, self.del_btn):
@@ -187,7 +193,7 @@ class ObjectsPanel(QWidget):
         b.setChecked(editing)
         b.setToolTip("Finish Editing (Esc)" if editing else "Edit this Object with SAM2 points (E)")
         b.setFixedWidth(60)
-        b.clicked.connect(lambda _=False, i=oid: later(self.edit_requested, i))
+        b.clicked.connect(lambda _=False, i=oid: later(self, self.edit_requested, i))
         b.setObjectName(f"edit_{oid}")
         return b
 
@@ -196,7 +202,7 @@ class ObjectsPanel(QWidget):
         b.setFixedWidth(26)
         b.setToolTip("Delete this Object")
         b.setObjectName(f"delete_{oid}")
-        b.clicked.connect(lambda _=False, i=oid: later(self.delete_requested, [i]))
+        b.clicked.connect(lambda _=False, i=oid: later(self, self.delete_requested, [i]))
         return b
 
     def _more_button(self, oid: int) -> QPushButton:
@@ -205,10 +211,10 @@ class ObjectsPanel(QWidget):
         b.setObjectName(f"more_{oid}")
         menu = QMenu(b)
         menu.addAction("Rename", lambda i=oid: self._start_rename(i))
-        menu.addAction("Duplicate", lambda i=oid: later(self.duplicate_requested, [i]))
-        menu.addAction("Remove mask on this image", lambda i=oid: later(self.remove_frame_requested, i))
+        menu.addAction("Duplicate", lambda i=oid: later(self, self.duplicate_requested, [i]))
+        menu.addAction("Remove mask on this image", lambda i=oid: later(self, self.remove_frame_requested, i))
         menu.addSeparator()
-        menu.addAction("Delete", lambda i=oid: later(self.delete_requested, [i]))
+        menu.addAction("Delete", lambda i=oid: later(self, self.delete_requested, [i]))
         b.setMenu(menu)
         return b
 
@@ -268,7 +274,7 @@ class ObjectsPanel(QWidget):
     def _on_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         idx = item.data(0, VARIANT_ROLE)
         if item.parent() is not None and idx is not None:
-            later(self.variant_selected, item.data(0, ID_ROLE), idx)
+            later(self, self.variant_selected, item.data(0, ID_ROLE), idx)
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if self._updating or column != 0 or item.parent() is not None:
@@ -279,13 +285,13 @@ class ObjectsPanel(QWidget):
             return
         checked = item.checkState(0) == Qt.CheckState.Checked
         if checked != obj.included:
-            later(self.include_toggled, oid, checked)
+            later(self, self.include_toggled, oid, checked)
         elif item.text(0) != obj.name:  # empty names are rejected by the project and the row resets
-            later(self.renamed, oid, item.text(0))
+            later(self, self.renamed, oid, item.text(0))
 
     def _on_selection(self) -> None:
         self._update_buttons()
-        later(self.selection_changed, self.selected_ids())
+        later(self, self.selection_changed, self.selected_ids())
 
     def _update_buttons(self) -> None:
         n = len(self.selected_ids())
