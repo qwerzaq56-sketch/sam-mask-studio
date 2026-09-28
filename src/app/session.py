@@ -305,6 +305,17 @@ class Session:
         self.selected_point = None
         return True
 
+    def move_point(self, index: int, x: float, y: float) -> bool:
+        """Move one point (dragged on the image) and re-run SAM2."""
+        fs = self.editing_frame()
+        if fs is None or not (0 <= index < len(fs.points)):
+            return False
+        p = fs.points[index]
+        moved = Point(float(x), float(y), p.positive)
+        self._update(lambda f: dataclasses.replace(f, points=f.points[:index] + (moved,) + f.points[index + 1 :]))
+        self.selected_point = index
+        return True
+
     def clear_points(self) -> bool:
         """Remove every point and the box of the edited frame (its base mask stays)."""
         fs = self.editing_frame()
@@ -467,6 +478,17 @@ class Session:
         picked = self._picked if self._picked is not None else np.zeros(area.shape, bool)
         self._record("picks")
         self._picked = picked & ~area if unpick else picked | area
+        return True
+
+    def pick_everything(self) -> bool:
+        """Pick the whole result (entering Paint mode from Fill with A keeps what Fill showed)."""
+        if self._result is None:
+            return False
+        fs = self.editing_frame()
+        if fs is None or fs.mask is None:
+            return False
+        self._record("picks")
+        self._picked = np.ones(fs.mask.shape, bool)
         return True
 
     def pick_all(self) -> bool:
