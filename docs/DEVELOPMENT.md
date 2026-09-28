@@ -302,10 +302,15 @@ actions; Range as Start / End fields and a `Custom (IDs)` scope (`parse_id_list`
 cached in `<images>.sms/thumbs/` and read in ~8 ms slices (visible first, then the whole folder);
 `ui_util.allow_narrow` lets the left-column panels shrink.
 
+**v0.3.0 released** (2026-09-28): phases P1 – P5f above (tags `v0.3-p1` … `v0.3-p5f`), merged
+to `main` and tagged `v0.3.0`; the stable launcher runs it.
+
 ### Remaining work
 
-1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
-2. Later per specs: ERP / 360° input, keyframes, quality graph, Object split/groups.
+1. P6 — COLMAP: read a COLMAP model, load its masks as Objects, write edits back to the `.bin`
+   files (for frame deletion later), export masks to several versioned folders.
+2. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
+3. Later per specs: keyframes, quality graph, Object split/groups.
 
 ## Running
 

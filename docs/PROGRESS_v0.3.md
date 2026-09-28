@@ -1,5 +1,7 @@
 # SAM Mask Studio v0.3 진행 현황
 
+**v0.3.0 릴리스 (2026-09-28):** 아래 "완료" 항목 전부(1~5단계)가 `main`에 병합되고 `v0.3.0` 태그가 붙었습니다. 안정판 실행기(`SAM Mask Studio.bat`)도 v0.3.0을 실행합니다. 6단계(COLMAP)는 다음 버전으로 넘어갑니다.
+
 원래 요청 목록: [`docs/specs/04-v0.3-requests.md`](specs/04-v0.3-requests.md) · 개발 메모(영문): [`docs/DEVELOPMENT.md`](DEVELOPMENT.md)
 
 - 브랜치 `dev`에서 단계별로 진행하고, 단계마다 `v0.3-pN` 태그를 붙입니다.
@@ -8,7 +10,7 @@
   - 병합 없이 dev에 바로 커밋한 변경(2.5와 그 뒤 작은 수정 두 건): `git revert <커밋>`
 - 실행
   - `SAM Mask Studio (dev).bat`: 최신 dev
-  - `SAM Mask Studio.bat`: 안정판 v0.2.0
+  - `SAM Mask Studio.bat`: 안정판 v0.3.0 (이전 안정판은 태그 `v0.2.0`)
 
 ## 완료
 
