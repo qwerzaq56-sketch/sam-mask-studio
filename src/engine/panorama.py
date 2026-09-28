@@ -24,12 +24,9 @@ from src.core.erp import (
     paste_view_mask,
     preset_views,
     render_view,
-    touches_view_edge,
-    view_coverage,
     view_for_mask,
     view_for_points,
     view_mask_to_erp,
-    view_mask_touches_border,
 )
 from src.core.project import Box, Detection, Point, Variant, freeze, mask_box
 from src.core.propagation import PropagationPlan
@@ -101,39 +98,6 @@ def erp_predict(
     if not points and box is None:
         return (Variant(freeze(seed_mask), 1.0),) if seed_mask is not None else ()
     view = prompt_view(points, box, hw)
-    variants = _predict_in(engine, erp, view, points, box, seed_mask)
-    # An object bigger than the prompt view is cut at its edge: re-centre the view on what
-    # was found (wider, up to 120°) and run the same prompts again.
-    for _ in range(3):
-        if not variants or not view_mask_touches_border(variants[0][1]):
-            break
-        found = view_mask_to_erp(variants[0][1], view, hw)
-        # widen by at least 20° each round so a long object is reached in a few steps
-        wider = view_for_mask(found, min_fov=min(120.0, view.fov + 20.0), max_fov=120.0, margin=15.0, size=VIEW_SIZE)
-        if wider is None or not _covers_points(wider, points, hw):
-            break
-        if wider.key() == view.key():
-            break
-        view = wider
-        variants = _predict_in(engine, erp, view, points, box, seed_mask)
-    out = []
-    for v, view_mask in variants:
-        m = paste_view_mask(seed_mask, view_mask, view, hw)
-        out.append(Variant(freeze(m), v.score))  # view logits don't apply to the ERP
-    return tuple(out)
-
-
-def _covers_points(view: View, points: Sequence[Point], hw: Tuple[int, int]) -> bool:
-    for p in points:
-        q = erp_point_to_view(p.x, p.y, hw, view)
-        if q is None or not (0 <= q[0] < view.width and 0 <= q[1] < view.height):
-            return False
-    return True
-
-
-def _predict_in(engine, erp, view, points, box, seed_mask):
-    """SAM2 in one view -> [(variant, view-space mask)]."""
-    hw = erp.shape[:2]
     image = _cache.get(erp, view)
     view_points = []
     for p in points:
@@ -143,19 +107,16 @@ def _predict_in(engine, erp, view, points, box, seed_mask):
     view_box = _box_in_view(box, hw, view) if box is not None else None
     view_seed = render_view(seed_mask, view) if seed_mask is not None else None
     engine.set_image(image)
-    return [(v, v.mask) for v in engine.predict(view_points, view_box, view_seed)]
+    variants = engine.predict(view_points, view_box, view_seed)
+    out = []
+    for v in variants:
+        m = paste_view_mask(seed_mask, v.mask, view, hw)
+        out.append(Variant(freeze(m), v.score))  # view logits don't apply to the ERP
+    return tuple(out)
 
 
-def erp_detect(
-    engine, erp: np.ndarray, labels: Sequence[str], views: Sequence[View], refine: bool = True
-) -> List[Detection]:
-    """SAM3 over the views; per-view detections are projected back and merged per object.
-
-    With *refine*, every object that reaches the edge of a view it was found in
-    (i.e. an object split across cube faces, of which a face may have seen only
-    a part — or none) is detected again in a view centred on it that holds it
-    whole, and replaced by that result.
-    """
+def erp_detect(engine, erp: np.ndarray, labels: Sequence[str], views: Sequence[View]) -> List[Detection]:
+    """SAM3 over the views; per-view detections are projected back and merged per object."""
     hw = erp.shape[:2]
     items = []
     for vi, view in enumerate(views):
@@ -164,43 +125,9 @@ def erp_detect(
             if m.any():
                 items.append((d.label, d.score, m, vi))
     merged = merge_view_detections(items)
-    if refine:
-        merged = merge_view_detections(
-            [(lb, s, m, i) for i, (lb, s, m) in enumerate(_refine_cut(engine, erp, merged, views))], overlap=0.3
-        )
     order = {lb: i for i, lb in enumerate(labels)}
     merged.sort(key=lambda t: (order.get(t[0], 99), -t[1]))
     return [Detection(lb, float(s), freeze(m), mask_box(m)) for lb, s, m in merged]
-
-
-def _refine_cut(engine, erp, merged, views):
-    """Re-detect objects cut by view edges in a view centred on each (see ``erp_detect``)."""
-    hw = erp.shape[:2]
-    out = []
-    for label, score, mask in merged:
-        if not touches_view_edge(mask, views):
-            out.append((label, score, mask))
-            continue
-        view = view_for_mask(mask, min_fov=90.0, max_fov=120.0, margin=15.0, size=VIEW_SIZE)
-        if view is None:
-            out.append((label, score, mask))
-            continue
-        cover = view_coverage(view, hw)
-        hits = []
-        for d in engine.detect_many(render_view(erp, view), [label]):
-            m = view_mask_to_erp(d.mask, view, hw)
-            inter = int((m & mask).sum())
-            if inter and inter / max(1, min(int(m.sum()), int(mask.sum()))) >= 0.2:
-                hits.append((d.score, m))
-        if not hits:
-            out.append((label, score, mask))
-            continue
-        full = np.zeros(hw, bool)
-        for _, m in hits:
-            full |= m
-        # inside the centred view trust the new result; outside it keep what the faces saw
-        out.append((label, max(score, max(s for s, _ in hits)), full | (mask & ~cover)))
-    return out
 
 
 def erp_detector(views: Sequence[View]) -> Callable:

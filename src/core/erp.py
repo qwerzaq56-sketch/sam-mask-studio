@@ -117,56 +117,21 @@ def _view_from_erp_maps(view_key: tuple, hw: HW) -> Tuple[np.ndarray, np.ndarray
     return (u % hw[1]).astype(np.float32), np.clip(v, 0, hw[0] - 1).astype(np.float32)
 
 
-def _erp_block(view: View, hw: HW) -> Tuple[int, int, np.ndarray]:
-    """ERP rows [r0, r1) and column indices (may wrap the seam) that can see *view*.
-
-    A view is a convex patch of the sphere, so its extreme longitudes and
-    latitudes lie on its outline — unless it contains a pole, which then takes
-    every column and the rows up to that pole.
-    """
+@lru_cache(maxsize=4)
+def _erp_dirs(hw: HW) -> np.ndarray:
     h, w = hw
-    n = 64
-    t = np.linspace(-0.5, 1.0 * max(view.width, view.height), n)
-    xs = np.concatenate([np.clip(t, -0.5, view.width - 0.5)] * 2 + [np.full(n, -0.5), np.full(n, view.width - 0.5)])
-    ys = np.concatenate([np.full(n, -0.5), np.full(n, view.height - 0.5)] + [np.clip(t, -0.5, view.height - 0.5)] * 2)
-    r, d, f = view.basis()
-    rays = (
-        r[None, :] * ((xs + 0.5 - view.width / 2.0) / view.focal)[:, None]
-        + d[None, :] * ((ys + 0.5 - view.height / 2.0) / view.focal)[:, None]
-        + f[None, :]
-    )
-    u, v = dir_to_erp(rays / np.linalg.norm(rays, axis=1, keepdims=True), hw)
-    r0, r1 = int(max(0, np.floor(v.min()) - 2)), int(min(h, np.ceil(v.max()) + 3))
-    north = project_dirs(np.array([0.0, 1.0, 0.0]), view)
-    south = project_dirs(np.array([0.0, -1.0, 0.0]), view)
-    pole = False
-    for (px, py, front), row in ((north, "top"), (south, "bottom")):
-        if bool(front) and -0.5 <= float(px) <= view.width - 0.5 and -0.5 <= float(py) <= view.height - 0.5:
-            pole = True
-            r0, r1 = (0, r1) if row == "top" else (r0, h)
-    if pole:
-        return r0, r1, np.arange(w)
-    uu = np.sort(np.mod(u, w))
-    gaps = np.diff(np.concatenate([uu, [uu[0] + w]]))
-    k = int(np.argmax(gaps))  # the empty arc; the block is its complement
-    start = uu[(k + 1) % len(uu)]
-    span = w - gaps[k]
-    c0 = int(np.floor(start)) - 2
-    cols = np.mod(np.arange(c0, c0 + int(np.ceil(span)) + 5), w)
-    return r0, r1, cols
+    uu, vv = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    return erp_to_dir(uu, vv, hw).astype(np.float32)
 
 
-@lru_cache(maxsize=24)
-def _erp_from_view_maps(view_key: tuple, hw: HW) -> Tuple[int, int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Maps from the ERP block that sees the view to view pixels: (r0, r1, cols, map_x, map_y, inside)."""
+@lru_cache(maxsize=16)
+def _erp_from_view_maps(view_key: tuple, hw: HW) -> Tuple[np.ndarray, np.ndarray]:
     view = View(*view_key)
-    r0, r1, cols = _erp_block(view, hw)
-    uu, vv = np.meshgrid(cols.astype(np.float32), np.arange(r0, r1, dtype=np.float32))
-    x, y, front = project_dirs(erp_to_dir(uu, vv, hw).astype(np.float32), view)
+    x, y, front = project_dirs(_erp_dirs(hw), view)
     inside = front & (x >= -0.5) & (x <= view.width - 0.5) & (y >= -0.5) & (y <= view.height - 0.5)
     x = np.where(inside, x, -10).astype(np.float32)
     y = np.where(inside, y, -10).astype(np.float32)
-    return r0, r1, cols, x, y, inside
+    return x, y
 
 
 def render_view(erp: np.ndarray, view: View, nearest: bool = False) -> np.ndarray:
@@ -182,46 +147,15 @@ def render_view(erp: np.ndarray, view: View, nearest: bool = False) -> np.ndarra
 
 def view_coverage(view: View, hw: HW) -> np.ndarray:
     """ERP pixels that the view can see (bool, ERP shape)."""
-    r0, r1, cols, _, _, inside = _erp_from_view_maps(view.key(), hw)
-    out = np.zeros(hw, bool)
-    out[r0:r1, cols] = inside
-    return out
-
-
-@lru_cache(maxsize=32)
-def _border_band(view_key: tuple, hw: HW, width: int) -> np.ndarray:
-    cover = view_coverage(View(*view_key), hw).astype(np.uint8)
-    # Default border: erosion never eats in from the ERP's left/right edge, which is the
-    # 360° seam — a view that wraps across it has no edge there.
-    inner = cv2.erode(cover, np.ones((2 * width + 1, 2 * width + 1), np.uint8))
-    band = (cover > 0) & (inner == 0)
-    band[0, :] = band[-1, :] = False  # the ERP's top/bottom rows are poles, not view edges
-    return band
-
-
-def touches_view_edge(erp_mask: np.ndarray, views: Sequence[View], width: int = 3) -> bool:
-    """True when the mask reaches the edge of any of *views* (so it may have been cut there)."""
-    hw = erp_mask.shape[:2]
-    box = _bbox(erp_mask)
-    if box is None:
-        return False
-    y0, y1, x0, x1 = box
-    crop = erp_mask[y0:y1, x0:x1]
-    return any((crop & _border_band(v.key(), hw, width)[y0:y1, x0:x1]).any() for v in views)
-
-
-def view_mask_touches_border(mask: np.ndarray, margin: int = 2) -> bool:
-    """True when a view-space mask reaches the view image's border."""
-    return bool(mask[:margin].any() or mask[-margin:].any() or mask[:, :margin].any() or mask[:, -margin:].any())
+    x, _ = _erp_from_view_maps(view.key(), hw)
+    return x > -5
 
 
 def view_mask_to_erp(mask: np.ndarray, view: View, hw: HW) -> np.ndarray:
     """Project a view-space mask back onto the ERP (pixels outside the view are False)."""
-    r0, r1, cols, mx, my, _ = _erp_from_view_maps(view.key(), hw)
-    block = cv2.remap(mask.astype(np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-    out = np.zeros(hw, bool)
-    out[r0:r1, cols] = block > 0
-    return out
+    mx, my = _erp_from_view_maps(view.key(), hw)
+    out = cv2.remap(mask.astype(np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    return out > 0
 
 
 def paste_view_mask(erp_mask: Optional[np.ndarray], view_mask: np.ndarray, view: View, hw: HW) -> np.ndarray:
@@ -310,43 +244,12 @@ def preset_views(name: str, size: int = 1024) -> List[View]:
 # ----------------------------------------------------------------------
 
 
-def _bbox(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-    """(y0, y1, x0, x1) half-open bounds of a mask, or None if empty."""
-    rows, cols = np.flatnonzero(mask.any(axis=1)), np.flatnonzero(mask.any(axis=0))
-    if len(rows) == 0:
-        return None
-    return int(rows[0]), int(rows[-1]) + 1, int(cols[0]), int(cols[-1]) + 1
-
-
-def _touching(a: np.ndarray, b: np.ndarray, ba=None, bb=None, pad: int = 2) -> bool:
-    """True when masks overlap or touch (also across the 360° seam). Works on bounding-box crops."""
-    ba = ba or _bbox(a)
-    bb = bb or _bbox(b)
-    if ba is None or bb is None:
-        return False
-    w = a.shape[1]
-    if ba[3] >= w - pad and bb[2] <= pad or bb[3] >= w - pad and ba[2] <= pad:  # both reach the seam
-        rows = slice(max(ba[0], bb[0]) - pad, min(ba[1], bb[1]) + pad)
-        if (a[rows, -pad:].any(axis=1) & b[rows, :pad].any(axis=1)).any() or (
-            a[rows, :pad].any(axis=1) & b[rows, -pad:].any(axis=1)
-        ).any():
-            return True
-    y0, y1 = max(ba[0], bb[0]) - pad, min(ba[1], bb[1]) + pad
-    x0, x1 = max(ba[2], bb[2]) - pad, min(ba[3], bb[3]) + pad
-    if y0 >= y1 or x0 >= x1:
-        return False
-    y0, x0 = max(0, y0), max(0, x0)
-    ca = a[max(0, y0 - pad) : y1 + pad, max(0, x0 - pad) : x1 + pad]
-    cb = b[max(0, y0 - pad) : y1 + pad, max(0, x0 - pad) : x1 + pad]
-    ka = cv2.dilate(ca.astype(np.uint8), np.ones((2 * pad + 1, 2 * pad + 1), np.uint8))
-    return bool((ka.astype(bool) & cb).any())
-
-
-def _overlap(a: np.ndarray, b: np.ndarray, ba, bb) -> int:
-    y0, y1, x0, x1 = max(ba[0], bb[0]), min(ba[1], bb[1]), max(ba[2], bb[2]), min(ba[3], bb[3])
-    if y0 >= y1 or x0 >= x1:
-        return 0
-    return int((a[y0:y1, x0:x1] & b[y0:y1, x0:x1]).sum())
+def _touching(a: np.ndarray, b: np.ndarray) -> bool:
+    """True when masks overlap or touch (also across the 360° seam)."""
+    ka = cv2.dilate(a.astype(np.uint8), np.ones((5, 5), np.uint8))
+    if (ka.astype(bool) & b).any():
+        return True
+    return bool((a[:, :2].any(axis=1) & b[:, -2:].any(axis=1)).any() or (a[:, -2:].any(axis=1) & b[:, :2].any(axis=1)).any())
 
 
 def merge_view_detections(
@@ -361,32 +264,27 @@ def merge_view_detections(
     """
     clusters: List[dict] = []
     for label, score, mask, vi in sorted(items, key=lambda t: -t[1]):
-        box = _bbox(mask)
-        if box is None:
-            continue
         area = int(mask.sum())
+        if area == 0:
+            continue
         target = None
         for c in clusters:
             if c["label"] != label:
                 continue
-            inter = _overlap(c["mask"], mask, c["box"], box)
+            inter = int((c["mask"] & mask).sum())
             if inter / max(1, min(area, c["area"])) >= overlap:
                 target = c
                 break
-            if vi not in c["views"] and _touching(c["mask"], mask, c["box"], box):
+            if vi not in c["views"] and _touching(c["mask"], mask):
                 target = c
                 break
         if target is None:
-            clusters.append(
-                {"label": label, "score": score, "mask": mask.copy(), "area": area, "views": {vi}, "box": box}
-            )
+            clusters.append({"label": label, "score": score, "mask": mask.copy(), "area": area, "views": {vi}})
         else:
             target["mask"] |= mask
             target["area"] = int(target["mask"].sum())
             target["score"] = max(target["score"], score)
             target["views"].add(vi)
-            b = target["box"]
-            target["box"] = (min(b[0], box[0]), max(b[1], box[1]), min(b[2], box[2]), max(b[3], box[3]))
     return [(c["label"], c["score"], c["mask"]) for c in clusters]
 
 

@@ -132,22 +132,6 @@ def test_merge_split_and_duplicate_detections():
     assert len(merge_view_detections([("car", 0.9, seam_l, 0), ("person", 0.9, seam_r, 1)])) == 2
 
 
-def test_block_coverage_matches_brute_force():
-    """The ERP block shortcut must see exactly what a full-image projection sees."""
-    from src.core.erp import project_dirs
-
-    uu, vv = np.meshgrid(np.arange(HW[1], dtype=np.float64), np.arange(HW[0], dtype=np.float64))
-    dirs = erp_to_dir(uu, vv, HW)
-    rng = np.random.default_rng(0)
-    views = [View(180, 0, 90, 200, 150), View(0, 90, 100, 128, 128), View(33, -80, 120, 160, 90), View(-170, 40, 60, 300, 300)]
-    views += [View(float(rng.uniform(-180, 180)), float(rng.uniform(-89, 89)), float(rng.uniform(40, 140)), 256, 192) for _ in range(12)]
-    for v in views:
-        x, y, front = project_dirs(dirs, v)
-        truth = front & (x >= -0.5) & (x <= v.width - 0.5) & (y >= -0.5) & (y <= v.height - 0.5)
-        got = view_coverage(v, HW)
-        assert (got != truth).sum() == 0, v
-
-
 def test_is_erp_shape():
     assert is_erp_shape(2880, 5760) and not is_erp_shape(1080, 1920)
 
