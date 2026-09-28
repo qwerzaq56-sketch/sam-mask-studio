@@ -83,6 +83,9 @@
 - Final Mask 미리보기 → **Mask Preview**(`X`, `Z` 누르고 있기 그대로). 옆 버튼 `Preview: Final / Object`(`V`)로 Final Mask ↔ 선택한 Object의 Mask. 설정 `preview_object`로 기억, 캔버스 표시에 `MASK PREVIEW · 이름`.
 - 전체 키 정리: [`keymap.md`](keymap.md)
 
+### 9단계 · Enter로 기준 지정 (`v0.4-p9`)
+- `Enter`: 현재 프레임을 전파 기준(◎)으로 지정, 이미 기준이면 해제(더블클릭과 같음). 오토 툴이 켜져 있으면 지금처럼 `Apply & Continue`가 먼저, 입력칸에서는 그 칸의 Enter. 길게 눌러도 한 번만.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 
