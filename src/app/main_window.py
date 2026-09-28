@@ -20,6 +20,7 @@ from typing import Callable, List, Optional
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -127,7 +128,7 @@ class MainWindow(QMainWindow):
         bottom_dock = self._dock(
             "Prompt / Detection / Propagation / Logs", self.tabs, Qt.DockWidgetArea.BottomDockWidgetArea
         )
-        self.resizeDocks([left_dock, right_dock], [330, 320], Qt.Orientation.Horizontal)
+        self.resizeDocks([left_dock, right_dock], [330, 360], Qt.Orientation.Horizontal)
         self.resizeDocks([bottom_dock], [280], Qt.Orientation.Vertical)
 
         self.mode_label = QLabel()
@@ -232,7 +233,8 @@ class MainWindow(QMainWindow):
         c.point_picked.connect(self.on_point_selected)
         c.object_picked.connect(self.on_object_picked)
         c.brush_finished.connect(self.on_brush)
-        c.region_finished.connect(self.on_region)
+        c.region_box.connect(self.on_region_box)
+        c.tool_target_fn = self._tool_target
         c.brush_size_changed.connect(lambda px: self.properties_panel.set_brush_size(px))
 
         o = self.objects_panel
@@ -254,13 +256,13 @@ class MainWindow(QMainWindow):
         p.clear_points_requested.connect(lambda: self._prompt(self.session.clear_points))
         p.clear_box_requested.connect(lambda: self._prompt(self.session.clear_box))
         p.finish_requested.connect(self.finish_editing)
-        p.brush_toggled.connect(self.set_brush)
+        p.brush_tool_selected.connect(self.set_brush_tool)
         p.fill_holes_requested.connect(lambda a: self._layer(lambda: self.session.fill_holes(a), "Holes filled"))
         p.remove_specks_requested.connect(
             lambda a: self._layer(lambda: self.session.remove_specks(a), "Specks removed")
         )
         p.object_fill_requested.connect(self.object_fill)
-        p.paint_region_toggled.connect(self.set_paint_region)
+        p.region_mode_toggled.connect(self.set_region_mode)
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
         p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))
@@ -341,7 +343,11 @@ class MainWindow(QMainWindow):
         editing_obj = project.get(s.editing) if s.editing is not None else None
         mode = s.effective_mode
         if s.mode == Mode.EDIT and editing_obj is not None:
-            banner = f"Editing: {editing_obj.name}" + ("  ·  BRUSH" if self.canvas.brush_mode else "")
+            banner = f"Editing: {editing_obj.name}"
+            if self.canvas.brush_mode:
+                banner += "  ·  " + self.canvas.brush_tool.replace("_", " ").upper()
+            elif self.canvas.region_mode:
+                banner += "  ·  REGION BOX"
         elif s.mode == Mode.NEW_OBJECT:
             banner = "New Object: click or drag a box"
         elif mode == Mode.NEW_OBJECT:
@@ -350,8 +356,8 @@ class MainWindow(QMainWindow):
             banner = ""
         if mode != Mode.EDIT and self.canvas.brush_mode:
             self.set_brush(False, redraw=False)
-        if s.mode != Mode.EDIT and self.canvas.paint_region:
-            self.set_paint_region(False, redraw=False)
+        if s.mode != Mode.EDIT and self.canvas.region_mode:
+            self.set_region_mode(False, redraw=False)
         self.canvas.set_region(s.region)
         self.properties_panel.set_region(s.region)
         self.canvas.set_mode(mode, banner)
@@ -392,8 +398,13 @@ class MainWindow(QMainWindow):
             mode_text = "No Objects yet — left click or drag a box to create the first one, or use a SAM3 prompt"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
             mode_text = "BRUSH — drag: add · Ctrl+drag: subtract · Ctrl+wheel: size · wheel: zoom · B: brush off"
-            if self.canvas.paint_region:
-                mode_text = "REGION — drag: paint the tool region · Ctrl+drag: erase it · Ctrl+wheel: size"
+            if self.canvas.brush_tool != "paint":
+                mode_text = (
+                    f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — paint where the tool should act"
+                    " · Ctrl+wheel: size · wheel: zoom"
+                )
+        if s.mode == Mode.EDIT and self.canvas.region_mode:
+            mode_text = "REGION BOX — drag: add a box to the region · Ctrl+drag: remove a box"
         self.mode_label.setText(self._busy or mode_text)
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine
@@ -597,14 +608,19 @@ class MainWindow(QMainWindow):
         self._prompt(lambda: self.session.click(x, y, positive))
 
     def set_brush(self, on: bool, redraw: bool = True) -> None:
-        """Turn Brush editing on/off (only possible while an Object is in Edit)."""
-        on = bool(on) and self.session.mode == Mode.EDIT and not self._busy
+        """Turn the Paint brush on/off (only possible while an Object is in Edit)."""
+        self.set_brush_tool("paint" if on else "", redraw)
+
+    def set_brush_tool(self, tool: str, redraw: bool = True) -> None:
+        """Pick the brush tool ("" = brush off): paint | fill_holes | remove_specks | object_fill."""
+        on = bool(tool) and self.session.mode == Mode.EDIT and not self._busy
+        if on:
+            self.canvas.set_brush_tool(tool)
+            if self.canvas.region_mode:
+                self.set_region_mode(False, redraw=False)
         self.canvas.set_brush_mode(on)
         self.act_brush.setChecked(on)
-        if not on and self.canvas.paint_region:  # a region is painted with the brush
-            self.canvas.set_paint_region(False)
-            self.properties_panel.set_paint_region(False)
-        self.properties_panel.set_brush(on)
+        self.properties_panel.set_brush_tool(tool if on else "")
         self.properties_panel.set_brush_size(self.canvas.brush_size)
         if on:
             self.canvas.setFocus()
@@ -622,13 +638,15 @@ class MainWindow(QMainWindow):
         self.settings.save(self.settings_path)
         self._update_overlays()
 
-    def set_paint_region(self, on: bool, redraw: bool = True) -> None:
-        """Brush strokes paint the tool region (turns the Brush on) or the mask again."""
+    def set_region_mode(self, on: bool, redraw: bool = True) -> None:
+        """A drag on the image sets the tool region (box) instead of a SAM2 box; turns the brush off."""
         on = bool(on) and self.session.mode == Mode.EDIT and not self._busy
-        self.canvas.set_paint_region(on)
-        self.properties_panel.set_paint_region(on)
-        if on and not self.canvas.brush_mode:
-            self.set_brush(True, redraw=False)
+        if on and self.canvas.brush_mode:
+            self.set_brush_tool("", redraw=False)
+        self.canvas.set_region_mode(on)
+        self.properties_panel.set_region_mode(on)
+        if on:
+            self.canvas.setFocus()
         if redraw:
             self.refresh()
 
@@ -636,9 +654,24 @@ class MainWindow(QMainWindow):
         self.session.set_region(region)
         self.refresh()
 
-    def object_fill(self, max_grow: int) -> None:
+    def on_region_box(self, x0: float, y0: float, x1: float, y1: float, subtract: bool) -> None:
+        self.session.add_region_box((x0, y0, x1, y1), subtract)
+        self.refresh()
+
+    def _tool_target(self, tool: str):
+        """For a tool brush stroke: the edited mask with *tool* applied everywhere."""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            return self.session.tool_result(tool, **self.properties_panel.tool_settings())
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def object_fill(self, max_grow: int, sensitivity: int = 50) -> None:
         self.statusBar().showMessage("Object Fill…")
-        self._layer(lambda: self.session.object_fill(max_grow), "Object Fill: grown to the object's edges")
+        self._layer(
+            lambda: self.session.object_fill(max_grow, sensitivity),
+            f"Object Fill: grown to the object's edges (sensitivity {sensitivity})",
+        )
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""

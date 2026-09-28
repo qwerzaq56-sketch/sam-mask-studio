@@ -153,13 +153,24 @@ def test_refine_tools_are_separate_and_grow_to_edges():
     assert grown.sum() > 0.97 * truth.sum() and not (grown & ~(truth > 0)).any()
     assert not grow_to_edges(img, seed > 0, 5)[100, 38]  # growth is capped at max_grow
 
+    # sensitivity: a background gradient toward the object's color is taken more readily when higher
+    rng = np.random.default_rng(0)
+    ramp = np.zeros((200, 200, 3), np.float32)
+    ramp[:] = np.linspace(60, 220, 200)[None, :, None]
+    left = np.zeros((200, 200), bool)
+    left[60:140, 20:60] = True
+    ramp[left] = 60
+    ramp = np.clip(ramp + rng.normal(0, 12, ramp.shape), 0, 255).astype(np.uint8)
+    sizes = [grow_to_edges(ramp, left, 60, s).sum() for s in (10, 50, 90)]
+    assert sizes[0] <= sizes[1] <= sizes[2] and sizes[0] < sizes[2]
+
     region = np.zeros((200, 200), bool)
     region[:, 100:] = True
     half = within(region, seed > 0, grown)
     assert half[100, 150] and not half[100, 50]
 
 
-def test_region_painted_with_brush_limits_the_tools(qapp, win):
+def test_region_box_limits_the_tools(qapp, win):
     import numpy as np
 
     from tests.app.test_gui import canvas_pos
@@ -171,14 +182,21 @@ def test_region_painted_with_brush_limits_the_tools(qapp, win):
     t[25, 25] = t[35, 35] = False  # two holes, one on each side
     s.brush(t)
     win.refresh()
-    win.properties_panel.region_btn.click()  # paint the region: turns the brush on
-    assert win.canvas.paint_region and win.canvas.brush_mode
-    win.canvas.set_brush_size(40)
-    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 36, 36))
-    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 36, 36))
+    win.act_brush.trigger()
+    win.properties_panel.region_btn.click()  # region boxes: turns the brush off
+    assert win.canvas.region_mode and not win.canvas.brush_mode
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 31, 31))
+    QTest.mouseMove(win.canvas, canvas_pos(win, 45, 45))
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 45, 45))
     qapp.processEvents()
     assert s.region is not None and s.region[35, 35] and not s.region[25, 25]
-    assert s.editing_frame().mask.sum() == t.sum()  # painting the region left the mask alone
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 40, 40))
+    QTest.mouseMove(win.canvas, canvas_pos(win, 45, 45))
+    QTest.mouseRelease(
+        win.canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, canvas_pos(win, 45, 45)
+    )
+    assert s.region[35, 35] and not s.region[42, 42]  # Ctrl+drag cut a box out
+    assert s.editing_frame().mask.sum() == t.sum() and len(s.editing_frame().points) == 1  # no SAM2 box
     win.properties_panel.refine_area.setValue(5)
     win.properties_panel.fill_btn.click()
     m = s.editing_frame().mask
@@ -188,7 +206,7 @@ def test_region_painted_with_brush_limits_the_tools(qapp, win):
     win.properties_panel.fill_btn.click()
     assert s.editing_frame().mask[25, 25]
     win.finish_editing()
-    assert not win.canvas.paint_region and s.region is None
+    assert not win.canvas.region_mode and s.region is None
 
 
 def test_object_fill_button(qapp, win):
@@ -199,3 +217,47 @@ def test_object_fill_button(qapp, win):
     win.refresh()
     win.properties_panel.object_fill_btn.click()
     assert s.editing_frame().mask.sum() >= before  # never shrinks (a flat test image may not grow)
+
+
+# --- Merge keeps the name of the first Object selected --------------------------
+
+
+def test_merge_uses_first_selected_name(qapp, win):
+    ids = make_objects(win, 3)
+    win.session.project.rename(ids[2], "Tripod")
+    win.refresh()
+    tree = win.objects_panel.tree
+    tree.topLevelItem(2).setSelected(True)  # picked first
+    tree.topLevelItem(0).setSelected(True)
+    tree.topLevelItem(1).setSelected(True)
+    assert win.objects_panel.selected_ids() == [ids[2], ids[0], ids[1]]
+    win.objects_panel.merge_btn.click()
+    settle(qapp)
+    assert [o.name for o in win.session.project.objects] == ["Tripod"]
+
+
+def test_tool_brush_applies_only_where_painted(qapp, win):
+    from tests.app.test_gui import canvas_pos
+
+    s = win.session
+    win.new_object()
+    s.click(30, 30)
+    t = s.editing_frame().mask.copy()
+    t[25, 25] = t[35, 35] = False
+    s.brush(t)
+    win.refresh()
+    p = win.properties_panel
+    p.refine_area.setValue(5)
+    p.tool_btns["fill_holes"].click()
+    assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
+    win.canvas.set_brush_size(8)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
+    assert win.canvas._stroke_mask[35, 35] and not win.canvas._stroke_mask[25, 25]  # live preview
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 35, 35))
+    qapp.processEvents()
+    m = s.editing_frame().mask
+    assert m[35, 35] and not m[25, 25]
+    p.tool_btns["fill_holes"].click()  # clicking the active tool turns the brush off
+    assert not win.canvas.brush_mode
+    win.act_brush.trigger()  # B = Paint
+    assert win.canvas.brush_tool == "paint" and p.brush_btn.isChecked()

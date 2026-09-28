@@ -157,10 +157,21 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - **Object Fill** (`core/refine.grow_to_edges`): grows the mask outward, at most N px, to where
   the object's colors end — GrabCut on a crop, mask = sure FG, an N-px band = probably BG,
   beyond = sure BG; only growth touching the mask is kept, never shrinks. No SAM run.
-- **Paint Region**: brush strokes paint a cyan region instead of the mask (Ctrl+drag erases);
-  the three tools then act only inside it (`refine.within`). Without a region they act on the
-  whole mask, as before. The region is UI state (`Session.region`): not saved, not undone,
+- **Paint Region** (replaced by Region Box in P2.1): a painted region the three tools act in
+  (`refine.within`); without one they act on the whole mask. The region is UI state (`Session.region`): not saved, not undone,
   cleared when leaving Edit or changing image.
+
+**P2.1 — feedback on P2** (`v0.3-p2.1`)
+- Merge names the result after the first Object selected (the panel keeps selection order).
+- Properties: Mask / Edit Layer tabs, each scrollable; the how-to shows only with nothing selected.
+- Object Fill sensitivity (0-100): band pixels join when log p(object color) − log p(background
+  color) from GrabCut's learned GMMs exceeds (50 − s)/8, smoothed and kept connected. Real
+  photo check (mask eroded 10 px): s 20/50/80 → 78/93/96 % recovered, 1.6/3.6/9 % spill.
+- **Tool brushes** (what the user meant by "paint versions"): Paint / Fill Holes / Remove
+  Specks / Object Fill. A tool stroke shows the tool's full-mask result (computed at the press,
+  `Session.tool_result`) only where the stroke passes, live; release commits it to the layer.
+- Paint Region → **Region Box**: drag boxes to set the region (Ctrl+drag removes a box); the
+  "Apply at once" buttons act inside it, or on the whole mask without one.
 
 ### Remaining work
 

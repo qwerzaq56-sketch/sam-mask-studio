@@ -64,6 +64,13 @@ def test_detections_become_named_objects_in_one_undo_step():
     assert len(p.objects) == 2
 
 
+def test_merge_is_named_after_the_first_id_given():
+    p = Project(KEYS)
+    a = p.add_object("a.jpg", FrameState.from_mask(m([0])), Source.SAM2_POINT)
+    b = p.add_object("a.jpg", FrameState.from_mask(m([1])), Source.SAM2_POINT)
+    assert p.get(p.merge([b, a])).name == "Object #2"
+
+
 def test_merge_unions_per_frame_and_replaces_originals():
     p = Project(KEYS)
     a = p.add_object("a.jpg", FrameState.from_mask(m([0])), Source.SAM2_POINT)
@@ -78,7 +85,7 @@ def test_merge_unions_per_frame_and_replaces_originals():
     assert merged.mask("c.jpg").sum() == 8  # only B there
     assert merged.frames["a.jpg"].status == FrameStatus.MANUAL
     assert merged.frames["b.jpg"].status == FrameStatus.PROPAGATED
-    assert merged.source == Source.MERGED and merged.name == "Object #1 + Object #2"
+    assert merged.source == Source.MERGED and merged.name == "Object #1"
     p.undo()
     assert {o.id for o in p.objects} == {a, b}
 

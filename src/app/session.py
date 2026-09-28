@@ -90,7 +90,7 @@ class Session:
         self.mode = Mode.IDLE
         self.editing: Optional[int] = None  # id of the one Object in Edit
         self.selected_point: Optional[int] = None
-        # Brush-painted area the edit-layer tools are limited to (None: the whole mask).
+        # Box region the whole-mask tool buttons are limited to (None: the whole mask).
         # UI state for the Object in Edit on this image: not saved, not undone.
         self.region: Optional[np.ndarray] = None
         self.detections: List[Detection] = []
@@ -330,29 +330,60 @@ class Session:
         return self._set_target(mask)
 
     def set_region(self, region: Optional[np.ndarray]) -> None:
-        """Limit the edit-layer tools to *region* (a painted bool mask); None or empty = everywhere."""
+        """Limit the whole-mask tools to *region* (a bool mask); None or empty = everywhere."""
         self.region = region if region is not None and region.any() else None
 
-    def _tool(self, fn: Callable[[np.ndarray], np.ndarray]) -> bool:
-        """Apply a mask tool to the edited frame (inside the region, if any) as part of the edit layer."""
+    def add_region_box(self, box: Box, subtract: bool = False) -> None:
+        """Add a dragged box to the tool region (or cut it out with *subtract*)."""
+        if self.image is None:
+            return
+        h, w = self.working_hw()
+        x0, y0, x1, y1 = (int(round(v)) for v in box)
+        x0, x1 = sorted((max(0, x0), min(w - 1, x1)))
+        y0, y1 = sorted((max(0, y0), min(h - 1, y1)))
+        region = self.region.copy() if self.region is not None else np.zeros((h, w), bool)
+        region[y0 : y1 + 1, x0 : x1 + 1] = not subtract
+        self.set_region(region)
+
+    def tool_result(
+        self, tool: str, max_area: int = 200, max_grow: int = 20, sensitivity: int = 50
+    ) -> Optional[np.ndarray]:
+        """The edited mask with *tool* applied everywhere (None when there is no mask).
+
+        ``fill_holes`` | ``remove_specks`` | ``object_fill``. Brush tools show it
+        only where a stroke passes; the buttons apply it inside the region.
+        """
         fs = self.editing_frame()
         if fs is None or fs.mask is None:
+            return None
+        m = fs.mask
+        if tool == "fill_holes":
+            return fill_holes(m, max_area)
+        if tool == "remove_specks":
+            return remove_specks(m, max_area)
+        if tool == "object_fill":
+            return grow_to_edges(self.image, m, max_grow, sensitivity) if self.image is not None else None
+        raise ValueError(f"Unknown tool: {tool}")
+
+    def _tool(self, tool: str, **settings) -> bool:
+        """Apply a tool to the edited frame (inside the region, if any) as part of the edit layer."""
+        target = self.tool_result(tool, **settings)
+        fs = self.editing_frame()
+        if target is None or fs is None:
             return False
-        return self._set_target(within(self.region, fs.mask, fn(fs.mask)))
+        return self._set_target(within(self.region, fs.mask, target))
 
     def fill_holes(self, max_area: int) -> bool:
         """Fill enclosed holes up to *max_area* px."""
-        return self._tool(lambda m: fill_holes(m, max_area))
+        return self._tool("fill_holes", max_area=max_area)
 
     def remove_specks(self, max_area: int) -> bool:
         """Remove separate pieces up to *max_area* px (the main piece stays)."""
-        return self._tool(lambda m: remove_specks(m, max_area))
+        return self._tool("remove_specks", max_area=max_area)
 
-    def object_fill(self, max_grow: int) -> bool:
+    def object_fill(self, max_grow: int, sensitivity: int = 50) -> bool:
         """Grow the mask outward (at most *max_grow* px) to the object's edges in the image."""
-        if self.image is None:
-            return False
-        return self._tool(lambda m: grow_to_edges(self.image, m, max_grow))
+        return self._tool("object_fill", max_grow=max_grow, sensitivity=sensitivity)
 
     def discard_edit(self) -> bool:
         """Delete the edit layer: back to the points/prompt-based mask."""
