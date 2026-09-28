@@ -145,6 +145,7 @@ SHORTCUTS = (
         ("Z (hold)", "Show the Final Mask while held"),
         ("X", "Final Mask preview on / off"),
         ("O", "Outline on / off"),
+        ("F", "Edit Changes (the edit layer's green / red tints) on / off"),
         ("Wheel", "Zoom at the cursor"),
         ("Middle-drag / Space+drag", "Pan"),
         ("F1", "This list"),

@@ -217,6 +217,7 @@ class MainWindow(QMainWindow):
         self.act_changes = self._action(
             "Edit Changes",
             self.set_show_changes,
+            ["F"],
             tip="Tint what the edit layer added (green) and removed (red)",
             checkable=True,
         )

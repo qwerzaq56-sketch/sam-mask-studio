@@ -62,6 +62,7 @@ def test_outline_options_and_edit_change_tints(qapp, win):
     win.on_brush(painted)
     styles = lambda: [o.style for o in win.canvas._overlays]  # noqa: E731
     assert "layer_add" not in styles()  # tints are off by default
+    assert win.act_changes.shortcut().toString() == "F"
     win.act_changes.trigger()
     assert "layer_add" in styles() and win.settings.show_edit_changes
     assert win.canvas.outline_visible and win.canvas.outline_width == 1.0
