@@ -15,6 +15,7 @@ from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -35,10 +36,23 @@ from src.core.project import FrameState, MaskObject
 
 THUMB = 56
 BRUSH_TOOLS = (
-    ("paint", "Paint", "Drag = add, Ctrl+drag = subtract (B)"),
+    ("paint", "Paint", "Drag = add, Alt+drag = subtract (B)"),
+    ("restore", "Restore", "Drag over an area; on release the edit layer's changes there are undone (see below)"),
     ("fill_holes", "Fill Holes", "Drag over an area; on release its holes are filled (up to the area below)"),
     ("remove_specks", "Remove Specks", "Drag over an area; on release its specks are removed"),
     ("object_fill", "Object Fill", "Drag over an area; on release the mask grows to the object's edges there"),
+)
+TOOL_CELLS = {  # grid row, column; row 1 holds the Restore options
+    "paint": (0, 0),
+    "restore": (0, 1),
+    "fill_holes": (2, 0),
+    "remove_specks": (2, 1),
+    "object_fill": (3, 0),
+}
+RESTORE_MODES = (
+    ("both", "Restore: added and removed"),
+    ("added", "Restore: remove what was added"),
+    ("removed", "Restore: bring back what was removed"),
 )
 POINT_ROLE = Qt.ItemDataRole.UserRole
 
@@ -135,8 +149,13 @@ class PropertiesPanel(QWidget):
             b.setCheckable(True)
             b.setToolTip(tip + " — Ctrl+wheel = size, wheel = zoom")
             b.clicked.connect(lambda on, t=name: self.brush_tool_selected.emit(t if on else ""))
-            tools.addWidget(b, n // 2, n % 2)
+            tools.addWidget(b, *TOOL_CELLS[name])
             self.tool_btns[name] = b
+        self.restore_mode = QComboBox()
+        for value, text in RESTORE_MODES:
+            self.restore_mode.addItem(text, value)
+        self.restore_mode.setToolTip("What the Restore brush brings back to the point/prompt mask")
+        tools.addWidget(self.restore_mode, 1, 0, 1, 2)
         self.brush_btn = self.tool_btns["paint"]
         self.brush_size = QLabel("")
         self.brush_size.setStyleSheet("color: gray;")
@@ -186,7 +205,7 @@ class PropertiesPanel(QWidget):
         self.region_btn.setCheckable(True)
         self.region_btn.setToolTip(
             "Drag boxes on the image to set the region (cyan) the buttons above act in;\n"
-            "Ctrl+drag removes a box from it. Without a region they act on the whole mask."
+            "Alt+drag removes a box from it. Without a region they act on the whole mask."
         )
         self.region_btn.toggled.connect(self._on_region_mode)
         self.clear_region_btn = QPushButton("Clear Region")
@@ -310,7 +329,9 @@ class PropertiesPanel(QWidget):
         has_mask = editing and frame is not None and frame.mask is not None
         self.brush_btn.setEnabled(editing)
         for name, b in self.tool_btns.items():
-            if name != "paint":
+            if name == "restore":
+                b.setEnabled(editing and frame is not None and frame.edit is not None)
+            elif name != "paint":
                 b.setEnabled(has_mask)
         if not editing:
             self.set_brush_tool("")  # the window turns the canvas brush off itself
@@ -348,6 +369,7 @@ class PropertiesPanel(QWidget):
             "max_area": int(self.refine_area.value()),
             "max_grow": int(self.grow.value()),
             "sensitivity": int(self.sensitivity.value()),
+            "restore": self.restore_mode.currentData(),
         }
 
     def set_region(self, region: Optional[np.ndarray]) -> None:

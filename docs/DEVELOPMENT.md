@@ -30,7 +30,7 @@ The original planning documents are in `docs/specs/` and win over anything here:
 | 01 §9 one Variant per Object, many Objects checked | Variant rows (Objects panel) and thumbnails (Properties) → `Session.select_variant(i, obj_id)` |
 | 01 §10 over-detection left unchecked | Detection checkboxes → `add_checked_detections` |
 | 01 §11 SAM3 Object refined by SAM2 | `predict(points, box, seed_mask=base_mask)` |
-| 01 §12 Preview Final Mask / Export | toolbar `F` (+ hold Alt), Export dialog |
+| 01 §12 Preview Final Mask / Export | toolbar `X` (toggle; editing works in it), Export dialog |
 | 01 §15 Image → DetectionResults | Detections kept per image in `Session` (restored on navigating back; not persisted) |
 | 02 §3 Current must be within Start~End; §8 Current never re-processed | `PropagationPlan`, `MainWindow.propagate` |
 | 02 §6–7 only checked Objects, from their selected Variant | `Session.seeds()` |
@@ -172,6 +172,16 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   `Session.tool_result`) only where the stroke passes, live; release commits it to the layer.
 - Paint Region → **Region Box**: drag boxes to set the region (Ctrl+drag removes a box); the
   "Apply at once" buttons act inside it, or on the whole mask without one.
+
+**P2.2 / P2.3 — brush feel** (`v0.3-p2.2`, `v0.3-p2.3`)
+- Tool brushes no longer compute at the press or preview live: the drag shows the area
+  (yellow) and the tool runs once inside it on release.
+- Subtract is Alt+drag (was Ctrl); Region Box removes with Alt+drag (Ctrl still works).
+- Final Mask preview: `X`, a toggle (Alt-hold peek removed). The brush circle, points, region
+  and a live stroke are drawn over it and editing keeps working.
+- **Restore** brush with a mode box: remove what the edit layer added / bring back what it
+  removed / both (= the prompt mask) inside the brushed area.
+- Toolbar: separator after Outline + width.
 
 ### Remaining work
 

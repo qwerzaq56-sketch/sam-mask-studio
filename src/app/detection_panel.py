@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.app.objects_panel import color_icon, later
+from src.app.objects_panel import color_icon
 from src.core.project import Detection
 from src.core.prompts import split_labels
 

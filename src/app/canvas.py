@@ -9,18 +9,18 @@ depends on the mode the main window sets:
 * EDIT        left / right click report positive / negative ``clicked``,
               clicking a drawn point reports ``point_picked``, dragging reports
               ``box_drawn``. With the Brush on (``brush_mode``) a drag paints
-              and Ctrl+drag subtracts on the edited Object (``brush_finished``);
-              Shift+drag / Ctrl+Shift+drag do the same without turning it on.
-              ``brush_tool`` picks what a stroke does: ``paint`` adds (Ctrl:
-              subtracts); with ``fill_holes`` / ``remove_specks`` /
-              ``object_fill`` a stroke marks an area (yellow) and releasing
+              and Alt+drag subtracts on the edited Object (``brush_finished``);
+              Shift+drag / Alt+Shift+drag do the same without turning it on.
+              ``brush_tool`` picks what a stroke does: ``paint`` adds (Alt:
+              subtracts); with ``restore`` / ``fill_holes`` / ``remove_specks``
+              / ``object_fill`` a stroke marks an area (yellow) and releasing
               reports ``tool_stroke`` so the tool runs inside it once.
               With ``region_mode`` on, a drag reports ``region_box`` instead
-              (Ctrl: subtract); the region is shown in cyan.
+              (Alt or Ctrl: subtract); the region is shown in cyan.
 
-Middle-drag or Space+drag pans, the wheel zooms at the cursor, and holding Alt
-shows the Final Mask. Ctrl+wheel (or Shift+wheel) sets the brush size while
-an Object is in Edit.
+Middle-drag or Space+drag pans and the wheel zooms at the cursor. Ctrl+wheel
+(or Shift+wheel) sets the brush size while an Object is in Edit. The Final
+Mask preview is a toggle; editing keeps working in it.
 """
 
 from __future__ import annotations
@@ -176,7 +176,6 @@ class Canvas(QWidget):
         self._final: Optional[np.ndarray] = None
         self._final_q: Optional[QImage] = None
         self.final_preview = False
-        self._alt_held = False
         self.mode = Mode.IDLE
         self.banner = ""
         self.points: Tuple[Point, ...] = ()
@@ -281,7 +280,7 @@ class Canvas(QWidget):
 
     @property
     def showing_final(self) -> bool:
-        return self.final_preview or self._alt_held
+        return self.final_preview
 
     def set_mode(self, mode: Mode, banner: str = "") -> None:
         self.mode = mode
@@ -416,15 +415,16 @@ class Canvas(QWidget):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, s < 1.0)
 
         if self.showing_final:
+            # the Final Mask in black and white; editing still works on top of it
             if self._final_q is None:
                 final = self._final if self._final is not None else np.zeros((h, w), bool)
                 self._final_q = _qimage(final.astype(np.uint8) * 255)
             painter.drawImage(target, self._final_q)
-            self._draw_banner(painter, "FINAL MASK PREVIEW")
-            return
-
-        painter.drawImage(target, self._image_q)
-        for g in GROUPS:
+            groups = ("edit", "region") if self._stroke_mask is not None else ("region",)
+        else:
+            painter.drawImage(target, self._image_q)
+            groups = GROUPS
+        for g in groups:
             img = self._layers.get(g, ((), None))[1]
             if img is not None:
                 painter.drawImage(target, img)
@@ -452,8 +452,9 @@ class Canvas(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
             painter.drawEllipse(self._mouse, r, r)
-        if self.banner:
-            self._draw_banner(painter, self.banner)
+        banner = "  ·  ".join(t for t in ("FINAL MASK PREVIEW" if self.showing_final else "", self.banner) if t)
+        if banner:
+            self._draw_banner(painter, banner)
 
     def _draw_outlines(self, painter: QPainter, origin: QPointF, scale: float) -> None:
         """Thin outlines in screen pixels: the edited mask (white) and checked candidates (their color)."""
@@ -523,7 +524,7 @@ class Canvas(QWidget):
         return max(1, int(self.brush_size / 2 / self._scale()))
 
     def mousePressEvent(self, event):
-        if self.image is None or self.showing_final:
+        if self.image is None:
             return
         pos, btn = event.position(), event.button()
         if btn == Qt.MouseButton.MiddleButton or (btn == Qt.MouseButton.LeftButton and self._space_held):
@@ -549,7 +550,7 @@ class Canvas(QWidget):
                     return
                 start, value = None, 255  # the stroke only marks where the tool applies
             else:
-                erase = bool(mods & Qt.KeyboardModifier.ControlModifier)
+                erase = bool(mods & Qt.KeyboardModifier.AltModifier)
                 start = base.astype(np.uint8) * 255 if base is not None else None
                 value = 0 if erase else 255
             m = self._brush.start_stroke(x, y, value, start, (h, w), self._brush_radius())
@@ -603,7 +604,9 @@ class Canvas(QWidget):
             x1, y1 = self._clamped(pos)
             if x0 != x1 and y0 != y1:
                 if self.mode == Mode.EDIT and self.region_mode:
-                    subtract = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+                    subtract = bool(
+                        event.modifiers() & (Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.ControlModifier)
+                    )
                     self.region_box.emit(float(x0), float(y0), float(x1), float(y1), subtract)
                 else:
                     self.box_drawn.emit(float(x0), float(y0), float(x1), float(y1))
@@ -648,10 +651,7 @@ class Canvas(QWidget):
 
     def keyPressEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Alt and not event.isAutoRepeat():
-            self._alt_held = True
-            self.update()
-        elif k == Qt.Key.Key_Space and not event.isAutoRepeat():
+        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
             self._space_held = True
             self.setCursor(Qt.CursorShape.OpenHandCursor)
         elif k == Qt.Key.Key_Shift:
@@ -661,10 +661,7 @@ class Canvas(QWidget):
 
     def keyReleaseEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_Alt and not event.isAutoRepeat():
-            self._alt_held = False
-            self.update()
-        elif k == Qt.Key.Key_Space and not event.isAutoRepeat():
+        if k == Qt.Key.Key_Space and not event.isAutoRepeat():
             self._space_held = False
             self._update_cursor()
         elif k == Qt.Key.Key_Shift:
@@ -675,7 +672,7 @@ class Canvas(QWidget):
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):
-        self._alt_held = self._space_held = False
+        self._space_held = False
         if self._brush.is_drawing:
             self._finish_stroke()
         self.update()
