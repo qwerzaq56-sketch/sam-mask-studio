@@ -1050,7 +1050,30 @@ def test_frame_list_names_fold_away(qapp, win):
         __import__("PyQt6.QtWidgets", fromlist=["QStyleOptionViewItem"]).QStyleOptionViewItem()
     )
     assert opt_text().strip() == "1"  # only the ID (and marks)
+    assert win._list_goto.isHidden()  # folded: no Go-to field widening the narrow column
+    assert ip.frame_list.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     win.names_btn.click()
     assert "frame_000.png" in opt_text()
     bar = win._list_dock.titleBarWidget()
     assert win.names_btn.parent() is bar  # in the Frame List title bar
+
+
+def test_focus_and_goto_frames(qapp, win):
+    from PyQt6.QtGui import QKeySequence, QShortcut
+    from PyQt6.QtWidgets import QLineEdit
+
+    ip = win.images_panel
+    assert any(sc.key() == QKeySequence("S") for sc in win.findChildren(QShortcut))
+    gotos = [w for w in win._list_dock.titleBarWidget().findChildren(QLineEdit)]
+    gotos += [w for w in ip.parentWidget().titleBarWidget().findChildren(QLineEdit)]
+    assert len(gotos) == 2  # one in each frame dock
+    gotos[1].setText("4")
+    gotos[1].returnPressed.emit()
+    assert win.session.index == 3 and gotos[1].text() == ""
+    gotos[0].setText("99")
+    gotos[0].returnPressed.emit()
+    assert win.session.index == 3  # out of range: nothing happens
+    ip.list.horizontalScrollBar().setValue(0)
+    win.focus_frame()  # S
+    item_rect = ip.list.visualItemRect(ip.list.item(3))
+    assert ip.list.viewport().rect().intersects(item_rect)
