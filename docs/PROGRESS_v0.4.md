@@ -18,8 +18,16 @@
   - 오토 툴 `Apply & Recompute` → `Apply & Continue` (`Enter`).
 - 단축키 창(F1), 툴팁, README 반영. 테스트: `tests/app/test_v04_features.py`
 
+### 2단계 · 프레임 상태 보강 (`v0.4-p2`)
+- **상태별 색**: 목록과 하단 줄의 행/글자색 — `★` 파랑, `⚠` 주황, `✕` 빨강, `–` 회색, `✓` 기본.
+- **개수 요약**: Frame List 아래와 Frames 줄 오른쪽에 `★1 ✓4 ⚠1 ✕1`. 툴팁에 범례.
+- **선택 Object 기준 표시**: Frame List 제목줄 `1` 버튼(설정 `marks_one_object`로 기억).
+  - 켜면 Properties에 보이는 Object만 셈하고, 그 Object의 Mask가 없는 이미지는 `–`.
+  - Object가 없거나 여럿 선택이면 전체 기준.
+- **`[` / `]`**: 이전 / 다음 문제 이미지(`⚠` `✕`, 선택 Object 기준이면 `–`도). 끝에서 처음으로 돌아감.
+- Properties 안내 문구의 옛 이름(`Edit`, `Brush: B`) 수정.
+
 ## 진행 예정
-- 2단계 · 프레임 상태 보강: 전체/선택 Object 기준 전환, 상태별 색, 개수 요약, `[` / `]` 문제 프레임 이동, 범례
 - 3단계 · Export 전 검사: 이미지/마스크 수, 빈 마스크, 문제 프레임 요약 후 Export / Cancel
 - 4단계 · Properties 접기: Edit Layer 탭의 Settings / Layer 섹션 접기(상태 기억)
 

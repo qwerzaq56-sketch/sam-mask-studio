@@ -183,8 +183,11 @@ class MainWindow(QMainWindow):
         lb.setContentsMargins(0, 0, 0, 0)
         lb.setSpacing(2)
         lb.addWidget(self.images_panel.frame_list, 1)
+        lb.addWidget(self.images_panel.summary_label())  # ★ ✓ ⚠ ✕ counts
         lb.addLayout(self._frame_tools())
-        self.images_panel.layout().addLayout(self._frame_tools())  # and under the strip
+        strip_row = self._frame_tools()  # and under the strip, with its own counts
+        strip_row.addWidget(self.images_panel.summary_label())
+        self.images_panel.layout().addLayout(strip_row)
         list_dock = self._dock("Frame List", list_box, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.splitDockWidget(list_dock, left_dock, Qt.Orientation.Horizontal)
         self.names_btn = QToolButton()  # left of the close button: fold the file names away
@@ -193,7 +196,15 @@ class MainWindow(QMainWindow):
         self.names_btn.setAutoRaise(True)
         self.names_btn.setToolTip("Show the file names (off: only IDs and marks, a narrow list)")
         self.names_btn.toggled.connect(self.set_frame_names)
-        list_dock.setTitleBarWidget(DockTitleBar(list_dock, [self.names_btn]))
+        self.marks_btn = QToolButton()  # the marks for the shown Object only
+        self.marks_btn.setText("1")
+        self.marks_btn.setCheckable(True)
+        self.marks_btn.setAutoRaise(True)
+        self.marks_btn.setToolTip(
+            "Marks for the selected Object only: – where it has no mask (off: every Object)"
+        )
+        self.marks_btn.toggled.connect(self.set_marks_one_object)
+        list_dock.setTitleBarWidget(DockTitleBar(list_dock, [self.marks_btn, self.names_btn]))
         self._list_dock = list_dock
         view_menu = self.menuBar().addMenu("&View")
         for d in (list_dock, left_dock, right_dock, frames_dock):
@@ -311,6 +322,7 @@ class MainWindow(QMainWindow):
         self.act_shortcuts.triggered.connect(self.show_shortcuts)
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
+        self.marks_btn.setChecked(self.settings.marks_one_object)
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
@@ -326,6 +338,8 @@ class MainWindow(QMainWindow):
         for seq in ("Right", "PgDown"):
             key(seq, lambda: self.step(1))
         key("S", self.focus_frame)
+        key("[", lambda: self.step_problem(-1))
+        key("]", lambda: self.step_problem(1))
         key("Up", lambda: self.step_object(-1))
         key("Down", lambda: self.step_object(1))
 
@@ -493,7 +507,7 @@ class MainWindow(QMainWindow):
             self.detection_panel.select_btn.setChecked(False)
             self.detection_panel.select_btn.blockSignals(False)
         self.images_panel.set_reference(self._reference)  # before the marks: they draw the ◎
-        self.images_panel.update_marks(project)
+        self.images_panel.update_marks(project, self.marks_object())
         self.images_panel.set_current(s.index)
         ref = self._reference if self._reference is not None else s.index
         self.propagation_panel.set_reference(ref, self._reference is not None)
@@ -923,6 +937,26 @@ class MainWindow(QMainWindow):
         self.resizeDocks([self._list_dock], [210 if on else 80], Qt.Orientation.Horizontal)
         self.settings.frame_list_names = bool(on)
         self.settings.save(self.settings_path)
+
+    def marks_object(self) -> Optional[int]:
+        """The Object the frame marks are for (None: every Object)."""
+        return self.shown_object_id() if self.settings.marks_one_object else None
+
+    def set_marks_one_object(self, on: bool) -> None:
+        self.settings.marks_one_object = bool(on)
+        self.settings.save(self.settings_path)
+        self.images_panel.update_marks(self.session.project, self.marks_object())
+
+    def step_problem(self, step: int) -> None:
+        """[ / ]: the previous / next image marked ⚠ or ✕ (and – with the one-Object marks)."""
+        if self.session.key is None:
+            return
+        i = self.images_panel.problem_frame(self.session.index, step)
+        if i is None:
+            self.log("No ⚠ / ✕ images" + (" / images without this Object" if self.marks_object() is not None else ""))
+            return
+        self.go_to(i)
+        self.focus_frame()
 
     def set_show_changes(self, on: bool) -> None:
         self.settings.show_edit_changes = bool(on)
