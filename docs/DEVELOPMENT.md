@@ -310,6 +310,19 @@ to `main` and tagged `v0.3.0`; the stable launcher runs it.
 git HEAD, hard-linked checkpoints, relative launcher). Checkpoint paths inside the app folder are
 saved relative in `config.local.json`. Verified after moving the folder, with a clean environment.
 
+**v0.4.0 released** (2026-09-29): an external UX review, checked against the code, plus a UI
+audit on a real 123-image folder (tags `v0.4-p1` … `v0.4-p7.1`; details in `PROGRESS_v0.4.md`,
+`ui-issues.md`).
+- p1: work bar over the canvas (frame · Object (source) · mode · file); `Points`, `Show Changes`,
+  `Apply & Continue` names. p2: colored frame marks, counts, one-Object marks (`–`), `[` / `]` to
+  problem frames. p3: `storage.check_export` shown in the Export dialog. p4: foldable
+  `CollapsibleBox` sections (Settings / Layer), state in the settings.
+- p5 / p6 / p7: buttons use `ui_util.shrinkable` (Preferred + a 24 px stub; `Ignored` let layouts
+  squeeze them to 0 — the hidden Batch buttons); the Frame List delegate paints ID / marks / name in
+  fixed columns; long labels never set a minimum width (dock widths stay put); no canvas banner;
+  empty states hidden; side docks start within ~55 % of a small window; natural-size dock title
+  buttons, compact title when the Frame List is folded.
+
 ### Remaining work
 
 1. P6 — COLMAP: read a COLMAP model, load its masks as Objects, write edits back to the `.bin`

@@ -1,12 +1,14 @@
 # SAM Mask Studio v0.4 진행 현황
 
+**v0.4.0 릴리스 (2026-09-29):** 아래 1~7단계(`v0.4-p1` ~ `v0.4-p7.1`)가 `main`에 병합되고 `v0.4.0` 태그가 붙었습니다. 안정판 실행기와 포터블(`H:\Dev\Masking\dist\SAMMaskStudio`)도 v0.4.0입니다.
+
 외부(GPT) UX 리뷰 중 코드와 대조해서 타당했던 항목만 반영합니다. v0.3 기록: [`PROGRESS_v0.3.md`](PROGRESS_v0.3.md)
 
 적어두는 곳: 기능 아이디어 [`ideas.md`](ideas.md) · 작은 UI 문제 [`ui-issues.md`](ui-issues.md)
 
 - 브랜치 `dev`에서 단계별 브랜치(`feat/v04-pN-…`)로 작업 → `--no-ff` 병합 → 태그 `v0.4-pN`.
 - 되돌리기: 단계 전체 `git revert -m 1 <병합 커밋>`
-- 실행: `SAM Mask Studio (dev).bat` = 최신 dev, `SAM Mask Studio.bat` = 안정판 v0.3.0
+- 실행: `SAM Mask Studio (dev).bat` = 최신 dev, `SAM Mask Studio.bat` = 안정판 v0.4.0 (이전 안정판은 태그 `v0.3.0`)
 
 ## 완료
 
@@ -76,7 +78,7 @@
 - 이름을 접은 좁은 모드에서 목록 아래 개수 요약이 두 줄로 나오던 것 → 좁은 모드에서는 숨김(Frames 줄 요약은 유지), 넓을 때는 줄바꿈 없이 한 줄.
 
 ## 진행 예정
-- 없음 (v0.4 리뷰 반영 1~4단계 완료). 릴리스(`main` 병합, `v0.4.0` 태그)는 확인 후 진행.
+- 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과

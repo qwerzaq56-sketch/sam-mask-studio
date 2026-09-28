@@ -6,7 +6,7 @@
 <p align="center"><i>Object-based masking tool for image sequences and 3DGS / COLMAP datasets:
 SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carries masks across frames.</i></p>
 
-현재 버전: **v0.3.1** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
+현재 버전: **v0.4.0** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
 
 | 문서 | 내용 |
 |---|---|
@@ -189,7 +189,7 @@ tools/        포터블 빌드
 vendor/       SAM2 / SAM3 (git submodule)
 ```
 
-변경은 단계별 브랜치로 만들어 `dev`에 `--no-ff`로 병합하고 `v0.3-pN` 태그를 붙입니다. 릴리스는 `main`과 `vX.Y.Z` 태그입니다.
+변경은 단계별 브랜치로 만들어 `dev`에 `--no-ff`로 병합하고 `v0.4-pN` 같은 단계 태그를 붙입니다. 릴리스는 `main`과 `vX.Y.Z` 태그입니다.
 
 ## License
 
