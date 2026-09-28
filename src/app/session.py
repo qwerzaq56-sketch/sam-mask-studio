@@ -100,12 +100,12 @@ class Session:
         self.editing: Optional[int] = None  # id of the one Object in Edit
         self.selected_point: Optional[int] = None
         # Box region the whole-mask tool buttons are limited to (None: the whole mask).
-        # UI state for the Object in Edit on this image: not saved, not undone.
+        # UI state for the Object in Edit on this image: not saved, but undoable (below).
         self.region: Optional[np.ndarray] = None
-        # Region changes join Ctrl+Z / Ctrl+Y: each entry remembers the project's
-        # history position, so region and project steps undo in the order they happened.
-        self._region_undo: List[Tuple[int, Optional[np.ndarray]]] = []  # (depth, region before)
-        self._region_redo: List[Tuple[int, int, Optional[np.ndarray]]] = []  # (depth, actions, region)
+        # Region and Paint-mode pick changes join Ctrl+Z / Ctrl+Y: each entry remembers the
+        # project's history position, so they undo in order with the project's own steps.
+        self._ui_undo: List[Tuple[int, str, Optional[np.ndarray]]] = []  # (depth, kind, value before)
+        self._ui_redo: List[Tuple[int, int, str, Optional[np.ndarray]]] = []  # (depth, actions, kind, value)
         # Auto tools (object_fill | fill_holes | remove_specks): one result computed from the
         # mask. Fill takes all of it; Paint takes the parts picked with strokes (the rest is
         # gray). Nothing is written until the tool closes; switching modes keeps both.
@@ -355,15 +355,25 @@ class Session:
         region = region if region is not None and region.any() else None
         if region is None and self.region is None:
             return
-        self._region_undo.append((self.project.undo_depth, self.region))
-        self._region_redo.clear()
+        self._record("region")
         self.region = region
+
+    UI_STATE = {"region": "region", "picks": "_picked"}  # undoable UI state -> attribute
+
+    def _record(self, kind: str) -> None:
+        """Remember the current *kind* value as an undo step (before it changes)."""
+        self._ui_undo.append((self.project.undo_depth, kind, getattr(self, self.UI_STATE[kind])))
+        self._ui_redo.clear()
+
+    def _forget(self, kind: Optional[str] = None) -> None:
+        """Drop the history of *kind* (all UI state when None): it no longer means anything."""
+        self._ui_undo = [e for e in self._ui_undo if kind is not None and e[1] != kind]
+        self._ui_redo = [e for e in self._ui_redo if kind is not None and e[2] != kind]
 
     def _reset_region(self) -> None:
         """Leaving the edit target ends its region, the region's history and any auto-tool result."""
         self.region = None
-        self._region_undo.clear()
-        self._region_redo.clear()
+        self._forget()
         self._result = None
         self._picked = None
 
@@ -375,6 +385,7 @@ class Session:
         if tool != self.auto_tool:
             self._result = None
             self._picked = None
+            self._forget("picks")
         self.auto_tool = tool
 
     def set_auto_mode(self, mode: str) -> None:
@@ -454,6 +465,7 @@ class Session:
         if self._result is None:
             return False
         picked = self._picked if self._picked is not None else np.zeros(area.shape, bool)
+        self._record("picks")
         self._picked = picked & ~area if unpick else picked | area
         return True
 
@@ -464,6 +476,7 @@ class Session:
             return False
         changed = added | removed
         everything = self._picked is not None and not (changed & ~self._picked).any()
+        self._record("picks")
         self._picked = np.zeros(added.shape, bool) if everything else np.ones(added.shape, bool)
         return True
 
@@ -475,6 +488,7 @@ class Session:
         """
         taken, fs, r = self.auto_taken(), self.editing_frame(), self._result
         self._picked = None
+        self._forget("picks")  # applied: Ctrl+Z now undoes the application itself
         if taken is None or fs is None or not taken.any():
             return False
         return self._set_target(freeze(np.where(taken, r[1], fs.mask)))
@@ -483,6 +497,7 @@ class Session:
         """Leave the auto tool; with *apply*, write what it takes in first."""
         done = self.apply_auto() if apply else False
         self._result = self._picked = None
+        self._forget("picks")
         self.auto_tool = None
         return done
 
@@ -613,35 +628,37 @@ class Session:
 
     @property
     def can_undo(self) -> bool:
-        return self.project.can_undo or self._region_step_undo()
+        return self.project.can_undo or self._ui_step_undo()
 
     @property
     def can_redo(self) -> bool:
-        return self.project.can_redo or self._region_step_redo()
+        return self.project.can_redo or self._ui_step_redo()
 
-    def _region_step_undo(self) -> bool:
-        """The next undo is a region change (made after the project's current state)."""
-        return bool(self._region_undo) and self._region_undo[-1][0] == self.project.undo_depth
+    def _ui_step_undo(self) -> bool:
+        """The next undo is a region / pick change (made after the project's current state)."""
+        return bool(self._ui_undo) and self._ui_undo[-1][0] == self.project.undo_depth
 
-    def _region_step_redo(self) -> bool:
-        top = self._region_redo[-1] if self._region_redo else None
+    def _ui_step_redo(self) -> bool:
+        top = self._ui_redo[-1] if self._ui_redo else None
         return top is not None and top[0] == self.project.undo_depth and top[1] == self.project.actions
 
     def undo(self) -> bool:
-        if self._region_step_undo():
-            depth, before = self._region_undo.pop()
-            self._region_redo.append((depth, self.project.actions, self.region))
-            self.region = before
+        if self._ui_step_undo():
+            depth, kind, before = self._ui_undo.pop()
+            attr = self.UI_STATE[kind]
+            self._ui_redo.append((depth, self.project.actions, kind, getattr(self, attr)))
+            setattr(self, attr, before)
             return True
         ok = self.project.undo()
         self.sync()
         return ok
 
     def redo(self) -> bool:
-        if self._region_step_redo():
-            depth, _, after = self._region_redo.pop()
-            self._region_undo.append((depth, self.region))
-            self.region = after
+        if self._ui_step_redo():
+            depth, _, kind, after = self._ui_redo.pop()
+            attr = self.UI_STATE[kind]
+            self._ui_undo.append((depth, kind, getattr(self, attr)))
+            setattr(self, attr, after)
             return True
         ok = self.project.redo()
         self.sync()

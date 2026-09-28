@@ -244,6 +244,11 @@ Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
 - Leaving by another tool / Finish / another image / Apply writes the result in (Fill: all,
   Paint: the picks); only Esc drops it.
 
+**P2.12 — undoable picks** (`v0.3-p2.12`)
+- Region and Paint-mode picks share one UI undo history (`Session._ui_undo/_ui_redo`, entries keyed
+  by the project's `undo_depth`). Pick history is dropped when the picks are applied or the tool
+  changes, so Ctrl+Z then undoes the application itself.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).

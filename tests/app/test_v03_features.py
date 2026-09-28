@@ -612,3 +612,42 @@ def test_alt_turns_the_brush_circle_and_region_box_red(qapp, win, monkeypatch):
     assert reddish(circle_colors()) == 0
     monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.KeyboardModifier.AltModifier))
     assert reddish(circle_colors()) >= 5
+
+
+def test_paint_mode_picks_are_undoable(qapp, win):
+    from tests.app.test_gui import canvas_pos
+
+    s = holes_object(win)
+    p = win.properties_panel
+    p.fill_area.setValue(5)
+    p.mode_paint_btn.click()
+    p.tool_btns["fill_holes"].click()
+    win.canvas.set_brush_size(8)
+
+    def stroke(x, y, mods=Qt.KeyboardModifier.NoModifier):
+        QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, mods, canvas_pos(win, x, y))
+        QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, mods, canvas_pos(win, x, y))
+        qapp.processEvents()
+
+    taken = lambda: s.auto_taken()  # noqa: E731
+    stroke(35, 35)
+    stroke(25, 25)
+    assert taken()[35, 35] and taken()[25, 25]
+    win.undo()
+    assert taken()[35, 35] and not taken()[25, 25]
+    win.undo()
+    assert not taken().any() and s.auto_tool == "fill_holes"
+    win.redo()
+    assert taken()[35, 35] and not taken()[25, 25]
+    win.a_key()  # pick all: one step
+    stroke(35, 35, Qt.KeyboardModifier.AltModifier)  # unpick: one step
+    win.undo()
+    assert taken()[35, 35] and taken()[25, 25]
+    win.undo()
+    assert taken()[35, 35] and not taken()[25, 25]
+
+    p.tool_btns["fill_holes"].click()  # apply: now Ctrl+Z undoes the application
+    assert s.editing_frame().mask[35, 35]
+    win.undo()
+    assert not s.editing_frame().mask[35, 35] and not s.auto_taken().any()
+    p.mode_fill_btn.click()
