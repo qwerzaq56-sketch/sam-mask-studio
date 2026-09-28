@@ -279,7 +279,9 @@ def test_each_apply_adds_one_more_and_leaving_drops(qapp, win):
     assert (s.auto_taken() == s.auto_changes()[1]).all()
     win.act_brush.trigger()  # switching tools drops the picks too
     assert s.editing_frame().mask.sum() == area2 and s.auto_tool is None
-    p.tool_btns["shrink"].click()  # the mode stays Paint: nothing picked yet
+    p.tool_btns["shrink"].click()  # a new auto tool starts in Fill mode (v0.4-p10)
+    assert s.auto_mode == "fill" and p.mode_fill_btn.isChecked() and not win.canvas.brush_mode
+    p.mode_paint_btn.click()  # Paint mode: nothing picked yet
     assert s.auto_mode == "paint" and not s.auto_taken().any()
     win.a_key()  # Paint mode: A toggles all...
     assert s.auto_taken().any()
@@ -344,8 +346,8 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     s = holes_object(win)
     p = win.properties_panel
     p.fill_area.setValue(5)
-    p.mode_paint_btn.click()
-    p.tool_btns["fill_holes"].click()
+    p.tool_btns["fill_holes"].click()  # starts in Fill mode...
+    p.mode_paint_btn.click()  # ...then Paint
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
     styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
     assert styles()["guide"][25, 25] and styles()["guide"][35, 35]  # both holes, gray
@@ -640,8 +642,8 @@ def test_paint_mode_picks_are_undoable(qapp, win):
     s = holes_object(win)
     p = win.properties_panel
     p.fill_area.setValue(5)
-    p.mode_paint_btn.click()
-    p.tool_btns["fill_holes"].click()
+    p.tool_btns["fill_holes"].click()  # starts in Fill mode...
+    p.mode_paint_btn.click()  # ...then Paint
     win.canvas.set_brush_size(40)  # a few image px: covers the hole whatever the rounding
 
     def stroke(x, y, mods=Qt.KeyboardModifier.NoModifier):

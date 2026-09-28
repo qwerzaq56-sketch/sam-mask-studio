@@ -77,7 +77,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 - **Paint** (`D`): 드래그 = 추가, `Alt`+드래그 = 빼기. **Restore**: 칠한 곳의 손질을 되돌림(Add / Subtract / Both).
   `Ctrl+휠` = 브러쉬 크기(휠은 줌). `Alt`를 누르면 브러쉬 원이 빨갛게 바뀝니다.
 - **Auto tools**: Object Fill(물체 경계까지 넓히기) · Fill Holes · Remove Specks · Grow · Shrink.
-  - **Fill** 모드: 결과 전체를 마젠타(추가)/보라(제거)로 미리 봄.
+  - **Fill** 모드: 결과 전체를 마젠타(추가)/보라(제거)로 미리 봄. 도구를 켜면 항상 Fill로 시작.
   - **Paint** 모드: 회색 후보를 칠해서 고름(`Alt` = 해제, `A` = 전체 선택/해제). Fill 모드에서 `A`를 누르면 전체 선택 상태로 Paint 모드에 들어감.
   - **Apply & Continue** (`Enter`) = 반영하고 다음 결과 계산 · **Apply & Close** = 반영하고 종료 ·
     그 외(Esc, 다른 도구, 툴 버튼 다시 누르기)는 반영하지 않고 나감.
