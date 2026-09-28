@@ -29,12 +29,20 @@ from src.core.project import (
     freeze,
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
-from src.core.refine import fill_holes, grow_to_edges, remove_specks, within
+from src.core.refine import fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
 from src.engine.imageio import find_images, read_rgb, to_working
 
 DEFAULT_MAX_SIDE = 1024
+# auto tool -> the settings it uses (Grow and Shrink share one amount)
+AUTO_PARAMS = {
+    "object_fill": ("max_grow", "sensitivity"),
+    "fill_holes": ("fill_area",),
+    "remove_specks": ("speck_area",),
+    "grow": ("amount",),
+    "shrink": ("amount",),
+}
 
 
 class Engine(Protocol):
@@ -386,9 +394,14 @@ class Session:
             return False
         return self._result is None or self._result[0] != self.auto_tool or all(m is not k for k in self._result[2])
 
+    @staticmethod
+    def _auto_key(tool: str, settings: dict) -> tuple:
+        """The settings *tool* actually uses (others changing must not invalidate its result)."""
+        return (tool, tuple((k, settings.get(k)) for k in AUTO_PARAMS[tool]))
+
     def auto_cached(self, tool: str, base: np.ndarray, settings: dict) -> Optional[np.ndarray]:
         c = self._auto_cache
-        if c is not None and c[0] == (tool, tuple(sorted(settings.items()))) and c[1] is base:
+        if c is not None and c[0] == self._auto_key(tool, settings) and c[1] is base:
             return c[2]
         return None
 
@@ -398,14 +411,18 @@ class Session:
         if target is not None:
             return target
         if tool == "fill_holes":
-            target = fill_holes(base, settings.get("max_area", 200))
+            target = fill_holes(base, settings.get("fill_area", 200))
         elif tool == "remove_specks":
-            target = remove_specks(base, settings.get("max_area", 200))
+            target = remove_specks(base, settings.get("speck_area", 200))
         elif tool == "object_fill":
             target = grow_to_edges(self.image, base, settings.get("max_grow", 20), settings.get("sensitivity", 50))
+        elif tool == "grow":
+            target = grow_mask(base, settings.get("amount", 3))
+        elif tool == "shrink":
+            target = shrink_mask(base, settings.get("amount", 3))
         else:
             raise ValueError(f"Unknown auto tool: {tool}")
-        self._auto_cache = ((tool, tuple(sorted(settings.items()))), base, target)
+        self._auto_cache = (self._auto_key(tool, settings), base, target)
         return target
 
     def auto_apply(self, base: np.ndarray, target: np.ndarray) -> None:
@@ -438,6 +455,16 @@ class Session:
             return False
         picked = self._picked if self._picked is not None else np.zeros(area.shape, bool)
         self._picked = picked & ~area if unpick else picked | area
+        return True
+
+    def pick_all(self) -> bool:
+        """Paint mode (A): pick the whole result, or drop every pick when all of it is picked already."""
+        added, removed = self.auto_changes()
+        if added is None:
+            return False
+        changed = added | removed
+        everything = self._picked is not None and not (changed & ~self._picked).any()
+        self._picked = np.zeros(added.shape, bool) if everything else np.ones(added.shape, bool)
         return True
 
     def close_auto(self, apply: bool) -> bool:

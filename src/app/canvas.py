@@ -470,7 +470,9 @@ class Canvas(QWidget):
                 painter.setBrush(QColor(40, 200, 60) if pt.positive else QColor(230, 40, 40))
                 painter.drawEllipse(q, POINT_RADIUS, POINT_RADIUS)
         if self._mouse is not None and self._brush_on():
-            painter.setPen(QPen(QColor(255, 255, 255), 1, Qt.PenStyle.DashLine))
+            # white on the photo; green over the black-and-white Final Mask, where white disappears
+            color = QColor(60, 230, 90) if self.showing_final else QColor(255, 255, 255)
+            painter.setPen(QPen(color, 1.5 if self.showing_final else 1, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
             painter.drawEllipse(self._mouse, r, r)

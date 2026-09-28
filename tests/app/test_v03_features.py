@@ -187,7 +187,7 @@ def test_region_box_limits_the_fill(qapp, win):
 
     s = holes_object(win)
     p = win.properties_panel
-    p.refine_area.setValue(5)
+    p.fill_area.setValue(5)
     p.region_btn.click()
     assert win.canvas.region_mode
     QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 31, 31))
@@ -224,12 +224,12 @@ def test_fill_preview_is_written_in_when_the_tool_closes(qapp, win):
     s.brush(t)
     win.refresh()
     p = win.properties_panel
-    p.refine_area.setValue(1)
+    p.fill_area.setValue(1)
     p.mode_fill_btn.click()
     p.tool_btns["fill_holes"].click()
     assert "Will apply: +1 px" in p.preview_label.text()
     assert not s.editing_frame().mask[25, 25]  # only a preview so far
-    p.refine_area.setValue(10)  # a setting moves the preview
+    p.fill_area.setValue(10)  # a setting moves the preview
     wait_until(qapp, lambda: "+5 px" in p.preview_label.text())
     assert any(o.style == "layer_add" for o in win.canvas._overlays)  # tinted green
 
@@ -249,7 +249,7 @@ def test_fill_preview_is_written_in_when_the_tool_closes(qapp, win):
 def test_mode_switch_keeps_the_same_area(qapp, win):
     s = holes_object(win)
     p = win.properties_panel
-    p.refine_area.setValue(5)
+    p.fill_area.setValue(5)
     assert p.mode == "fill" and p.mode_fill_btn.isChecked()  # Fill is the default
     p.tool_btns["fill_holes"].click()
     added, _ = s.auto_changes()
@@ -298,7 +298,7 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
 
     s = holes_object(win)
     p = win.properties_panel
-    p.refine_area.setValue(5)
+    p.fill_area.setValue(5)
     p.mode_paint_btn.click()
     p.tool_btns["fill_holes"].click()
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
@@ -450,3 +450,72 @@ def test_restore_is_live_while_dragging(qapp, win):
     assert not win.canvas._stroke_mask[50, 70]  # already restored on screen while dragging
     QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
     assert not s.editing_frame().mask[50, 70]
+
+
+# --- Sliders, separate sizes, Grow / Shrink, A = pick all / none ------------------
+
+
+def test_grow_and_shrink_mask():
+    import numpy as np
+
+    from src.core.refine import grow_mask, shrink_mask
+
+    m = np.zeros((50, 50), bool)
+    m[20:30, 20:30] = True
+    assert grow_mask(m, 3)[20, 17] and not grow_mask(m, 3)[20, 15] and grow_mask(m, 3).sum() > m.sum()
+    s = shrink_mask(m, 2)
+    assert s[25, 25] and not s[21, 25] and s.sum() == 6 * 6
+    edge = np.zeros((50, 50), bool)
+    edge[:, :10] = True  # runs off the left border: that side is not an edge
+    assert shrink_mask(edge, 2)[25, 0] and not shrink_mask(edge, 2)[25, 8]
+
+
+def test_slider_field_and_separate_sizes(qapp, win):
+    p = win.properties_panel
+    p.fill_area.setValue(50)
+    p.speck_area.spin.setValue(7)  # typing in the box moves the slider
+    assert p.tool_settings()["fill_area"] == 50 and p.tool_settings()["speck_area"] == 7
+    p.fill_area.slider.setValue(p.fill_area.slider.maximum())
+    assert p.fill_area.value() == 100_000
+    p.grow.slider.setValue(0)
+    assert p.grow.value() == 1
+
+
+def test_grow_shrink_tools_share_amount_and_a_toggles_picks(qapp, win):
+    s = win.session
+    win.new_object()
+    s.click(40, 30)
+    win.refresh()
+    p = win.properties_panel
+    p.amount.setValue(2)
+    p.tool_btns["grow"].click()
+    added, removed = s.auto_changes()
+    assert added.any() and not removed.any()
+    p.tool_btns["shrink"].click()  # applies Grow (Fill mode), then Shrink by the same amount
+    added, removed = s.auto_changes()
+    assert removed.any() and not added.any() and p.settings_stack.currentIndex() == p._pages["grow"]
+    p.mode_paint_btn.click()
+    assert not s.auto_taken().any()
+    win.a_key()  # A: everything picked
+    assert (s.auto_taken() == removed).all()
+    win.a_key()  # A again: nothing picked
+    assert not s.auto_taken().any()
+    idx = s.index
+    win.escape()
+    win.a_key()  # with no auto tool, A is the previous image again
+    assert s.index == max(0, idx - 1)
+
+
+def test_brush_circle_is_green_over_the_final_mask(qapp, win):
+    from PyQt6.QtCore import QPointF
+
+    win.new_object()
+    win.session.click(30, 30)
+    win.refresh()
+    win.act_brush.trigger()
+    win.act_final.trigger()
+    win.canvas._mouse = QPointF(100, 100)
+    img = win.canvas.grab().toImage()
+    r = win.canvas.brush_size / 2
+    greens = [img.pixelColor(int(100 + r * c), int(100 + r * s)) for c, s in ((1, 0), (0, 1), (-1, 0), (0, -1))]
+    assert any(c.green() > 150 and c.red() < 150 for c in greens)

@@ -134,3 +134,22 @@ def within(region: np.ndarray | None, before: np.ndarray, after: np.ndarray) -> 
     if region is None or region.shape != before.shape:
         return after
     return np.where(region, after, before)
+
+
+def grow_mask(mask: np.ndarray, px: int) -> np.ndarray:
+    """Every pixel within *px* of the mask (a round dilation)."""
+    m = mask.astype(bool)
+    if px <= 0 or not m.any():
+        return m.copy()
+    dist = cv2.distanceTransform((~m).astype(np.uint8), cv2.DIST_L2, 5)
+    return dist <= px
+
+
+def shrink_mask(mask: np.ndarray, px: int) -> np.ndarray:
+    """The mask without a *px*-wide rim (a round erosion)."""
+    m = mask.astype(bool)
+    if px <= 0 or not m.any():
+        return m.copy()
+    # edge padding: where the mask runs off the image, the image border is not an edge of it
+    dist = cv2.distanceTransform(np.pad(m, 1, mode="edge").astype(np.uint8), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    return dist > px

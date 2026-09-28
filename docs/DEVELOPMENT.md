@@ -218,6 +218,15 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Final Mask preview: `Z` toggles; holding **Space** peeks (an app-wide event filter, ignored
   in text boxes). Space+drag no longer pans (middle-drag does).
 
+**P2.9 — sliders, Grow / Shrink, pick all** (`v0.3-p2.9`)
+- Auto tool settings are `SliderField`s (slider + number box; log scale for sizes). Fill Holes
+  and Remove Specks have separate max sizes; `Session.AUTO_PARAMS` lists what each tool uses, so
+  an unrelated setting never invalidates a cached result.
+- New auto tools **Grow** / **Shrink** (distance-transform dilation / erosion; the image border
+  is not an edge) sharing one Amount.
+- Paint mode: **A** picks the whole result, A again drops every pick (otherwise A = previous image).
+- Mode buttons show the selection by color only; the brush circle is green over the Final Mask.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
