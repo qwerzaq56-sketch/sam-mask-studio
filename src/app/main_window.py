@@ -210,7 +210,8 @@ class MainWindow(QMainWindow):
             "Marks for the selected Object only: – where it has no mask (off: every Object)"
         )
         self.marks_btn.toggled.connect(self.set_marks_one_object)
-        list_dock.setTitleBarWidget(DockTitleBar(list_dock, [self.marks_btn, self.names_btn]))
+        self._list_title = DockTitleBar(list_dock, [self.marks_btn, self.names_btn])
+        list_dock.setTitleBarWidget(self._list_title)
         self._list_dock = list_dock
         view_menu = self.menuBar().addMenu("&View")
         for d in (list_dock, left_dock, right_dock, frames_dock):
@@ -232,6 +233,10 @@ class MainWindow(QMainWindow):
     def _size_docks(self) -> None:
         h_docks, h_sizes, v_docks, v_sizes = self._dock_sizes
         h_sizes = [self._list_width(), *h_sizes[1:]]  # the Frame List starts folded or not, as last time
+        budget = int(self.width() * 0.55)  # a small window: the side panels share at most ~55%, the canvas keeps the rest
+        if sum(h_sizes) > budget:
+            scale = budget / sum(h_sizes)
+            h_sizes = [max(d.minimumSizeHint().width(), int(w * scale)) for d, w in zip(h_docks, h_sizes)]
         self.resizeDocks(h_docks, h_sizes, Qt.Orientation.Horizontal)
         self.resizeDocks(v_docks, v_sizes, Qt.Orientation.Vertical)
 
@@ -329,6 +334,7 @@ class MainWindow(QMainWindow):
         self.act_shortcuts.triggered.connect(self.show_shortcuts)
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
+        self._list_title.set_compact(not self.settings.frame_list_names)
         self.marks_btn.setChecked(self.settings.marks_one_object)
         pp = self.properties_panel  # the foldable Edit Layer sections remember their state
         for box, name in ((pp.settings_box, "tool_settings_open"), (pp.layer_box, "layer_section_open")):
@@ -940,6 +946,7 @@ class MainWindow(QMainWindow):
     def set_frame_names(self, on: bool) -> None:
         """Frame List: file names on, or folded to the IDs and marks (the column narrows)."""
         self.images_panel.set_names_visible(on)
+        self._list_title.set_compact(not on)  # folded: no title / float button, the rest never clipped
         self.resizeDocks([self._list_dock], [self._list_width(on)], Qt.Orientation.Horizontal)
         self.settings.frame_list_names = bool(on)
         self.settings.save(self.settings_path)

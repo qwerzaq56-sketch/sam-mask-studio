@@ -97,12 +97,11 @@ class DockTitleBar(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(4, 2, 2, 2)
         lay.setSpacing(1)
-        title = QLabel(dock.windowTitle())
-        title.setMinimumWidth(0)  # the title may be clipped so the dock can get narrow
-        title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        lay.addWidget(title, 1)
-        for w in extra:
-            w.setFixedWidth(20)  # compact, so a folded Frame List stays narrow
+        self.title = QLabel(dock.windowTitle())
+        self.title.setMinimumWidth(0)  # the title may be clipped so the dock can get narrow
+        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        lay.addWidget(self.title, 1)
+        for w in extra:  # their natural size: a fixed width clipped them with larger fonts / display scaling
             lay.addWidget(w)
         style = self.style()
         for icon, tip, slot in (
@@ -113,6 +112,12 @@ class DockTitleBar(QWidget):
             b.setIcon(style.standardIcon(icon))
             b.setToolTip(tip)
             b.setAutoRaise(True)
-            b.setFixedWidth(20)
             b.clicked.connect(slot)
             lay.addWidget(b)
+            if tip == "Float":
+                self.float_btn = b
+
+    def set_compact(self, on: bool) -> None:
+        """A narrow dock: drop the title and the float button, so the other buttons fit unclipped."""
+        self.title.setVisible(not on)
+        self.float_btn.setVisible(not on)
