@@ -39,17 +39,22 @@ from src.core.project import FrameState, MaskObject
 
 THUMB = 56
 # the selected mode button stands out
-MODE_STYLE = "QPushButton:checked { background: #2f6fd6; color: white; font-weight: bold; }"
+MODE_STYLE = (  # the selected mode is shown by color only (no sunken "pressed" look)
+    "QPushButton { border: 1px solid #9a9a9a; border-radius: 3px; padding: 3px 8px; background: transparent; }"
+    "QPushButton:checked { background: #2f6fd6; color: white; border-color: #2f6fd6; }"
+)
 # Direct brushes act as you paint; auto tools compute a result that is shown live
 # and either filled in at once (Fill mode) or painted in (Brush mode).
 DIRECT_TOOLS = ("paint", "restore")
-AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks")
+AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink")
 TOOL_TEXT = {
     "paint": ("Paint", "Drag = add, Alt+drag = subtract (B)"),
     "restore": ("Restore", "Drag to undo the edit layer's changes where you paint (see the box)"),
     "object_fill": ("Object Fill", "Grow the mask to the object's edges in the image"),
     "fill_holes": ("Fill Holes", "Fill holes enclosed by the mask"),
     "remove_specks": ("Remove Specks", "Remove separate small pieces (the main piece stays)"),
+    "grow": ("Grow", "Widen the whole mask by the amount"),
+    "shrink": ("Shrink", "Narrow the whole mask by the amount"),
 }
 RESTORE_MODES = (
     ("added", "Add"),  # undo what the edit layer added
@@ -85,6 +90,55 @@ def _scrolled(page: QWidget) -> QScrollArea:
     area.setFrameShape(QScrollArea.Shape.NoFrame)
     page.setMinimumHeight(page.sizeHint().height())  # scroll instead of squashing the lists
     return area
+
+
+class SliderField(QWidget):
+    """A slider with a number box beside it (type a value or drag); *log* for wide ranges."""
+
+    valueChanged = pyqtSignal(int)
+    STEPS = 1000
+
+    def __init__(self, lo: int, hi: int, value: int, suffix: str = "", log: bool = False, parent=None):
+        super().__init__(parent)
+        self._lo, self._hi, self._log = lo, hi, log
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(0, self.STEPS if log else hi - lo)
+        self.spin = QSpinBox()
+        self.spin.setRange(lo, hi)
+        self.spin.setSuffix(suffix)
+        self.spin.setMinimumWidth(80)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.slider, 1)
+        lay.addWidget(self.spin)
+        self.slider.valueChanged.connect(lambda t: self.spin.setValue(self._from_slider(t)))
+        self.spin.valueChanged.connect(self._on_spin)
+        self.setValue(value)
+
+    def _from_slider(self, t: int) -> int:
+        if not self._log:
+            return self._lo + t
+        lo = max(1, self._lo)
+        return int(round(lo * (self._hi / lo) ** (t / self.STEPS)))
+
+    def _to_slider(self, v: int) -> int:
+        if not self._log:
+            return v - self._lo
+        lo = max(1, self._lo)
+        return int(round(self.STEPS * np.log(max(v, lo) / lo) / np.log(self._hi / lo)))
+
+    def _on_spin(self, v: int) -> None:
+        self.slider.blockSignals(True)
+        self.slider.setValue(self._to_slider(v))
+        self.slider.blockSignals(False)
+        self.valueChanged.emit(v)
+
+    def value(self) -> int:
+        return self.spin.value()
+
+    def setValue(self, v: int) -> None:
+        self.spin.setValue(int(v))
+        self._on_spin(self.spin.value())
 
 
 class PropertiesPanel(QWidget):
@@ -203,6 +257,7 @@ class PropertiesPanel(QWidget):
         av = QVBoxLayout(abox)
         rows = (
             (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
+            (None, [tool_button("grow"), tool_button("shrink")]),
             ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
             (self.mode_hint, None),
             ("Region", [self.region_btn, self.clear_region_btn]),
@@ -230,40 +285,40 @@ class PropertiesPanel(QWidget):
         self._settings_timer.setSingleShot(True)
         self._settings_timer.setInterval(120)
         self._settings_timer.timeout.connect(self.auto_settings_changed)
-        self.refine_area = QSpinBox()
-        self.refine_area.setRange(1, 1_000_000)
-        self.refine_area.setValue(200)
-        self.refine_area.setSuffix(" px")
-        self.grow = QSpinBox()
-        self.grow.setRange(1, 500)
-        self.grow.setValue(20)
-        self.grow.setSuffix(" px")
-        self.sensitivity = QSlider(Qt.Orientation.Horizontal)
-        self.sensitivity.setRange(0, 100)
-        self.sensitivity.setValue(50)
-        self.sensitivity_value = QLabel("50")
-        self.sensitivity.valueChanged.connect(lambda v: self.sensitivity_value.setText(str(v)))
-        for w in (self.refine_area, self.grow, self.sensitivity):
+        self.fill_area = SliderField(1, 100_000, 200, " px", log=True)
+        self.speck_area = SliderField(1, 100_000, 200, " px", log=True)
+        self.grow = SliderField(1, 200, 20, " px")
+        self.sensitivity = SliderField(0, 100, 50)
+        self.amount = SliderField(1, 100, 3, " px")
+        for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount):
             w.valueChanged.connect(lambda _v: self._settings_timer.start())
-        size_page = QWidget()
-        sf = QFormLayout(size_page)
-        sf.setContentsMargins(0, 0, 0, 0)
-        sf.addRow("Max size", self.refine_area)
-        sf.addRow(note("Only holes / specks up to this many pixels."))
-        fill_page = QWidget()
-        ff = QFormLayout(fill_page)
-        ff.setContentsMargins(0, 0, 0, 0)
-        ff.addRow("Max grow", self.grow)
-        sens = QHBoxLayout()
-        sens.addWidget(self.sensitivity, 1)
-        sens.addWidget(self.sensitivity_value)
-        ff.addRow("Sensitivity", sens)
-        ff.addRow(note("Max grow: how far the mask may spread. Sensitivity: higher spreads further "
-                       "into colors like the object's, lower stops sooner."))
+
+        def page(rows, text: str) -> QWidget:
+            w = QWidget()
+            f = QFormLayout(w)
+            f.setContentsMargins(0, 0, 0, 0)
+            for label, field in rows:
+                f.addRow(label, field)
+            f.addRow(note(text))
+            return w
+
         self.settings_stack = QStackedWidget()
-        self._pages = {"object_fill": self.settings_stack.addWidget(fill_page)}
-        size_index = self.settings_stack.addWidget(size_page)
-        self._pages.update(fill_holes=size_index, remove_specks=size_index)
+        self._pages = {
+            "object_fill": self.settings_stack.addWidget(page(
+                (("Max grow", self.grow), ("Sensitivity", self.sensitivity)),
+                "Max grow: how far the mask may spread. Sensitivity: higher spreads further "
+                "into colors like the object's, lower stops sooner.",
+            )),
+            "fill_holes": self.settings_stack.addWidget(page(
+                (("Max size", self.fill_area),), "Holes up to this many pixels are filled."
+            )),
+            "remove_specks": self.settings_stack.addWidget(page(
+                (("Max size", self.speck_area),), "Separate pieces up to this many pixels are removed."
+            )),
+        }
+        self._pages["grow"] = self._pages["shrink"] = self.settings_stack.addWidget(page(
+            (("Amount", self.amount),), "How many pixels Grow widens / Shrink narrows the mask (shared)."
+        ))
         self.preview_label = note("")
         self.settings_box = QGroupBox("Settings")
         sl = QVBoxLayout(self.settings_box)
@@ -421,7 +476,7 @@ class PropertiesPanel(QWidget):
         self.mode_hint.setText(
             "Fill: the whole result is shown in green / red and applied when you leave the tool (Esc drops it)."
             if mode == "fill"
-            else "Paint: drag over the gray to pick it (green / red), Alt+drag to unpick; "
+            else "Paint: drag over the gray to pick it (green / red), Alt+drag to unpick, A picks all / none; "
             "the picks are applied when you leave the tool."
         )
         if emit:
@@ -435,9 +490,11 @@ class PropertiesPanel(QWidget):
 
     def tool_settings(self) -> dict:
         return {
-            "max_area": int(self.refine_area.value()),
-            "max_grow": int(self.grow.value()),
-            "sensitivity": int(self.sensitivity.value()),
+            "fill_area": self.fill_area.value(),
+            "speck_area": self.speck_area.value(),
+            "max_grow": self.grow.value(),
+            "sensitivity": self.sensitivity.value(),
+            "amount": self.amount.value(),
             "restore": self.restore_mode.currentData(),
         }
 

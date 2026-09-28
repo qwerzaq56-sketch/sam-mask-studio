@@ -232,8 +232,9 @@ class MainWindow(QMainWindow):
         key("Escape", self.escape)
         key("N", self.new_object)
         key("E", self.edit_key)
-        for seq in ("Left", "A", "PgUp"):
+        for seq in ("Left", "PgUp"):
             key(seq, lambda: self.step(-1))
+        key("A", self.a_key)
         for seq in ("Right", "D", "PgDown"):
             key(seq, lambda: self.step(1))
 
@@ -725,6 +726,15 @@ class MainWindow(QMainWindow):
             self.log(f"{tool.replace('_', ' ').title()} applied")
         self._auto_gen += 1  # drop a computation still running
 
+    def a_key(self) -> None:
+        """A: in an auto tool's Paint mode pick all / none of the result, otherwise the previous image."""
+        s = self.session
+        if s.auto_tool is not None and s.auto_mode == "paint":
+            if s.pick_all():
+                self._update_overlays()
+            return
+        self.step(-1)
+
     def escape(self) -> None:
         """Esc: first leave the tool (dropping a Fill preview), then finish editing."""
         if self._tool:
@@ -775,7 +785,7 @@ class MainWindow(QMainWindow):
 
     def _tool_target(self, tool: str):
         """For a live Restore stroke: the edited mask with the edit layer undone (per the mode box)."""
-        return self.session.tool_result(tool, **self.properties_panel.tool_settings())
+        return self.session.tool_result(tool, restore=self.properties_panel.tool_settings()["restore"])
 
     def _layer(self, fn, message: str) -> None:
         """Run an edit-layer change on the edited Object and report whether it did anything."""
