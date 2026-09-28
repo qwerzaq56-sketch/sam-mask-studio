@@ -132,6 +132,7 @@ SHORTCUTS = (
         ("Delete", "Delete the selected point, else the selected Objects"),
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
         ("Enter", "Auto tool: Apply & Recompute (Fill: all, Paint: the picks)"),
+        ("The active auto tool again", "Leave it, dropping its result (like Esc)"),
     )),
     ("Images", (
         ("Right / PgDown", "Next image (not while editing)"),

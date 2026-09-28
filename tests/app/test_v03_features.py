@@ -237,8 +237,10 @@ def test_fill_preview_is_applied_by_fill_again(qapp, win):
     win.escape()  # Esc drops the preview and leaves the tool (Edit stays)
     assert not s.editing_frame().mask[25, 25] and s.auto_tool is None and s.editing is not None
     p.tool_btns["fill_holes"].click()
-    p.tool_btns["fill_holes"].click()  # clicking the tool again changes nothing
-    assert not s.editing_frame().mask[25, 25] and s.auto_tool == "fill_holes"
+    p.tool_btns["fill_holes"].click()  # the active tool again = Esc: dropped, left
+    assert not s.editing_frame().mask[25, 25] and s.auto_tool is None
+    assert not p.tool_btns["fill_holes"].isChecked() and s.editing is not None
+    p.tool_btns["fill_holes"].click()
     p.recompute_btn.click()  # Apply & Recompute
     m = s.editing_frame().mask
     assert m[25, 25] and m[35, 35] and s.auto_tool == "fill_holes" and p.tool_btns["fill_holes"].isChecked()

@@ -710,8 +710,7 @@ class MainWindow(QMainWindow):
         on = bool(tool) and self.session.mode == Mode.EDIT and not self._busy
         tool = tool if on else ""
         if tool and tool == self._tool and tool in AUTO_TOOLS:
-            self.properties_panel.set_brush_tool(tool)  # clicking the active auto tool changes nothing
-            return
+            tool = ""  # the active auto tool again = Esc: drop its result and leave it
         if tool != self._tool:
             self.close_tool()
         self._tool = tool
