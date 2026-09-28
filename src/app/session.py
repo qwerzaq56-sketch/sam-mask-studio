@@ -28,7 +28,7 @@ from src.core.project import (
     Variant,
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
-from src.core.refine import fill_holes_and_specks
+from src.core.refine import fill_holes, grow_to_edges, remove_specks, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
 from src.engine.imageio import find_images, read_rgb, to_working
@@ -90,6 +90,9 @@ class Session:
         self.mode = Mode.IDLE
         self.editing: Optional[int] = None  # id of the one Object in Edit
         self.selected_point: Optional[int] = None
+        # Brush-painted area the edit-layer tools are limited to (None: the whole mask).
+        # UI state for the Object in Edit on this image: not saved, not undone.
+        self.region: Optional[np.ndarray] = None
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -164,10 +167,13 @@ class Session:
         self.mode = Mode.NEW_OBJECT
         self.editing = None
         self.selected_point = None
+        self.region = None
 
     def edit(self, obj_id: int) -> None:
         if self.project.get(obj_id) is None:
             return
+        if obj_id != self.editing:
+            self.region = None
         self.mode = Mode.EDIT
         self.editing = obj_id
         self.selected_point = None
@@ -177,6 +183,7 @@ class Session:
         self.mode = Mode.IDLE
         self.editing = None
         self.selected_point = None
+        self.region = None
 
     finish_editing = cancel_mode
 
@@ -322,12 +329,30 @@ class Session:
         """
         return self._set_target(mask)
 
-    def refine(self, max_area: int) -> bool:
-        """Fill holes and remove specks up to *max_area* px, as part of the edit layer."""
+    def set_region(self, region: Optional[np.ndarray]) -> None:
+        """Limit the edit-layer tools to *region* (a painted bool mask); None or empty = everywhere."""
+        self.region = region if region is not None and region.any() else None
+
+    def _tool(self, fn: Callable[[np.ndarray], np.ndarray]) -> bool:
+        """Apply a mask tool to the edited frame (inside the region, if any) as part of the edit layer."""
         fs = self.editing_frame()
         if fs is None or fs.mask is None:
             return False
-        return self._set_target(fill_holes_and_specks(fs.mask, max_area))
+        return self._set_target(within(self.region, fs.mask, fn(fs.mask)))
+
+    def fill_holes(self, max_area: int) -> bool:
+        """Fill enclosed holes up to *max_area* px."""
+        return self._tool(lambda m: fill_holes(m, max_area))
+
+    def remove_specks(self, max_area: int) -> bool:
+        """Remove separate pieces up to *max_area* px (the main piece stays)."""
+        return self._tool(lambda m: remove_specks(m, max_area))
+
+    def object_fill(self, max_grow: int) -> bool:
+        """Grow the mask outward (at most *max_grow* px) to the object's edges in the image."""
+        if self.image is None:
+            return False
+        return self._tool(lambda m: grow_to_edges(self.image, m, max_grow))
 
     def discard_edit(self) -> bool:
         """Delete the edit layer: back to the points/prompt-based mask."""

@@ -123,10 +123,13 @@ def test_refine_fills_holes_and_removes_specks(session):
     t[30, 30] = False  # a 1-px hole inside the disc
     t[2, 70] = True  # a 1-px speck far away
     session.brush(t)
-    assert session.refine(max_area=20)
+    assert session.fill_holes(max_area=20)
+    m = session.editing_frame().mask
+    assert m[30, 30] and m[2, 70]  # only the hole
+    assert session.remove_specks(max_area=20)
     m = session.editing_frame().mask
     assert m[30, 30] and not m[2, 70]
-    assert session.editing_frame().edit is None  # refine brought it back to the prompt mask exactly
+    assert session.editing_frame().edit is None  # back to the prompt mask exactly
 
 
 def test_fill_holes_keeps_big_holes_border_and_the_object():

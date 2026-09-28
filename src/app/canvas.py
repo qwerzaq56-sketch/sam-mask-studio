@@ -11,6 +11,8 @@ depends on the mode the main window sets:
               ``box_drawn``. With the Brush on (``brush_mode``) a drag paints
               and Ctrl+drag subtracts on the edited Object (``brush_finished``);
               Shift+drag / Ctrl+Shift+drag do the same without turning it on.
+              With ``paint_region`` on, strokes paint the tool region instead
+              (``region_finished``), shown in cyan.
 
 Middle-drag or Space+drag pans, the wheel zooms at the cursor, and holding Alt
 shows the Final Mask. Ctrl+wheel (or Shift+wheel) sets the brush size while
@@ -44,6 +46,7 @@ ALPHA = {
     "candidate_off": 35,
     "layer_add": 150,  # pixels the edit layer forces on
     "layer_sub": 110,  # pixels the edit layer forces off
+    "region": 70,  # where the edit-layer tools act
 }
 
 
@@ -58,7 +61,8 @@ class Overlay:
 
 # Overlays are drawn as three cached images, so changing one group (checking a
 # candidate, a brush stroke) never re-blends the others.
-GROUPS = ("objects", "edit", "candidates")
+GROUPS = ("objects", "edit", "region", "candidates")
+REGION_COLOR = (0, 200, 255)
 
 
 def group_of(style: str) -> str:
@@ -66,6 +70,8 @@ def group_of(style: str) -> str:
         return "edit"
     if style.startswith("candidate"):
         return "candidates"
+    if style == "region":
+        return "region"
     return "objects"
 
 
@@ -141,6 +147,7 @@ class Canvas(QWidget):
     point_picked = pyqtSignal(int)
     object_picked = pyqtSignal(float, float)
     brush_finished = pyqtSignal(object)  # bool mask
+    region_finished = pyqtSignal(object)  # bool mask: the painted tool region
     zoom_changed = pyqtSignal(float)
     brush_size_changed = pyqtSignal(int)
 
@@ -152,7 +159,10 @@ class Canvas(QWidget):
         self._info = MaskInfo()
         # group -> (signature of its overlays, blended image or None when empty)
         self._layers: Dict[str, Tuple[tuple, Optional[QImage]]] = {}
-        self._stroke_mask: Optional[np.ndarray] = None  # the edit mask while a brush stroke is live
+        self._stroke_mask: Optional[np.ndarray] = None  # what a live brush stroke has painted so far
+        self._stroke_region = False  # ...into the region (True) or the edited mask
+        self._region: Optional[np.ndarray] = None
+        self.paint_region = False  # brush strokes paint the region instead of the mask
         self.outline_visible = True
         self.outline_width = 1.0  # screen px, independent of zoom
         self._final: Optional[np.ndarray] = None
@@ -193,6 +203,8 @@ class Canvas(QWidget):
         self._image_q = _qimage(image) if image is not None else None
         self._layers.clear()
         self._stroke_mask = None
+        self._stroke_region = False
+        self._region = None
         if reset_view:
             self.zoom = 1.0
             self._pan = QPointF(0, 0)
@@ -201,13 +213,32 @@ class Canvas(QWidget):
 
     def set_overlays(self, overlays: List[Overlay]) -> None:
         self._overlays = list(overlays)
-        self._info.keep_only(o.mask for o in self._overlays)
-        self._stroke_mask = None
+        self._info.keep_only([o.mask for o in self._overlays] + [self._region])
+        if not self._brush.is_drawing:
+            self._stroke_mask = None
+            self._stroke_region = False
         self._rebuild_overlay()
 
+    def set_region(self, region: Optional[np.ndarray]) -> None:
+        """The area the edit-layer tools are limited to (None: none painted)."""
+        self._region = region
+        if self._stroke_region:
+            self._stroke_mask = None
+            self._stroke_region = False
+        self._rebuild_overlay(("region",))
+
+    def set_paint_region(self, on: bool) -> None:
+        if self._brush.is_drawing:
+            self._finish_stroke()
+        self.paint_region = on
+        self.update()
+
     def _group_layers(self, group: str) -> List[Overlay]:
+        if group == "region":
+            m = self._stroke_mask if self._stroke_region else self._region
+            return [Overlay(m, REGION_COLOR, "region")] if m is not None else []
         layers = [o for o in self._overlays if group_of(o.style) == group]
-        if group == "edit" and self._stroke_mask is not None:
+        if group == "edit" and self._stroke_mask is not None and not self._stroke_region:
             # a live stroke replaces the edit fill; the layer tints would be stale
             color = next((o.color for o in layers if o.style == "edit"), (255, 255, 255))
             layers = [Overlay(self._stroke_mask, color, "edit")]
@@ -268,12 +299,12 @@ class Canvas(QWidget):
 
     def _show_stroke(self, m: np.ndarray) -> None:
         self._stroke_mask = m > 0
-        self._rebuild_overlay(("edit",))
+        self._rebuild_overlay(("region",) if self._stroke_region else ("edit",))
 
     def _finish_stroke(self) -> None:
         m = self._brush.finalize_stroke()
         if m is not None:
-            self.brush_finished.emit(m > 0)
+            (self.region_finished if self._stroke_region else self.brush_finished).emit(m > 0)
 
     def set_prompts(self, points: Sequence[Point], selected: Optional[int], box: Optional[Box]) -> None:
         self.points = tuple(points)
@@ -410,8 +441,12 @@ class Canvas(QWidget):
         for ov in self._overlays:
             if ov.style == "candidate":
                 lines.append((self._info.outline(ov.mask), QColor(*ov.color), 1.0))
+        region = self._stroke_mask if self._stroke_region else self._region
+        if region is not None:
+            polys = outline_polygons(region) if self._stroke_region else self._info.outline(region)
+            lines.append((polys, QColor(*REGION_COLOR), 1.0))
         if self.outline_visible:
-            if self._stroke_mask is not None:
+            if self._stroke_mask is not None and not self._stroke_region:
                 lines.append((outline_polygons(self._stroke_mask), QColor(255, 255, 255), self.outline_width))
             elif self.edit_mask() is not None:
                 lines.append((self._info.outline(self.edit_mask()), QColor(255, 255, 255), self.outline_width))
@@ -483,7 +518,8 @@ class Canvas(QWidget):
             if btn != Qt.MouseButton.LeftButton:
                 return  # with the brush on, clicks never add points
             x, y = self._clamped(pos)
-            base = self.edit_mask()
+            self._stroke_region = self.paint_region
+            base = self._region if self.paint_region else self.edit_mask()
             h, w = self.image.shape[:2]
             erase = bool(mods & Qt.KeyboardModifier.ControlModifier)
             start = base.astype(np.uint8) * 255 if base is not None else None

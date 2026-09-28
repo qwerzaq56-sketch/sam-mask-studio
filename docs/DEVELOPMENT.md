@@ -152,6 +152,16 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Autosave (and the save on image change) writes PNGs in a background thread: the first save
   after a batch/propagation used to block the window for seconds.
 
+**P2 — edit layer tools** (`v0.3-p2`)
+- Fill Holes and Remove Specks are separate buttons (shared max-area box).
+- **Object Fill** (`core/refine.grow_to_edges`): grows the mask outward, at most N px, to where
+  the object's colors end — GrabCut on a crop, mask = sure FG, an N-px band = probably BG,
+  beyond = sure BG; only growth touching the mask is kept, never shrinks. No SAM run.
+- **Paint Region**: brush strokes paint a cyan region instead of the mask (Ctrl+drag erases);
+  the three tools then act only inside it (`refine.within`). Without a region they act on the
+  whole mask, as before. The region is UI state (`Session.region`): not saved, not undone,
+  cleared when leaving Edit or changing image.
+
 ### Remaining work
 
 1. A hands-on walkthrough by the user on the real window (feel of the canvas, panel layout).
