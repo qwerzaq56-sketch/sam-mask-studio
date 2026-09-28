@@ -712,3 +712,36 @@ def test_arrows_step_objects_and_points_drag_or_double_click(qapp, win):
     q = canvas_pos(win, moved.x, moved.y)
     QTest.mouseDClick(win.canvas, Qt.MouseButton.LeftButton, pos=q)
     assert len(s.editing_frame().points) == 1
+
+
+def test_apply_row_restore_tints_and_d_for_paint(qapp, win):
+    from PyQt6.QtGui import QKeySequence
+
+    from tests.app.test_gui import canvas_pos
+
+    assert win.act_brush.shortcut() == QKeySequence("D")
+    s = holes_object(win)
+    p = win.properties_panel
+    assert not p.recompute_btn.isEnabled()
+    p.fill_area.setValue(5)
+    p.tool_btns["fill_holes"].click()
+    guide_or_fill = [o for o in win.canvas._overlays if o.style in ("guide", "auto_add")]
+    assert guide_or_fill
+    p.recompute_btn.click()  # Apply & Recompute: written in, the tool stays
+    assert s.editing_frame().mask[25, 25] and s.auto_tool == "fill_holes"
+    p.apply_auto_btn.click()  # Apply & Close
+    assert s.auto_tool is None
+
+    # Restore keeps the Edit Changes tints while painting, trimmed live
+    t = s.editing_frame().mask.copy()
+    t[48:53, 68:73] = True
+    s.brush(t)
+    win.act_changes.trigger()
+    win.refresh()
+    p.tool_btns["restore"].click()
+    win.canvas.set_brush_size(30)
+    QTest.mousePress(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
+    tints = [o for o in win.canvas._group_layers("edit") if o.style == "layer_add"]
+    assert tints and not tints[0].mask[50, 70]  # restored under the brush: no longer green
+    QTest.mouseRelease(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 70, 50))
+    win.act_changes.trigger()

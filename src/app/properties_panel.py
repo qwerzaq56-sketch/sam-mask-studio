@@ -48,7 +48,7 @@ MODE_STYLE = (  # the selected mode is shown by color only (no sunken "pressed" 
 DIRECT_TOOLS = ("paint", "restore")
 AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink")
 TOOL_TEXT = {
-    "paint": ("Paint", "Drag = add, Alt+drag = subtract (B)"),
+    "paint": ("Paint", "Drag = add, Alt+drag = subtract (D)"),
     "restore": ("Restore", "Drag to undo the edit layer's changes where you paint (see the box)"),
     "object_fill": ("Object Fill", "Grow the mask to the object's edges in the image"),
     "fill_holes": ("Fill Holes", "Fill holes enclosed by the mask"),
@@ -263,16 +263,20 @@ class PropertiesPanel(QWidget):
         self.apply_auto_btn.setToolTip("Write the auto tool's result in (Fill: all of it, Paint: the picks) and leave it")
         self.apply_auto_btn.clicked.connect(self.auto_apply_requested)
         self.apply_auto_btn.setEnabled(False)
+        self.recompute_btn = QPushButton("Apply && Recompute")
+        self.recompute_btn.setToolTip("Write the result in and compute the next one (= the active mode again, or Enter)")
+        self.recompute_btn.clicked.connect(lambda: self._set_mode(self.mode, emit=True))
+        self.recompute_btn.setEnabled(False)
         abox = QGroupBox("Auto tools")
         av = QVBoxLayout(abox)
         rows = (
             (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
             (None, [tool_button("grow"), tool_button("shrink")]),
             ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
+            (" ", [self.recompute_btn, self.apply_auto_btn]),
             (self.mode_hint, None),
             ("Region", [self.region_btn, self.clear_region_btn]),
             (self.scope_label, None),
-            (None, [self.apply_auto_btn]),
         )
         for head, buttons in rows:
             if buttons is None:
@@ -472,6 +476,7 @@ class PropertiesPanel(QWidget):
         auto = tool in AUTO_TOOLS
         self.settings_box.setVisible(auto)
         self.apply_auto_btn.setEnabled(auto)
+        self.recompute_btn.setEnabled(auto)
         if auto:
             self.settings_stack.setCurrentIndex(self._pages[tool])
             self.settings_box.setTitle(f"{TOOL_TEXT[tool][0]} settings")

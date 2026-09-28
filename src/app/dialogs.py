@@ -149,7 +149,7 @@ SHORTCUTS = (
     ("On the image (Edit)", (
         ("Left click / Right click", "Positive / negative point"),
         ("Drag", "Box prompt (Region Box on: add a box to the region)"),
-        ("B", "Paint brush on / off"),
+        ("D", "Paint brush on / off"),
         ("Drag with a brush", "Paint: add · Restore: undo edits · auto tool Paint mode: pick"),
         ("A", "Auto tool: Fill mode -> Paint mode with everything picked; Paint mode: pick all / none"),
         ("Drag a point / double-click it", "Move the point / delete it"),
