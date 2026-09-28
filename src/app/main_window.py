@@ -770,6 +770,17 @@ class MainWindow(QMainWindow):
             self.reapply_tool()  # Enter = Apply & Continue
             return True
         if (
+            t == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and event.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+            and self.session.key is not None
+            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            and self.isActiveWindow()
+        ):
+            if not event.isAutoRepeat():  # held: set once, not toggled back and forth
+                self.set_reference(self.session.index)  # Enter (no auto tool) = the current image is the reference ◎
+            return True
+        if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() == Qt.Key.Key_Z
             and event.modifiers() == Qt.KeyboardModifier.NoModifier

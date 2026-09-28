@@ -141,7 +141,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 | X / Z(누르고 있기) / V | Mask Preview 토글 / 잠깐 보기 / Final ↔ 선택 Object |
 | O / R | Outline / Show Changes |
 | S / [ ] | 현재 프레임으로 스크롤 / 이전·다음 문제 이미지 |
-| , . / F | 이전·다음 키프레임(★) / 전파 기준(◎)으로 이동 |
+| , . / F / Enter | 이전·다음 키프레임(★) / 전파 기준(◎)으로 이동 / 현재 프레임을 기준으로 지정 |
 | 휠 / Ctrl+휠 / 가운데·Space 드래그 | 줌 / 브러쉬 크기 / 이동 |
 | F1 | 단축키 전체 목록 |
 

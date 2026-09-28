@@ -266,3 +266,24 @@ def test_mask_preview_final_or_object(qapp, win):
     assert not np.array_equal(win.canvas._final, final)  # the other Object is left out
     win.act_preview_mode.trigger()
     assert not win.settings.preview_object and win.canvas._final_label == "FINAL MASK"
+
+
+# --- p9: Enter makes the current image the reference -----------------------------
+
+
+def test_enter_sets_the_reference(qapp, win):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    win.activateWindow()
+    win.canvas.setFocus()
+    qapp.processEvents()
+    enter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    win.go_to(2)
+    assert win.eventFilter(win.canvas, enter)
+    assert win._reference == 2
+    win.go_to(0)
+    win.go_to_reference()
+    assert win.session.index == 2
+    assert win.eventFilter(win.canvas, enter)  # again on the reference: back to none
+    assert win._reference is None
