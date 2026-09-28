@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, Optional
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QPushButton,
     QSpinBox,
     QTextBrowser,
@@ -22,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.settings import Settings
-from src.core.storage import ExportOptions
+from src.core.storage import ExportCheck, ExportOptions
 
 
 def _path_row(edit: QLineEdit, pick) -> QWidget:
@@ -83,9 +86,12 @@ class ExportDialog(QDialog):
         ("{name}.png  (COLMAP: frame_001.jpg.png)", "{name}.png"),
     )
 
-    def __init__(self, default_dir: Path, parent=None):
+    def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[[str], ExportCheck]] = None):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
+        self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
+        self.setMinimumWidth(480)
+        self._check = check
         self.out = QLineEdit(str(default_dir))
         self.pattern = QComboBox()
         for label, _ in self.PATTERNS:
@@ -93,6 +99,17 @@ class ExportDialog(QDialog):
         self.invert = QCheckBox("Invert (object black, background white)")
         self.empty = QCheckBox("Also write empty masks for images without Objects")
         form = QFormLayout(self)
+        # the check: what gets written, and the images worth a look before exporting
+        self.summary = QLabel()
+        self.summary.setTextFormat(Qt.TextFormat.RichText)
+        self.summary.setWordWrap(True)
+        self.problems = QListWidget()
+        self.problems.setMaximumHeight(130)
+        self.problems.setToolTip("Double-click: close this and open the image")
+        self.problems.itemDoubleClicked.connect(self._open_problem)
+        if check is not None:
+            form.addRow(self.summary)
+            form.addRow(self.problems)
         form.addRow("Folder", _path_row(self.out, self._pick))
         form.addRow("File names", self.pattern)
         form.addRow(self.invert)
@@ -102,6 +119,48 @@ class ExportDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
+        self.pattern.currentIndexChanged.connect(self._run_check)
+        self.empty.toggled.connect(self._run_check)
+        self._run_check()
+
+    def _run_check(self) -> None:
+        if self._check is None:
+            return
+        c = self._check(self.PATTERNS[self.pattern.currentIndex()][1])
+        self.check_result = c
+
+        def line(ok: bool, text: str) -> str:
+            color = "#2a8a2a" if ok else "#d78200"
+            return f"<span style='color: {color}'>{'✓' if ok else '⚠'}</span> {text}"
+
+        missing = len(c.without_mask)
+        written = len(c.with_mask) + len(c.empty) + (missing if self.empty.isChecked() else 0)
+        rows = [
+            f"<b>{written}</b> file(s) will be written for <b>{c.images}</b> image(s)",
+            line(missing == 0, f"Images without a mask: {missing}"
+                 + ("" if missing == 0 or self.empty.isChecked() else " (no file — see “Also write empty masks”)")),
+            line(not c.empty, f"Empty masks: {len(c.empty)}"),
+            line(not c.warning, f"Suspicious / failed frames (⚠ ✕): {len(c.warning)}"),
+            line(not c.clashes, "File names: " + ("OK" if not c.clashes else f"{len(c.clashes)} clash(es)")),
+        ]
+        self.summary.setText("<br>".join(rows))
+        self.problems.clear()
+        reasons = (
+            (set(c.without_mask), "no mask"),
+            (set(c.empty), "empty"),
+            (set(c.warning), "⚠ / ✕"),
+            ({k for ks in c.clashes for k in ks}, "name clash"),
+        )
+        index = {k: i for i, k in enumerate(c.keys)}
+        for k in c.problems:
+            why = ", ".join(r for ks, r in reasons if k in ks)
+            self.problems.addItem(f"{index[k] + 1}  {k}  —  {why}")
+            self.problems.item(self.problems.count() - 1).setData(Qt.ItemDataRole.UserRole, k)
+        self.problems.setVisible(self.problems.count() > 0)
+
+    def _open_problem(self, item) -> None:
+        self.goto = item.data(Qt.ItemDataRole.UserRole)
+        self.reject()
 
     def _pick(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Export folder", self.out.text())

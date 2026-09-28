@@ -119,6 +119,8 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 - **자동 저장**: 이미지 폴더 **옆** `<폴더>.sms/`에 저장합니다(백그라운드). COLMAP / 3DGS 로더가 이미지 폴더를 재귀적으로 읽기 때문에 폴더 안에는 두지 않습니다.
 - **Export** (`Ctrl+E`): Final Mask를 흑백 PNG, **원본 해상도**로 `<폴더>_masks/`에 저장.
   파일 이름 `{stem}.png` 또는 COLMAP 방식 `{name}.png`, 반전, 빈 이미지도 저장 옵션.
+  - Export 창 위쪽에 **검사 결과**: 저장될 파일 수, Mask 없는 이미지, 빈 Mask, ⚠ / ✕ 프레임, 파일 이름 충돌.
+    문제 이미지 목록에서 더블클릭하면 창을 닫고 그 이미지로 이동합니다.
 
 ## 주요 단축키
 

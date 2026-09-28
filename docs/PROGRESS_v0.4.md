@@ -27,8 +27,14 @@
 - **`[` / `]`**: 이전 / 다음 문제 이미지(`⚠` `✕`, 선택 Object 기준이면 `–`도). 끝에서 처음으로 돌아감.
 - Properties 안내 문구의 옛 이름(`Edit`, `Brush: B`) 수정.
 
+### 3단계 · Export 전 검사 (`v0.4-p3`)
+- Export 창 위쪽에 검사 결과(`src/core/storage.py` `check_export`, Qt 없음):
+  - 저장될 파일 수 / 전체 이미지 수 ("Also write empty masks" 옵션 반영)
+  - Mask 없는 이미지, 빈 Mask(Object는 있지만 Final Mask에 픽셀 없음), ⚠ / ✕ 프레임(체크된 Object 기준)
+  - 파일 이름 충돌(`{stem}.png`에서 `a.jpg`와 `a.png` 같은 경우). 이름 방식을 바꾸면 다시 검사.
+- 문제 이미지 목록: 더블클릭하면 창을 닫고 그 이미지로 이동. 문제가 없으면 목록은 숨김.
+
 ## 진행 예정
-- 3단계 · Export 전 검사: 이미지/마스크 수, 빈 마스크, 문제 프레임 요약 후 Export / Cancel
 - 4단계 · Properties 접기: Edit Layer 탭의 Settings / Layer 섹션 접기(상태 기억)
 
 ## 반영 안 함 (리뷰 평가 결과)

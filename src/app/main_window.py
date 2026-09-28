@@ -57,7 +57,7 @@ from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.project import Source
 from src.core.propagation import Direction, PropagationPlan
-from src.core.storage import default_export_dir
+from src.core.storage import check_export, default_export_dir
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -1533,8 +1533,11 @@ class MainWindow(QMainWindow):
         if not s.project.keys_with_masks():
             self.warn("Nothing to export: no checked Object has a mask yet.")
             return
-        dlg = ExportDialog(default_export_dir(s.image_dir), self)
+        dlg = ExportDialog(default_export_dir(s.image_dir), self, check=lambda pattern: check_export(s.project, pattern))
         if dlg.exec() != ExportDialog.DialogCode.Accepted:
+            if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
+                self.go_to(s.keys.index(dlg.goto))
+                self.focus_frame()
             return
         self.run_export(dlg.options())
 
