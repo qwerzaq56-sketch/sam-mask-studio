@@ -64,10 +64,11 @@ def _atomic_write_text(path: Path, text: str) -> None:
 class ProjectStore:
     """Saves a Project incrementally: only masks whose array changed are rewritten."""
 
-    def __init__(self, image_dir: Path, max_side: int):
+    def __init__(self, image_dir: Path, max_side: int, projection: str = "perspective"):
         self.image_dir = image_dir
         self.root = sidecar_dir(image_dir)
         self.max_side = max_side
+        self.projection = projection  # "perspective" (normal images) or "erp" (360° panoramas)
         # (obj_id, key) -> the mask array last written for it. Masks are immutable, so
         # an identity check tells whether it changed. Holding the reference (not id())
         # keeps a freed array's id from being reused by a different mask.
@@ -83,6 +84,16 @@ class ProjectStore:
 
     def exists(self) -> bool:
         return (self.root / "project.json").is_file()
+
+    def peek(self) -> Optional[dict]:
+        """Projection / working size of an existing project without loading its masks."""
+        if not self.exists():
+            return None
+        try:
+            doc = json.loads((self.root / "project.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return {"projection": doc.get("projection", "perspective"), "max_side": doc.get("max_side")}
 
     # ------------------------------------------------------------------
     # Save
@@ -145,6 +156,7 @@ class ProjectStore:
             "version": FORMAT_VERSION,
             "image_dir": str(self.image_dir),
             "max_side": self.max_side,
+            "projection": self.projection,
             "next_id": project.next_id,
             "label_counts": project.label_counts,
             "objects": objects_json,
@@ -164,6 +176,7 @@ class ProjectStore:
             return project
         doc = json.loads((self.root / "project.json").read_text(encoding="utf-8"))
         self.max_side = int(doc.get("max_side", self.max_side))
+        self.projection = str(doc.get("projection", "perspective"))
         project.next_id = int(doc.get("next_id", 1))
         project.label_counts = {k: int(v) for k, v in doc.get("label_counts", {}).items()}
         known = set(image_keys)

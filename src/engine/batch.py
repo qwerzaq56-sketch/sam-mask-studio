@@ -30,10 +30,12 @@ def batch_detect(
     threshold: float,
     cancel: Optional[Callable[[], bool]] = None,
     progress: Optional[Callable[[str, int, int], None]] = None,
+    detect: Optional[Callable] = None,
 ) -> Iterator[Tuple[int, Dict[str, LabelHit]]]:
     """Yield ``(index, {label: LabelHit})`` for each image in *indices*.
 
-    Uses ``engine.detect_many`` so the image being edited in the UI is not
+    Uses ``engine.detect_many`` (or ``detect(engine, image, labels)``, e.g. the
+    ERP multi-view detector) so the image being edited in the UI is not
     disturbed. Detections scoring below *threshold* are ignored.
     """
     total = len(indices)
@@ -41,7 +43,7 @@ def batch_detect(
         if cancel and cancel():
             return
         image = to_working(read_rgb(image_paths[idx]), max_side)
-        dets = engine.detect_many(image, labels)
+        dets = detect(engine, image, labels) if detect is not None else engine.detect_many(image, labels)
         hits: Dict[str, LabelHit] = {}
         for label in labels:
             kept = [d for d in dets if d.label == label and d.score >= threshold]

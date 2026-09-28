@@ -46,12 +46,25 @@ class SettingsDialog(QDialog):
         self.max_side.setSingleStep(128)
         self.max_side.setSpecialValueText("original size")
         self.max_side.setValue(settings.max_side)
+        self.erp_side = QSpinBox()
+        self.erp_side.setRange(1024, 16384)
+        self.erp_side.setSingleStep(512)
+        self.erp_side.setValue(settings.erp_max_side)
+        self.erp_views = QComboBox()
+        from src.core.erp import VIEW_PRESETS
+
+        for key, text in VIEW_PRESETS.items():
+            self.erp_views.addItem(text, key)
+        self.erp_views.setCurrentIndex(max(0, self.erp_views.findData(settings.erp_views)))
         form = QFormLayout(self)
         form.addRow("SAM2 checkpoint", _path_row(self.sam2, lambda: self._pick(self.sam2)))
         form.addRow("SAM3 checkpoint", _path_row(self.sam3, lambda: self._pick(self.sam3)))
         form.addRow("Working max side (px)", self.max_side)
+        form.addRow("360° (ERP) working width (px)", self.erp_side)
+        form.addRow("360° SAM3 detection views", self.erp_views)
         note = QLabel(
-            "Masks are edited at the working resolution and upsampled on export.\nApplies to folders without a saved project."
+            "Masks are edited at the working resolution and upsampled on export.\n"
+            "Working sizes apply to folders without a saved project; the view preset applies at once."
         )
         note.setStyleSheet("color: gray;")
         form.addRow(note)
@@ -71,6 +84,8 @@ class SettingsDialog(QDialog):
         settings.sam2_checkpoint = self.sam2.text().strip()
         settings.sam3_checkpoint = self.sam3.text().strip()
         settings.max_side = self.max_side.value()
+        settings.erp_max_side = self.erp_side.value()
+        settings.erp_views = self.erp_views.currentData()
 
 
 class ExportDialog(QDialog):
