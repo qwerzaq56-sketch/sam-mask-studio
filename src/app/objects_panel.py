@@ -64,6 +64,7 @@ class ObjectsPanel(QWidget):
         self._objects: List[MaskObject] = []
         self._editing: Optional[int] = None
         self._updating = False
+        self._shape: tuple = ()
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(4)
@@ -109,48 +110,74 @@ class ObjectsPanel(QWidget):
     # ------------------------------------------------------------------
 
     def set_objects(self, objects: Sequence[MaskObject], key: Optional[str], editing: Optional[int]) -> None:
-        """Rebuild the rows, keeping the row selection."""
-        keep = set(self.selected_ids())
+        """Show *objects*, keeping the row selection.
+
+        Rows are updated in place while the list of Objects (and their Variant
+        rows) stays the same. Rebuilding would delete the row buttons, and a
+        click whose press selects a row would then lose its release.
+        """
+        shape = (
+            tuple((o.id, self._variant_count(o, key)) for o in objects),
+            editing,
+        )
         self._objects = list(objects)
         self._editing = editing
         self._updating = True
         self.tree.blockSignals(True)
+        if shape != self._shape:
+            self._rebuild(objects, key, editing)
+            self._shape = shape
+        for i, o in enumerate(objects):
+            self._fill(self.tree.topLevelItem(i), o, key, editing)
+        self.tree.blockSignals(False)
+        self._updating = False
+        self._update_buttons()
+
+    @staticmethod
+    def _variant_count(o: MaskObject, key: Optional[str]) -> int:
+        fs = o.frame(key) if key is not None else None
+        return len(fs.variants) if fs is not None and len(fs.variants) > 1 else 0
+
+    def _rebuild(self, objects: Sequence[MaskObject], key: Optional[str], editing: Optional[int]) -> None:
+        keep = set(self.selected_ids())
         self.tree.clear()
         for o in objects:
             item = QTreeWidgetItem()
             item.setData(0, ID_ROLE, o.id)
-            item.setText(0, o.name)
-            item.setIcon(0, color_icon(o.color))
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEditable)
-            item.setCheckState(0, Qt.CheckState.Checked if o.included else Qt.CheckState.Unchecked)
-            has = key is not None and o.mask(key) is not None
-            n = sum(1 for fs in o.frames.values() if fs.mask is not None)
-            item.setToolTip(0, f"{o.source.value} · masks on {n} image(s)" + ("" if has else " · none on this image"))
-            if not has:
-                item.setForeground(0, QBrush(QColor(140, 140, 140)))
-            if o.id == editing:
-                f = QFont()
-                f.setBold(True)
-                item.setFont(0, f)
             self.tree.addTopLevelItem(item)
             item.setSelected(o.id in keep)
             self.tree.setItemWidget(item, 1, self._edit_button(o.id, o.id == editing))
             self.tree.setItemWidget(item, 2, self._delete_button(o.id))
             self.tree.setItemWidget(item, 3, self._more_button(o.id))
-            fs = o.frame(key) if key is not None else None
-            if fs is not None and len(fs.variants) > 1:
-                sel = min(fs.selected, len(fs.variants) - 1)
-                for i, v in enumerate(fs.variants):
-                    child = QTreeWidgetItem(item)
-                    child.setData(0, ID_ROLE, o.id)
-                    child.setData(0, VARIANT_ROLE, i)
-                    child.setText(0, f"{'●' if i == sel else '○'}  Variant {i + 1}   {v.score:.3f}")
-                    child.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                    child.setFirstColumnSpanned(True)
-                item.setExpanded(True)
-        self.tree.blockSignals(False)
-        self._updating = False
-        self._update_buttons()
+            for i in range(self._variant_count(o, key)):
+                child = QTreeWidgetItem(item)
+                child.setData(0, ID_ROLE, o.id)
+                child.setData(0, VARIANT_ROLE, i)
+                child.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                child.setFirstColumnSpanned(True)
+            item.setExpanded(True)
+
+    def _fill(self, item: QTreeWidgetItem, o: MaskObject, key: Optional[str], editing: Optional[int]) -> None:
+        """Write *o*'s current state into its row (and Variant rows)."""
+        if item.text(0) != o.name:
+            item.setText(0, o.name)
+        item.setIcon(0, color_icon(o.color))
+        state = Qt.CheckState.Checked if o.included else Qt.CheckState.Unchecked
+        if item.checkState(0) != state:
+            item.setCheckState(0, state)
+        has = key is not None and o.mask(key) is not None
+        n = sum(1 for fs in o.frames.values() if fs.mask is not None)
+        item.setToolTip(0, f"{o.source.value} · masks on {n} image(s)" + ("" if has else " · none on this image"))
+        item.setForeground(0, QBrush() if has else QBrush(QColor(140, 140, 140)))
+        f = QFont()
+        f.setBold(o.id == editing)
+        item.setFont(0, f)
+        fs = o.frame(key) if key is not None else None
+        if fs is not None and item.childCount():
+            sel = min(fs.selected, len(fs.variants) - 1)
+            for i, v in enumerate(fs.variants[: item.childCount()]):
+                item.child(i).setText(0, f"{'●' if i == sel else '○'}  Variant {i + 1}   {v.score:.3f}")
 
     def _edit_button(self, oid: int, editing: bool) -> QPushButton:
         b = QPushButton("Editing" if editing else "Edit")
