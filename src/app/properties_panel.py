@@ -21,7 +21,9 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -49,6 +51,16 @@ def mask_thumbnail(image: Optional[np.ndarray], mask: np.ndarray, color, size: i
     out = np.ascontiguousarray(out)
     qi = QImage(out.data, tw, th, 3 * tw, QImage.Format.Format_RGB888).copy()
     return QIcon(QPixmap.fromImage(qi))
+
+
+def _scrolled(page: QWidget) -> QScrollArea:
+    area = QScrollArea()
+    area.setWidget(page)
+    area.setWidgetResizable(True)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setFrameShape(QScrollArea.Shape.NoFrame)
+    page.setMinimumHeight(page.sizeHint().height())  # scroll instead of squashing the lists
+    return area
 
 
 class PropertiesPanel(QWidget):
@@ -184,13 +196,26 @@ class PropertiesPanel(QWidget):
         self.finish_btn.setToolTip("Esc")
         self.finish_btn.clicked.connect(self.finish_requested)
 
+        # Two tabs, each scrollable, so the panel fits a short window.
+        mask_page = QWidget()
+        ml = QVBoxLayout(mask_page)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.addWidget(vbox, 1)
+        ml.addWidget(pbox, 1)
+        layer_page = QWidget()
+        el = QVBoxLayout(layer_page)
+        el.setContentsMargins(0, 0, 0, 0)
+        el.addWidget(lbox)
+        el.addStretch(1)
+        self.tabs = QTabWidget()
+        self.mask_tab = self.tabs.addTab(_scrolled(mask_page), "Mask")
+        self.layer_tab = self.tabs.addTab(_scrolled(layer_page), "Edit Layer")
+
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.title)
         lay.addWidget(self.hint)
-        lay.addWidget(vbox, 2)
-        lay.addWidget(pbox, 2)
-        lay.addWidget(lbox)
+        lay.addWidget(self.tabs, 1)
         lay.addWidget(self.finish_btn)
         self.show_frame(None, None, None, None)
 
@@ -211,6 +236,7 @@ class PropertiesPanel(QWidget):
         self._updating = True
         self.variants.clear()
         self.points.clear()
+        self.hint.setVisible(obj is None)  # the how-to only while nothing is shown
         if obj is None:
             self.title.setText(
                 "<b>New Object</b> — click or drag a box on the image" if new_mode else "No Object selected"
@@ -275,7 +301,9 @@ class PropertiesPanel(QWidget):
         self._updating = False
 
     def set_brush(self, on: bool) -> None:
-        """Reflect the brush state without re-emitting."""
+        """Reflect the brush state without re-emitting (and show the Edit Layer tab when it turns on)."""
+        if on and not self.brush_btn.isChecked():
+            self.tabs.setCurrentIndex(self.layer_tab)
         self.brush_btn.blockSignals(True)
         self.brush_btn.setChecked(on)
         self.brush_btn.blockSignals(False)
