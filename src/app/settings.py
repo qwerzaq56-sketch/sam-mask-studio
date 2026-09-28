@@ -26,6 +26,7 @@ class Settings:
     outline_visible: bool = True  # white outline around the edited mask
     outline_width: float = 1.0  # screen px
     show_edit_changes: bool = False  # tint what the edit layer added (green) / removed (red)
+    frame_list_names: bool = True  # the Frame List shows file names (else only IDs and marks)
 
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":

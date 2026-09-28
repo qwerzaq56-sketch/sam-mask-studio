@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QTabWidget,
     QToolBar,
+    QToolButton,
 )
 
 from src.app.canvas import Canvas, Overlay
@@ -47,6 +48,7 @@ from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, PropertiesPanel
 from src.app.session import Mode, Session
+from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.propagation import Direction, PropagationPlan
@@ -152,6 +154,14 @@ class MainWindow(QMainWindow):
         # the one-line frame list: a narrow column left of the Objects (same model / selection as the strip)
         list_dock = self._dock("Frame List", self.images_panel.frame_list, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.splitDockWidget(list_dock, left_dock, Qt.Orientation.Horizontal)
+        self.names_btn = QToolButton()  # left of the close button: fold the file names away
+        self.names_btn.setText("Aa")
+        self.names_btn.setCheckable(True)
+        self.names_btn.setAutoRaise(True)
+        self.names_btn.setToolTip("Show the file names (off: only IDs and marks, a narrow list)")
+        self.names_btn.toggled.connect(self.set_frame_names)
+        list_dock.setTitleBarWidget(DockTitleBar(list_dock, [self.names_btn]))
+        self._list_dock = list_dock
         view_menu = self.menuBar().addMenu("&View")
         for d in (list_dock, left_dock, right_dock, frames_dock):
             view_menu.addAction(d.toggleViewAction())
@@ -266,6 +276,8 @@ class MainWindow(QMainWindow):
         self.act_shortcuts = help_menu.addAction("Keyboard Shortcuts")
         self.act_shortcuts.setShortcut(QKeySequence("F1"))
         self.act_shortcuts.triggered.connect(self.show_shortcuts)
+        self.names_btn.setChecked(self.settings.frame_list_names)
+        self.images_panel.set_names_visible(self.settings.frame_list_names)
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
@@ -794,6 +806,13 @@ class MainWindow(QMainWindow):
         self.settings.outline_visible = bool(on)
         self.settings.outline_width = float(self.outline_width.value())
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
+        self.settings.save(self.settings_path)
+
+    def set_frame_names(self, on: bool) -> None:
+        """Frame List: file names on, or folded to the IDs and marks (the column narrows)."""
+        self.images_panel.set_names_visible(on)
+        self.resizeDocks([self._list_dock], [210 if on else 80], Qt.Orientation.Horizontal)
+        self.settings.frame_list_names = bool(on)
         self.settings.save(self.settings_path)
 
     def set_show_changes(self, on: bool) -> None:
