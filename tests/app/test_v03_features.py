@@ -333,7 +333,7 @@ def test_final_preview_toggle_and_editing_in_it(qapp, win):
 
     from tests.app.test_gui import canvas_pos
 
-    assert win.act_final.shortcut() == QKeySequence("Z")
+    assert win.act_final.shortcut() == QKeySequence("X")
     s = win.session
     win.new_object()
     s.click(30, 30)
@@ -420,18 +420,49 @@ def test_region_changes_undo_and_redo_in_order(qapp, win):
 
 
 
-def test_space_peeks_at_the_final_mask(qapp, win):
-    from PyQt6.QtCore import QEvent
-    from PyQt6.QtGui import QKeyEvent
+def test_z_held_peeks_and_the_wheel_leaves_sliders_alone(qapp, win):
+    from PyQt6.QtCore import QEvent, QPoint, QPointF
+    from PyQt6.QtGui import QKeyEvent, QWheelEvent
 
     win.activateWindow()
     win.canvas.setFocus()
-    press = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
-    release = QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
-    win.eventFilter(win.canvas, press)
-    assert win.canvas.showing_final and not win.act_final.isChecked()
+    press = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Z, Qt.KeyboardModifier.NoModifier)
+    release = QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Z, Qt.KeyboardModifier.NoModifier)
+    assert win.eventFilter(win.canvas, press) and win.canvas.showing_final and not win.act_final.isChecked()
     win.eventFilter(win.canvas, release)
     assert not win.canvas.showing_final
+    ctrl_z = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert not win.eventFilter(win.canvas, ctrl_z)  # Ctrl+Z stays Undo
+
+    field = win.properties_panel.grow
+    before = field.value()
+    wheel = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(), QPoint(0, 120), Qt.MouseButton.NoButton,
+                        Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    assert win.eventFilter(field.slider, wheel)
+    assert field.value() == before
+
+
+def test_help_shortcuts_window_and_apply_button(qapp, win):
+    from src.app.dialogs import SHORTCUTS, ShortcutsDialog
+
+    assert win.act_shortcuts.shortcut().toString() == "F1"
+    keys = {k for _, items in SHORTCUTS for k, _ in items}
+    assert {"X", "Z (hold)", "Ctrl+Z", "Alt+drag"} <= keys
+    ShortcutsDialog(win).close()
+
+    s = holes_object(win)
+    p = win.properties_panel
+    p.fill_area.setValue(5)
+    assert not p.apply_auto_btn.isEnabled()
+    p.mode_paint_btn.click()
+    p.tool_btns["fill_holes"].click()
+    assert p.apply_auto_btn.isEnabled()
+    win.a_key()  # pick everything
+    p.apply_auto_btn.click()  # writes the picks in and leaves the tool
+    m = s.editing_frame().mask
+    assert m[25, 25] and m[35, 35] and s.auto_tool is None and not p.apply_auto_btn.isEnabled()
+    p.mode_fill_btn.click()
+
 
 
 def test_restore_is_live_while_dragging(qapp, win):

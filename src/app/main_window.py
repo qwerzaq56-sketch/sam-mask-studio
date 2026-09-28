@@ -20,6 +20,7 @@ from typing import Callable, List, Optional
 from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
     QDockWidget,
@@ -37,7 +38,7 @@ from PyQt6.QtWidgets import (
 
 from src.app.canvas import Canvas, Overlay
 from src.app.detection_panel import DetectionPanel, candidate_color
-from src.app.dialogs import ExportDialog, SettingsDialog
+from src.app.dialogs import ExportDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
 from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
@@ -176,8 +177,8 @@ class MainWindow(QMainWindow):
         self.act_final = self._action(
             "Preview Final Mask",
             self.toggle_final,
-            ["Z"],
-            "Show the Final Mask (hold Space to peek; editing keeps working)",
+            ["X"],
+            "Show the Final Mask (hold Z to peek; editing keeps working)",
             True,
         )
         self.act_brush = self._action(
@@ -223,6 +224,10 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_settings)
         self.addToolBar(tb)
+        help_menu = self.menuBar().addMenu("&Help")
+        self.act_shortcuts = help_menu.addAction("Keyboard Shortcuts")
+        self.act_shortcuts.setShortcut(QKeySequence("F1"))
+        self.act_shortcuts.triggered.connect(self.show_shortcuts)
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
 
         def key(seq, slot):
@@ -271,6 +276,7 @@ class MainWindow(QMainWindow):
         p.finish_requested.connect(self.finish_editing)
         p.brush_tool_selected.connect(self.set_brush_tool)
         p.auto_mode_changed.connect(self.set_auto_mode)
+        p.auto_apply_requested.connect(lambda: self.set_brush_tool(""))  # leaving applies
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
         p.clear_region_requested.connect(lambda: self.on_region(None))
@@ -563,16 +569,29 @@ class MainWindow(QMainWindow):
         task.start()
 
     def eventFilter(self, obj, event):
-        """Space held anywhere (except in a text box) shows the Final Mask."""
+        """App-wide: Z held (no modifiers, not in a text box) shows the Final Mask; the wheel
+        over a slider / number box scrolls the panel instead of changing the value."""
         t = event.type()
-        if t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and event.key() == Qt.Key.Key_Space:
+        if (
+            t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and event.key() == Qt.Key.Key_Z
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+        ):
             focus = QApplication.focusWidget()
             typing = isinstance(focus, (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
             if not typing and self.isActiveWindow():
                 if not event.isAutoRepeat():
                     self.canvas.set_final_peek(t == QEvent.Type.KeyPress)
-                return True  # not also a click on a focused button
+                return True
+        if t == QEvent.Type.Wheel and isinstance(obj, (QAbstractSlider, QAbstractSpinBox)):
+            parent = obj.parentWidget()
+            if parent is not None:
+                QApplication.sendEvent(parent, event)  # on up to the scroll area
+            return True
         return super().eventFilter(obj, event)
+
+    def show_shortcuts(self) -> None:
+        ShortcutsDialog(self).exec()
 
     def closeEvent(self, event):
         if self._prop_worker is not None and self._prop_worker.isRunning():
