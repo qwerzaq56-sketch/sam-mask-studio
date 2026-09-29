@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.settings import Settings
+from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
 from src.core.storage import ExportCheck, ExportOptions
 
@@ -140,7 +141,8 @@ class ExportDialog(QDialog):
 
     def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[..., ExportCheck]] = None,
                  scene=None, target: str = CUSTOM, sets: Optional[dict] = None,
-                 save_set: Optional[Callable[[str], bool]] = None, delete_set: Optional[Callable[[str], None]] = None):
+                 save_set: Optional[Callable[[str], bool]] = None, delete_set: Optional[Callable[[str], None]] = None,
+                 excluded: int = 0):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
         self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
@@ -169,6 +171,20 @@ class ExportDialog(QDialog):
         self.folders.setWordWrap(True)
         self.folders.setStyleSheet("color: gray;")
         self._fill_sets()
+        # where a preset writes: into the scene, or a new dataset (images linked, model filtered)
+        self._excluded = excluded
+        self.to_scene = QRadioButton("Into the scene")
+        self.to_new = QRadioButton("New dataset:")
+        self.to_scene.setChecked(True)
+        self.dataset = QLineEdit(str(scene.root.parent / f"{scene.root.name}_dataset") if scene is not None else "")
+        self.dataset.setToolTip("A new folder: images/ (hard links, no extra space on the same drive), "
+                                "sparse/0/ without the ⊘ frames, and the masks")
+        self._out_row = QWidget()
+        orow = QHBoxLayout(self._out_row)
+        orow.setContentsMargins(0, 0, 0, 0)
+        orow.addWidget(self.to_scene)
+        orow.addWidget(self.to_new)
+        orow.addWidget(_path_row(self.dataset, self._pick_dataset), 1)
         self.out = QLineEdit(str(default_dir))
         self.pattern = QComboBox()
         for label, _ in self.PATTERNS:
@@ -187,6 +203,7 @@ class ExportDialog(QDialog):
         if scene is not None:
             form.addRow("For", self.target)
             form.addRow(self.note)
+            form.addRow("Output", self._out_row)
         if check is not None:
             form.addRow(self.summary)
             form.addRow(self.problems)
@@ -209,6 +226,8 @@ class ExportDialog(QDialog):
         self.pattern.currentIndexChanged.connect(self._run_check)
         self.empty.toggled.connect(self._run_check)
         self.target.currentIndexChanged.connect(self._apply_target)
+        self.to_new.toggled.connect(lambda _on: self._apply_target())
+        self.dataset.textChanged.connect(lambda _t: self._apply_target())
         self.mask.currentIndexChanged.connect(self._run_check)
         self.out.textChanged.connect(lambda _t: self._show_folders())
         self._apply_target()
@@ -246,6 +265,18 @@ class ExportDialog(QDialog):
         v = self.mask.currentData()
         return [None] + sorted(self._sets) if v == self.EVERY else [v]
 
+    def dataset_root(self) -> Optional[Path]:
+        """The new dataset's folder, or None when writing into the scene (or not a preset)."""
+        if self.preset() is None or self._scene is None or not self.to_new.isChecked():
+            return None
+        text = self.dataset.text().strip()
+        return Path(text) if text else None
+
+    def _pick_dataset(self) -> None:
+        d = QFileDialog.getExistingDirectory(self, "New dataset folder (an empty one)", self.dataset.text())
+        if d:
+            self.dataset.setText(d)
+
     def _folder(self, name: Optional[str]) -> Path:
         base = Path(self.out.text().strip())
         return base if name is None else base.parent / f"{base.name}_{name}"
@@ -273,12 +304,15 @@ class ExportDialog(QDialog):
             self._custom_dir = self.out.text()  # keep what was typed for Custom
         for w in (self.out, self.pattern, self.invert, self.empty):
             w.setEnabled(p is None)
+        self._out_row.setVisible(p is not None and self._scene is not None)
+        self.dataset.setEnabled(self.to_new.isChecked())
         if p is None:
             self.out.setText(self._custom_dir)
             self.note.setText("")
         else:
             if self._scene is not None:
-                self.out.setText(str(self._scene.root / p.folder))
+                root = self.dataset_root() or self._scene.root
+                self.out.setText(str(root / p.folder))
             self.pattern.setCurrentIndex([v for _, v in self.PATTERNS].index(p.pattern))
             self.invert.setChecked(p.object_black)
             self.empty.setChecked(p.every_image)
@@ -301,6 +335,8 @@ class ExportDialog(QDialog):
 
         missing = len(c.without_mask)
         written = len(c.with_mask) + len(c.empty) + (missing if self.empty.isChecked() else 0)
+        if self.dataset_root() is not None and self.empty.isChecked():
+            written = c.images - self._excluded  # a new dataset holds the kept frames only
         rows = [
             f"<b>{written}</b> file(s) will be written for <b>{c.images}</b> image(s)",
             line(missing == 0 or self.empty.isChecked(), f"Images without a mask: {missing}"
@@ -334,6 +370,13 @@ class ExportDialog(QDialog):
         if p is None or sc is None:
             return []
         rows = []
+        root = self.dataset_root()
+        if root is not None:
+            why = dataset_blocker(root)
+            rows.append(line(not why, why or f"New dataset: {root.name}/ — images/ linked, sparse/0/ filtered"
+                                              + (f", {self._excluded} ⊘ frame(s) left out" if self._excluded else "")))
+        elif self._excluded:
+            rows.append(line(False, f"{self._excluded} frame(s) are ⊘ excluded: that only applies to a New dataset"))
         odd = [m for m in sc.camera_models if m in p.unconfirmed_cameras]
         if sc.camera_models:
             rows.append(line(not odd, "Cameras: " + ", ".join(sc.camera_models)

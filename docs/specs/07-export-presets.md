@@ -118,7 +118,7 @@
 | C1 | 장면 인식 + 기존 마스크 폴더를 Object로 불러오기 | 06 C1 그대로 (**완료, `v0.4-p23`**) |
 | C2 | **장면에 마스크 쓰기** + 프리셋(Brush, LichtFeld, COLMAP, Custom) + 검사 확장 (**완료, `v0.4-p24`**) → 마스크 세트 **완료, `v0.4-p25`** | 06 C2 |
 | C2-확인 | 작은 테스트 장면으로 LichtFeld / Spirula / Postshot에 넣어 보고 3장 표 채우기 → 프리셋 추가 | 06 C4 |
-| C3 | 프레임 제외 + **새 데이터셋 만들기**(하드링크, `.bin` 걸러 쓰기) | 06 C3를 바꿈(원본 수정 없음) |
+| C3 | 프레임 제외 + **새 데이터셋 만들기**(하드링크, `.bin` 걸러 쓰기) (**완료, `v0.4-p28`**) | 06 C3를 바꿈(원본 수정 없음) |
 
 ---
 
@@ -154,6 +154,8 @@ PRESETS = {
 4. 360 → Pinhole 변환: **필요** → 별도 기획서(`08`)로.
 
 ## 12. 구현 기록
+
+- `v0.4-p28`: Go → Exclude from Dataset(⊘), Export Output = Into the scene / New dataset(`images/` 하드링크, `sparse/0/` 걸러 씀, 마스크).
 
 - `v0.4-p26`: Spirula Studio(`masks/`, 다른 학습기와 같은 파일), Postshot(`masks_postshot/`, 대상 흰색, `a.png`) 프리셋.
 

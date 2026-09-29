@@ -999,3 +999,52 @@ def test_prompts_waiting_on_another_image_run_when_it_opens(qapp, win):
     assert s.run_pending() == 0  # queued on another image
     s.go_to(0)
     assert s.project.get(oid).mask(first) is not None and not s.pending
+
+
+# --- p28: exclude frames, export a new dataset (docs/specs/07 6) ----------------------------
+
+
+def test_excluded_frames_and_a_new_dataset(qapp, win, tmp_path):
+    import os
+
+    from src.app.dialogs import ExportDialog
+    from src.core.colmap import read_image_names_bin
+    from src.core.storage import ProjectStore
+    from tests.fakes import make_images
+    from tests.unit.test_colmap_model import read_points_bin, write_bin
+
+    root = tmp_path / "scene"
+    make_images(root / "images", n=3)
+    names = sorted(p.name for p in (root / "images").iterdir())
+    write_bin(root / "sparse" / "0", names)
+    assert win.open_folder(root)
+    s = win.session
+    s.start_new_object()
+    s.click(30, 30)
+    s.finish_editing()
+    win.go_to(1)
+    win.toggle_excluded()  # the second frame ⊘
+    assert s.project.excluded == {names[1]}
+    assert "⊘" in win.images_panel.list.item(1).text()
+    win.save(force=True)
+    assert ProjectStore(s.image_dir, s.max_side).load(list(s.keys)).excluded == {names[1]}
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="brush", excluded=1)
+    assert dlg.dataset_root() is None
+    dlg.to_new.setChecked(True)
+    new = tmp_path / "out_dataset"
+    dlg.dataset.setText(str(new))
+    assert dlg.dataset_root() == new and dlg.options().out_dir == new / "masks"
+    win.run_export(dlg.jobs(), dataset=new)
+    from tests.app.conftest import wait_until
+
+    wait_until(qapp, lambda: not win._busy)
+    assert sorted(p.name for p in (new / "images").iterdir()) == [names[0], names[2]]
+    assert os.stat(new / "images" / names[0]).st_nlink >= 2 or (new / "images" / names[0]).is_file()
+    assert read_image_names_bin(new / "sparse" / "0" / "images.bin") == [names[0], names[2]]
+    assert read_points_bin(new / "sparse" / "0" / "points3D.bin") == {1: [1, 3]}
+    assert sorted(p.name for p in (new / "masks").iterdir()) == [f"{names[0]}.png", f"{names[2]}.png"]
+    assert read_image_names_bin(root / "sparse" / "0" / "images.bin") == names  # the scene is untouched
+    win.toggle_excluded()  # again on the same frame: back in
+    assert not s.project.excluded
+    win.undo()
+    assert s.project.excluded == {names[1]}

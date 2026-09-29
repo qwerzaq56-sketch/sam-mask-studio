@@ -212,6 +212,7 @@ class ProjectStore:
             "next_id": project.next_id,
             "label_counts": project.label_counts,
             "mask_sets": {k: list(v) for k, v in project.mask_sets.items()},
+            "excluded": sorted(project.excluded),
             "objects": objects_json,
         }
         job.json_path = self.root / "project.json"
@@ -233,6 +234,7 @@ class ProjectStore:
         project.next_id = int(doc.get("next_id", 1))
         project.label_counts = {k: int(v) for k, v in doc.get("label_counts", {}).items()}
         project.mask_sets = {k: tuple(int(i) for i in v) for k, v in doc.get("mask_sets", {}).items()}
+        project.excluded = frozenset(k for k in doc.get("excluded", []) if k in set(project.image_keys))
         known = set(image_keys)
         for oj in doc.get("objects", []):
             oid = int(oj["id"])

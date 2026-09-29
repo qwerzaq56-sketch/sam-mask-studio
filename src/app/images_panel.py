@@ -78,6 +78,7 @@ def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
 PIN_COLOR = QColor(255, 225, 140)  # pinned tiles
 CURRENT_FILL = QColor(40, 110, 220)  # the open frame: the whole row / tile filled (white text)
 PICKED_FILL = QColor(40, 110, 220, 70)  # the other picked frames (Shift / Ctrl-click): a light tint
+EXCLUDED_COLOR = QColor(150, 150, 150)  # ⊘ rows: left out of a new dataset
 COLUMN_RULE = QColor(128, 128, 128, 70)  # the Frame List's faint lines between ID | marks | name
 REFERENCE_OUTLINE = QColor(255, 130, 0)  # the propagation reference ◎: an orange frame (stands out from blue / 📌)
 
@@ -246,6 +247,7 @@ class ImagesPanel(QWidget):
         self._updating = False
         self._reference: Optional[int] = None
         self._pinned: Set[int] = set()
+        self._excluded: Set[str] = set()  # ⊘: left out of a new dataset
         self._marks: Dict[str, str] = {}
         self._only: Optional[int] = None  # marks for this Object only (None: every Object)
         self._summaries: List[QLabel] = []
@@ -333,7 +335,7 @@ class ImagesPanel(QWidget):
         """Two lines under the thumbnail: ``"12  ★ ◎ 📌"`` then the file name."""
         k = self._keys[i]
         marks = " ".join(m for m in (self._marks.get(k, ""), "◎" if i == self._reference else "",
-                                     "📌" if i in self._pinned else "") if m)
+                                     "📌" if i in self._pinned else "", "⊘" if k in self._excluded else "") if m)
         return f"{i + 1}  {marks}\n{k}"
 
     def status_mark(self, i: int) -> str:
@@ -359,6 +361,8 @@ class ImagesPanel(QWidget):
             if it.text() != text:
                 it.setText(text)
                 color = MARK_COLORS.get(self._marks.get(self._keys[i], ""))
+                if self._keys[i] in self._excluded:
+                    color = EXCLUDED_COLOR
                 it.setForeground(QBrush(color) if color is not None else QBrush())
 
     def summary_label(self, wrap: bool = False) -> QLabel:
@@ -401,6 +405,15 @@ class ImagesPanel(QWidget):
             if self._marks.get(self._keys[i]) in PROBLEMS:
                 return i
         return None
+
+    def set_excluded(self, keys) -> None:
+        """⊘ and gray text on the images left out of a new dataset."""
+        keys = set(keys)
+        if keys != self._excluded:
+            self._excluded = keys
+            for it in (self.list.item(i) for i in range(self.list.count())):
+                it.setText("")  # force _retext to redo every row (text and color)
+            self._retext()
 
     def set_reference(self, index: Optional[int]) -> None:
         """Mark the propagation reference: its row / tile outlined at once, ◎ on the next update_marks."""

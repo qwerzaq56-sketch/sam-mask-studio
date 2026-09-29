@@ -192,6 +192,15 @@
   지금 이미지의 대기분을 계산(Undo 한 단계), 다른 이미지의 대기분은 그 이미지를 열 때. 상태 표시줄 `SAM2 loading… (N waiting)`.
 - 코드: `Session.defer_prompts` / `pending` / `run_pending`.
 
+### 28단계 · 프레임 제외 + 새 데이터셋 (`v0.4-p28`, [`specs/07`](../specs/07-export-presets.md) C3)
+- **Go → Exclude from Dataset / Include**: 고른 프레임(없으면 지금 프레임)을 ⊘로 표시(회색 글자), 다시 하면 되돌림. 작업 파일에 저장, Undo 가능.
+  원본 장면은 바꾸지 않음.
+- Export 창(장면 + 학습기)의 **Output**: Into the scene(전과 같음) / **New dataset**(빈 새 폴더): `images/`(⊘ 아닌 이미지, 같은 드라이브면 하드링크라 용량을 더 안 씀),
+  `sparse/0/`(모델에서 ⊘ 이미지를 빼고 새로 씀: 트랙에서 관측 제거, 관측 2개 미만이 된 3D 점 삭제, 남은 이미지의 그 점은 -1), 마스크.
+  bin / txt 모델 둘 다. `rigs.bin` 등 그 밖의 파일은 옮기지 않고 로그에 알림.
+- 검사: 새 데이터셋이면 폴더가 비었는지와 뺄 장수, 장면에 쓰기인데 ⊘가 있으면 "새 데이터셋에서만 빠짐" 경고.
+- 코드: `src/core/colmap_model.py`(`filter_model`, `build_dataset`), `Project.excluded` / `set_excluded`, `MainWindow.toggle_excluded`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
