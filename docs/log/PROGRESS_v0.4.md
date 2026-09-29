@@ -147,6 +147,12 @@
 - 프레임 색 (16단계를 뒤집음): 열린 프레임 = 파랑 칠(`CURRENT_FILL`), 기준 ◎ = 주황 테두리(`REFERENCE_OUTLINE`), Shift/Ctrl 선택 = 옅은 파랑.
 - 캔버스 위 `W` / `S` = Objects 목록의 이전 / 다음. Object 이동은 끝에서 반대쪽으로 순환(목록 위 키, `↑` `↓` 포함).
 
+### 20단계 · Merge / Copy / Move (`v0.4-p20`, [`specs/05`](../specs/05-merge-copy-move.md))
+- `Copy A → B` 버튼 → **`Move A → B`**: 먼저 선택한 A의 이 이미지 Mask를 마지막에 선택한 B에 더하고 A에서 뺌. A는 Object로 남음(다 옮기면 빈 Object).
+- 옆 `⚙`: Move / Copy · Add / Replace · 이 이미지 / A의 모든 이미지. 고른 값은 기억하지 않음.
+- Merge `⚙`: Add / Override A / Override B(Into A는 Move가 대신함). `[···]` ▸ Move into / Copy into.
+- 코드: `Project.copy_into(move=)`, `MainWindow.transfer` / `transfer_options`, `ObjectsPanel.transfer_requested`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

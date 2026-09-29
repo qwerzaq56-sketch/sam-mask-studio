@@ -3,10 +3,11 @@
 Each row: include checkbox (Final Mask), color, name (double-click to rename),
 [🔒] lock, [Edit], [×] delete, [···] menu. When an Object has several Variants on the
 current image they are listed under it as ● / ○ rows; clicking one selects it.
-Merge / Copy into / Duplicate / Delete act on the selected rows (Ctrl/Shift-click),
+Merge / Move / Duplicate / Delete act on the selected rows (Ctrl/Shift-click),
 so they never conflict with the include checkboxes. Duplicate copies the mask on
-the current image only; Duplicate All copies every linked mask. Merge and Copy
-run at once (Add, this image); their small ⚙ buttons open the options.
+the current image only; Duplicate All copies every linked mask. Merge (Add) and
+Move (Add, this image) run at once; their small ⚙ buttons open the options
+(Move's ⚙ also has Copy). Roles: docs/specs/05-merge-copy-move.md.
 A locked Object is never deleted (no confirmation: Delete is undoable).
 """
 
@@ -103,11 +104,11 @@ class ObjectsPanel(QWidget):
     edit_requested = pyqtSignal(int)  # obj id; the Object already in Edit means "finish"
     new_requested = pyqtSignal()
     merge_requested = pyqtSignal(list)  # Add, at once
-    merge_options_requested = pyqtSignal(list)  # ⚙: Add / Override / Into the first
+    merge_options_requested = pyqtSignal(list)  # ⚙: Add / Override with A / B
     duplicate_requested = pyqtSignal(list)  # the current image's mask only
     duplicate_all_requested = pyqtSignal(list)  # every linked mask
-    copy_requested = pyqtSignal(list)  # [source id, target id]: Add, this image
-    copy_options_requested = pyqtSignal(list)  # ⚙: Add / Replace, this image / every image
+    transfer_requested = pyqtSignal(list, bool)  # [source id, target id], move (else copy): Add, this image
+    transfer_options_requested = pyqtSignal(list)  # ⚙: Move / Copy, Add / Replace, this image / every image
     lock_requested = pyqtSignal(list, bool)  # ids, locked
     delete_requested = pyqtSignal(list)
     remove_frame_requested = pyqtSignal(int)
@@ -152,18 +153,18 @@ class ObjectsPanel(QWidget):
         )
         self.merge_btn.clicked.connect(lambda: later(self, self.merge_requested, self.selected_ids()))
         self.merge_opts_btn = self._options_button(
-            "Merge options: Add, Override with A / B, or into A keeping the others (emptied)",
+            "Merge options: Add, or Override with A / B",
             lambda: later(self, self.merge_options_requested, self.selected_ids()),
         )
-        self.copy_btn = QPushButton("Copy A → B")
-        self.copy_btn.setToolTip(
-            "Add the first selected Object's (A) mask on this image to the last selected (B)."
-            " ⚙: Replace, or every image"
+        self.move_btn = QPushButton("Move A → B")
+        self.move_btn.setToolTip(
+            "Move the first selected Object's (A) mask on this image into the last selected (B), added to B's."
+            " A stays. ⚙: Copy, Replace, or every image"
         )
-        self.copy_btn.clicked.connect(lambda: later(self, self.copy_requested, self._pair()))
-        self.copy_opts_btn = self._options_button(
-            "Copy options: Add / Replace, this image / every image where A has a mask",
-            lambda: later(self, self.copy_options_requested, self._pair()),
+        self.move_btn.clicked.connect(lambda: later(self, self.transfer_requested, self._pair(), True))
+        self.move_opts_btn = self._options_button(
+            "Move / Copy options: Move or Copy, Add / Replace, this image / every image where A has a mask",
+            lambda: later(self, self.transfer_options_requested, self._pair()),
         )
         self.dup_btn = QPushButton("Duplicate")
         self.dup_btn.setToolTip("Copy the selected Objects' mask on this image only")
@@ -176,7 +177,7 @@ class ObjectsPanel(QWidget):
 
         ops = QHBoxLayout()
         ops.setSpacing(2)
-        for b, opts in ((self.merge_btn, self.merge_opts_btn), (self.copy_btn, self.copy_opts_btn)):
+        for b, opts in ((self.merge_btn, self.merge_opts_btn), (self.move_btn, self.move_opts_btn)):
             ops.addWidget(b, 1)
             ops.addWidget(opts)
             ops.addSpacing(4)
@@ -346,21 +347,22 @@ class ObjectsPanel(QWidget):
         menu.addAction("Duplicate All (every linked mask)",
                        lambda i=oid: later(self, self.duplicate_all_requested, [i]))
         menu.addAction("Lock / Unlock", lambda i=oid: self._toggle_lock(i))
-        into = menu.addMenu("Copy into (Add, this image)")
-        into.aboutToShow.connect(lambda i=oid, m=into: self._fill_copy_menu(m, i))
+        for label, move in (("Move into (Add, this image)", True), ("Copy into (Add, this image)", False)):
+            into = menu.addMenu(label)
+            into.aboutToShow.connect(lambda i=oid, m=into, mv=move: self._fill_into_menu(m, i, mv))
         menu.addAction("Remove mask on this image", lambda i=oid: later(self, self.remove_frame_requested, i))
         menu.addSeparator()
         menu.addAction("Delete", lambda i=oid: later(self, self.delete_requested, [i]))
         b.setMenu(menu)
         return b
 
-    def _fill_copy_menu(self, menu: QMenu, oid: int) -> None:
-        """Copy into ▸ every other Object (built when opened, so names are current)."""
+    def _fill_into_menu(self, menu: QMenu, oid: int, move: bool) -> None:
+        """Move / Copy into ▸ every other Object (built when opened, so names are current)."""
         menu.clear()
         others = [o for o in self._objects if o.id != oid]
         for o in others:
             menu.addAction(color_icon(o.color), o.name,
-                           lambda i=oid, j=o.id: later(self, self.copy_requested, [i, j]))
+                           lambda i=oid, j=o.id, mv=move: later(self, self.transfer_requested, [i, j], mv))
         if not others:
             menu.addAction("(no other Object)").setEnabled(False)
 
@@ -459,8 +461,8 @@ class ObjectsPanel(QWidget):
         n = len(self.selected_ids())
         self.merge_btn.setEnabled(n >= 2)
         self.merge_opts_btn.setEnabled(n >= 2)
-        self.copy_btn.setEnabled(n >= 2)
-        self.copy_opts_btn.setEnabled(n >= 2)
+        self.move_btn.setEnabled(n >= 2)
+        self.move_opts_btn.setEnabled(n >= 2)
         self.lock_all_btn.setEnabled(any(not o.locked for o in self._objects))
         self.unlock_all_btn.setEnabled(any(o.locked for o in self._objects))
         self.dup_btn.setEnabled(n >= 1)

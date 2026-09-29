@@ -112,6 +112,15 @@
 
 - 캔버스 위 `W` / `S` = Objects 목록의 이전 / 다음 행. 순환은 Object 이동 전체(목록 위 키, `↑` `↓`)에 같이 적용.
 
+## `v0.4-p20` · Merge / Copy / Move 역할 나누기
+
+> 머지 / 카피 외에 무브 추가, 각 기능 역할 분리. 머지 = 합치고 소스 삭제(링크드 오브젝트 결합), 옵션 Add / Override A / B, Into A는 무브로.
+> 무브 = 소스에서 없애고 타겟으로(레이어 분리, 분리 레이어 유지). 카피 = 소스 유지. 무브 / 카피 옵션: Add / Replace, 현재만 / 전체.
+> 카피 / 무브는 한 버튼, 기본 = 무브 A → B, Add, 현재만. 옵션 최상위에 무브 / 카피.
+
+- 기획서 [`specs/05-merge-copy-move.md`](../specs/05-merge-copy-move.md). 범위 = 이 이미지 / 모든 이미지, Move = Mask 전체, 옵션은 기억 안 함.
+- `Move A → B` 버튼(Move · Add · 이 이미지) + `⚙`(Move / Copy · Add / Replace · 범위). Merge `⚙`에서 Into A 제거. `[···]` ▸ Move into / Copy into.
+
 ## 기타
 
 - 마스크 프리뷰에서 브러쉬로 칠한 것이 잠깐 안 보임 → 재현 조건 모름, [`ui-issues.md`](../backlog/ui-issues.md) 21로 옮김.

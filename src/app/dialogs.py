@@ -237,8 +237,9 @@ SHORTCUTS = (
         ("The active auto tool again", "Leave it, dropping its result (like Esc)"),
         ("Ctrl+D, mouse over Objects", "Duplicate the selected Objects (this image's mask)"),
         ("Ctrl+Shift+D, mouse over Objects", "Duplicate All (every linked mask)"),
-        ("Objects buttons / Edit > Objects", "Copy A → B: the first selected added into the last, this image · "
-                                             "Merge: Add · ⚙ next to them: the options · 🔒: cannot be deleted"),
+        ("Objects buttons / Edit > Objects", "Move A → B: the first selected's mask into the last (Add, this image) · "
+                                             "Merge: Add · ⚙ next to them: Copy / Replace / every image, Override · "
+                                             "🔒: cannot be deleted"),
     )),
     ("Images", (
         ("Right / PgDown", "Next image (not while editing)"),
