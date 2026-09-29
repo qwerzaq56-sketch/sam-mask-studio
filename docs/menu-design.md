@@ -27,7 +27,7 @@ Mask Preview │ Preview: Final/Object │ Brush │ Outline ▢px │ Show Chan
 
 | 메뉴 | 항목 (키) |
 |---|---|
-| **File** | Open Folder… (`Ctrl+O`) · Save (`Ctrl+S`) · Export Final Masks… (`Ctrl+E`) ─ Settings… ─ Quit (`Ctrl+Q`) |
+| **File** | Open Folder… (`Ctrl+O`) · Save (`Ctrl+S`) · Export Final Masks… (`Ctrl+E`) ─ Settings… ─ Quit (키 없음) |
 | **Edit** | Undo (`Ctrl+Z`) · Redo (`Ctrl+Y`, `Ctrl+Shift+Z`) ─ New Object from Points (`N`) · Edit Points / Finish (`E`) · Delete (`Delete`) · Leave Tool / Finish Editing (`Esc`) ─ **Tools ▸** Brush (`D`) · Auto Tool: Pick All / None (`A`) · Auto Tool: Apply & Continue (`Enter`) · Leave the Active Auto Tool (그 버튼 다시) ─ **Objects ▸** Duplicate (this image) · Duplicate All · Copy A → B… · Merge… |
 | **View** | Mask Preview (`X`) · Preview: Final / Object (`V`) · Peek at Mask Preview (`Z` 누르고 있기) · Outline (`O`) · Show Changes (`R`) ─ **Panels ▸** Frame List · Objects / Prompt / Propagation · Properties · Frames |
 | **Go** | Previous / Next Frame (`←` `→`, `PgUp` `PgDn`) · Previous / Next Object (`↑` `↓`) ─ Previous / Next Problem ⚠ ✕ (`[` `]`) · Previous / Next Keyframe ★ (`,` `.`) ─ Go to Reference ◎ (`F`) · Set Current Frame as Reference ◎ (`Enter`) · Scroll to Current Frame (`S`) ─ (안내) 목록 위에서 `W A S D` / 화살표 |

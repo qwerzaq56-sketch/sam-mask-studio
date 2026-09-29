@@ -224,7 +224,6 @@ SHORTCUTS = (
         ("Ctrl+O", "Open an image folder"),
         ("Ctrl+S", "Save (also autosaved)"),
         ("Ctrl+E", "Export Final Masks"),
-        ("Ctrl+Q", "Quit"),
         ("", "Every command is also in the menu bar (File, Edit, View, Go, Help) with its key"),
     )),
     ("Edit", (

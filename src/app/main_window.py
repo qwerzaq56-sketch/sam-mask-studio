@@ -297,7 +297,7 @@ class MainWindow(QMainWindow):
         )
         self.act_export = self._action("&Export Final Masks…", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
         self.act_settings = self._action("Se&ttings…", self.show_settings, tip="Checkpoints, working resolution")
-        self.act_quit = self._action("&Quit", self.close, ["Ctrl+Q"])
+        self.act_quit = self._action("&Quit", self.close)  # no key: too easy to hit next to Ctrl+Z / Ctrl+A
         self.act_undo = self._action("&Undo", self.undo, ["Ctrl+Z"])
         self.act_redo = self._action("&Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
         self.act_new = self._action("&New Object from Points", self.new_object, ["N"],
