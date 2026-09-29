@@ -33,7 +33,7 @@ from src.core.propagation import Direction, PropagationPlan, existing_targets, g
 from src.core.refine import fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
-from src.engine.imageio import find_images, read_rgb, resize_mask, to_working, working_size
+from src.engine.imageio import find_images, image_key, read_rgb, resize_mask, to_working, working_size
 
 DEFAULT_MAX_SIDE = 1024
 # auto tool -> the settings it uses (Grow and Shrink share one amount)
@@ -139,13 +139,16 @@ class Session:
 
     def open_folder(self, image_dir: Path) -> int:
         """Open *image_dir* (loading its sidecar project, if any). Returns the image count."""
-        paths = find_images(image_dir)
+        from src.core.colmap import scene_root
+
+        root = scene_root(image_dir)
+        paths = find_images(image_dir, recursive=root is not None and root != image_dir)  # cam0/, cam1/ of a scene
         if not paths:
             raise FileNotFoundError(f"No images found in {image_dir}")
         self.image_dir = image_dir
         self.paths = paths
         self.store = ProjectStore(image_dir, self.max_side)
-        self.project = self.store.load([p.name for p in paths])
+        self.project = self.store.load([image_key(image_dir, p) for p in paths])
         self.max_side = self.store.max_side  # an existing project keeps its working resolution
         self._sizes.clear()
         self._detections_by_key.clear()

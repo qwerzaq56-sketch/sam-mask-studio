@@ -1113,3 +1113,39 @@ def test_fisheye_scene_to_a_360_dataset(qapp, win, tmp_path):
     wait_until(qapp, lambda: not win._busy)
     assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["EQUIRECTANGULAR"]
     assert len(list((new / "masks").iterdir())) == 2
+
+
+# --- p31: a multi-camera scene's sub-folders (images/cam0/, images/cam1/) --------------------------
+
+
+def test_scene_images_in_sub_folders(qapp, win, tmp_path):
+    import cv2
+    import numpy as np
+
+    from src.app.dialogs import ExportDialog
+    from src.app.images_panel import thumb_name
+    from tests.fakes import make_images
+    from tests.unit.test_colmap import write_model_bin
+
+    root = tmp_path / "rig"
+    for cam in ("cam0", "cam1"):
+        make_images(root / "images" / cam, n=2)
+    (root / "images" / "masks_old").mkdir()  # a mask folder among the images is not a camera
+    cv2.imwrite(str(root / "images" / "masks_old" / "x.png"), np.zeros((4, 4), np.uint8))
+    names = [f"{c}/frame_00{i}.png" for c in ("cam0", "cam1") for i in (0, 1)]
+    write_model_bin(root / "sparse" / "0", names)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    s = win.session
+    assert s.keys == names  # relative, with the folder
+    assert thumb_name(s.paths[0]) != thumb_name(s.paths[2])  # same file name, other camera
+    s.start_new_object()
+    s.click(30, 30)
+    s.finish_editing()
+    win.save(force=True)
+    assert (s.store.mask_path(s.project.objects[0].id, names[0])).is_file()
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="colmap")
+    written = s.export(dlg.options())
+    assert (root / "masks" / "cam0" / "frame_000.png.png") in written
+    assert (root / "masks" / "cam1" / "frame_000.png.png").is_file()  # the other camera's own file
+    assert "1 image(s) in images/ but not in the model" not in win.log_view.toPlainText()

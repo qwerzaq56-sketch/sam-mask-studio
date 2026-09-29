@@ -23,6 +23,7 @@ import numpy as np
 
 from src.core.colmap import MODEL_IDS, Camera, read_cameras_full
 from src.core.colmap_model import POINT2D, TRACK, _read_images_bin, _write_images_bin, dataset_blocker
+from src.engine.imageio import key_stem
 
 DEFAULT_YAWS = (0.0, 90.0, 180.0, 270.0)
 DEFAULT_PITCHES = (-35.0, 0.0, 35.0)
@@ -344,12 +345,13 @@ def convert(images_dir: Path, model_dir: Path, root: Path, keep: Sequence[str], 
         seen = np.unique(pts["id"][pts["id"] >= 0])
         rows = np.array([row_of[int(p)] for p in seen if int(p) in row_of], dtype=int)
         cam_pts = (xyz[rows] @ r_src.T + t) if rows.size else np.zeros((0, 3))
-        stem = Path(name).stem
+        stem = key_stem(name)  # folders kept: cam0/0001
         for v, (suffix, rot) in enumerate(plan.views):
             if (cid, v) not in tables:
                 tables[(cid, v)] = _tables(cam, plan, rot)
             mx, my, valid = tables[(cid, v)]
             vname = f"{stem}{suffix}.jpg"
+            (out_img / vname).parent.mkdir(parents=True, exist_ok=True)
             _write_image(out_img / vname, cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=border))
             for job, m in zip(masks, full_masks):
                 if m is None and not job.include_empty and valid.all():
@@ -363,7 +365,9 @@ def convert(images_dir: Path, model_dir: Path, root: Path, keep: Sequence[str], 
                 if job.invert:
                     out = 255 - out
                 ok, buf = cv2.imencode(".png", out)
-                buf.tofile(str(job.out_dir / job.name_pattern.format(stem=Path(vname).stem, name=vname)))
+                mpath = job.out_dir / job.name_pattern.format(stem=key_stem(vname), name=vname)
+                mpath.parent.mkdir(parents=True, exist_ok=True)
+                buf.tofile(str(mpath))
             vid = next_id
             next_id += 1
             x, y, inside = plan.project(cam_pts @ rot.T)

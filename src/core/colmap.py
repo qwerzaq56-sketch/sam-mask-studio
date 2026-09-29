@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 import cv2
 import numpy as np
 
-from src.engine.imageio import IMG_EXTS
+from src.engine.imageio import IMG_EXTS, key_stem
 
 MODEL_FILES = ("images.bin", "images.txt")
 
@@ -171,7 +171,7 @@ def count_points(model: Path) -> int:
 
 def mask_file(mask_dir: Path, image_name: str) -> Optional[Path]:
     """The mask of *image_name*: ``a.jpg.png`` (COLMAP) or ``a.png`` / ``a.<image ext>`` (same name)."""
-    stem = Path(image_name).stem
+    stem = key_stem(image_name)  # folders kept: cam0/0001
     for cand in [mask_dir / f"{image_name}.png", mask_dir / f"{stem}.png"] + [
         mask_dir / f"{stem}{ext}" for ext in sorted(IMG_EXTS) if ext != ".png"
     ]:

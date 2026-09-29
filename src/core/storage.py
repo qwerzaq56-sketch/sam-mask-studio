@@ -26,6 +26,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from src.engine.imageio import key_stem
 from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, Source, Variant, freeze
 
 FORMAT_VERSION = 1
@@ -323,7 +324,7 @@ def export_names(project: Project, options: "ExportOptions", keys: Optional[List
     """The file names an export writes, in order."""
     if keys is None:
         keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
-    return [options.name_pattern.format(stem=Path(k).stem, name=k) for k in keys]
+    return [options.name_pattern.format(stem=key_stem(k), name=k) for k in keys]
 
 
 @dataclass
@@ -379,7 +380,7 @@ def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Option
             c.warning.append(key)
     names: Dict[str, List[str]] = {}
     for key in keys:
-        names.setdefault(name_pattern.format(stem=Path(key).stem, name=key).lower(), []).append(key)
+        names.setdefault(name_pattern.format(stem=key_stem(key), name=key).lower(), []).append(key)
     c.clashes = [ks for ks in names.values() if len(ks) > 1]
     return c
 
@@ -411,7 +412,7 @@ def export_final_masks(
                 full = cv2.resize(full, (w0, h0), interpolation=cv2.INTER_NEAREST)
         if options.invert:
             full = 255 - full
-        stem = Path(key).stem
+        stem = key_stem(key)
         out = options.out_dir / options.name_pattern.format(stem=stem, name=key)
         _write_png(out, full)
         written.append(out)
