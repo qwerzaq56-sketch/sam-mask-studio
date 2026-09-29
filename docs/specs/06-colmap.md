@@ -2,7 +2,7 @@
 
 COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들고, 원하는 양식으로 돌려놓는 기능.
 출처: v0.3 요청([`04-v0.3-requests.md`](04-v0.3-requests.md) 마지막 절), 아이디어 "콜맵 호환" 1~8 ([`backlog/ideas.md`](../backlog/ideas.md)).
-상태: **초안** — 8장 질문에 답을 받으면 확정하고 단계별로 구현한다.
+상태: **확정(2026-09-29)**, 트레이너별 프로필(5장 아래쪽, C4)만 스피큘라 익스포트 프리셋 보고서(GPT 작성 중)를 받은 뒤 채운다.
 
 ---
 
@@ -30,10 +30,11 @@ COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들
 ├─ sparse/0/          cameras.bin · images.bin · points3D.bin (또는 .txt)
 ├─ masks/             (있을 수도) 마스크
 ├─ input/, distorted/ (있을 수도) 보정 전 원본과 중간 결과
-└─ <scene>.sms/       ← 이 앱의 작업 파일 (지금처럼 장면 옆이 아니라 장면 안? → 8장 질문 5)
+(작업 파일은 장면 **옆** `<scene>.sms/` — 트레이너가 장면 폴더를 통째로 읽어도 섞이지 않게)
 ```
 
 - **장면으로 인식**: 고른 폴더에 `images/`와 `sparse/*/images.bin|txt`가 있으면. 이미지 폴더(`images/`)를 고른 경우도 부모를 보고 인식.
+- 마스크는 `images/`(왜곡 보정 후, 학습에 쓰는 이미지) 기준으로 만든다.
 - 인식되면 제목 표시줄과 상태 표시줄에 `COLMAP scene: <이름> · 카메라 N · 이미지 M · 3D 점 K`.
 - 이미지 목록은 `images/` 폴더 기준(지금과 같음). `images.bin`에 있는데 파일이 없거나, 파일은 있는데 `images.bin`에 없는 이미지는 Frame List에 ⚠ 표시.
 
@@ -61,7 +62,7 @@ COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들
 
 - 지금의 "Final Mask(체크한 Object 전부)"는 기본 세트 하나로 취급한다(이름 없음 → `masks/`).
 - 세트 목록은 작업 파일(`project.json`)에 저장. Export 창에서 세트를 고르거나 전부 내보낸다.
-- UI: Export 창 위쪽에 세트 목록(추가 / 이름 바꾸기 / 삭제), 세트를 고르면 Object 체크 목록. 캔버스 Mask Preview는 "지금 고른 세트"를 보여줄 수 있게(`X` 전환에 세트 추가 — 8장 질문 4).
+- UI: Export 창 위쪽에 세트 목록(추가 / 이름 바꾸기 / 삭제), 세트를 고르면 Object 체크 목록. 캔버스 Mask Preview에 세트 보기는 넣지 않는다.
 
 ---
 
@@ -75,7 +76,7 @@ COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들
 | 같은 이름 PNG | `masks/<stem>.png` | 선택 | 8bit PNG | 지금 Export와 같음 |
 | RGBA 이미지 | 이미지에 알파 채널로 합침(`images_rgba/`) | 알파 0 = 무시 | RGBA PNG | 트레이너별 **조사 필요** |
 | nerfstudio / gsplat | `masks/` + `transforms.json`의 `mask_path` | 검정 = 무시 | 8bit PNG | **조사 필요** |
-| Postshot, LichtFeld Studio, Brush 등 | ? | ? | ? | **조사 필요**(8장 질문 1: 실제 쓰는 것부터) |
+| LichtFeld Studio, Brush, 스피큘라, Postshot | ? | ? | ? | **조사 중**: 스피큘라 익스포트 프리셋 보고서(GPT) 대기 |
 
 - 지금 Export 창의 `{stem}.png` / `{name}.png` + Invert는 이 표의 처음 두 줄과 같다. 프로필은 그것을 이름으로 묶은 것.
 - 해상도: 항상 원본 이미지 크기(지금과 같음).
@@ -91,7 +92,7 @@ COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들
 3. 실행:
    - 이미지 파일을 `<scene>/_dropped/images/`로 **옮긴다**(지우지 않음). 마스크 파일도 같이.
    - `sparse/0/`을 `sparse/0_backup_<날짜시각>/`으로 복사한 뒤 `images.bin`에서 그 이미지를 뺀다.
-   - `points3D.bin`: 뺀 이미지의 관측(track)을 지운다. 관측이 2개 미만으로 줄어든 점은 지운다(COLMAP 관례) — 8장 질문 3.
+   - `points3D.bin`: 뺀 이미지의 관측(track)을 지운다. 관측이 2개 미만으로 줄어든 점은 지운다(COLMAP 관례).
 4. Undo: 앱의 `Ctrl+Z`가 아니라 `Frame → Restore Dropped Frames…`(백업에서 되돌림). 파일을 옮기는 동작이라 Undo 스택에 넣지 않는다.
 
 - 백업을 끄면 이미지는 `_dropped/`로 옮기되 `sparse` 백업만 생략(원본 이미지는 여전히 안 지움).
@@ -112,11 +113,11 @@ C1~C2가 먼저, C3는 `.bin` 쓰기라 따로 태그를 두어 쉽게 되돌릴
 
 ---
 
-## 8. 확인이 필요한 것 (체크리스트)
+## 8. 정한 것 (2026-09-29 사용자 확인)
 
-1. **실제로 쓰는 3DGS 트레이너** (C4 조사 범위): Postshot / LichtFeld Studio / Brush / nerfstudio(gsplat) / Inria 원본 / 기타 ____
-2. **마스크를 만드는 이미지**: `images/`(왜곡 보정 후, 학습용) / `input/`(보정 전 원본) — 학습에 쓰는 것과 같아야 해서 보통 `images/`.
-3. **프레임 빼기의 3D 점**: 관측이 2개 미만이 된 점을 지움(COLMAP 관례) / 그대로 둠.
-4. **Mask Preview에서 세트 보기**: `X`(Final ↔ Object)에 "세트"를 추가 / 필요 없음.
-5. **작업 파일 위치**: 지금처럼 이미지 폴더 옆(`images.sms/`, 장면 안이 됨) / 장면 폴더 옆(`<scene>.sms/`). 트레이너가 장면 폴더를 통째로 읽으면 옆이 안전.
-6. **가지고 있는 장면 예시 경로** (구조 확인용, 읽기만 함): ____
+1. 쓰는 트레이너: **LichtFeld Studio, Brush, 스피큘라, Postshot** 등. 프로필 규칙은 스피큘라 익스포트 프리셋 보고서(GPT)를 받은 뒤 C4에서.
+2. 마스크는 **`images/`** 기준.
+3. 프레임을 뺀 뒤 관측이 2개 미만이 된 3D 점은 **지운다**.
+4. Mask Preview에 세트 보기는 **넣지 않는다**.
+5. 작업 파일은 **장면 옆** `<scene>.sms/`.
+6. 장면 예시 경로: 아직 없음(구현은 테스트용 합성 장면으로 확인).
