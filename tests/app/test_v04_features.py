@@ -357,10 +357,11 @@ def test_duplicate_this_image_or_every_linked_mask(qapp, win):
     n = len(p.objects)
     win.duplicate([a])
     assert len(p.objects) == n
-    assert not op.copy_btn.isEnabled()
+    assert not op.move_btn.isEnabled()
 
 
-def test_copy_a_into_b_add_or_replace(qapp, win):
+def test_move_or_copy_a_into_b(qapp, win):
+    """p11 Copy A -> B; p20: the button moves (A keeps the Object, loses the mask), ⚙ can copy."""
     import numpy as np
 
     a, b = _two_linked(win)
@@ -369,21 +370,26 @@ def test_copy_a_into_b_add_or_replace(qapp, win):
     k = s.keys
     A0, B0 = p.get(a).mask(k[0]).copy(), p.get(b).mask(k[0]).copy()
     win.objects_panel.select_ids([a, b])
-    assert win.objects_panel.copy_btn.isEnabled()
-    win.objects_panel.copy_btn.click()  # the defaults: A -> B, Add, this image only
+    assert win.objects_panel.move_btn.isEnabled()
+    win.objects_panel.move_btn.click()  # the defaults: Move, A -> B, Add, this image only
     settle(qapp)
-    assert np.array_equal(p.get(b).mask(k[0]), A0 | B0)
-    assert k[2] not in p.get(b).frames and np.array_equal(p.get(a).mask(k[0]), A0)  # A is untouched
+    assert np.array_equal(p.get(b).mask(k[0]), A0 | B0) and k[2] not in p.get(b).frames
+    assert p.get(a) is not None and k[0] not in p.get(a).frames and k[2] in p.get(a).frames  # A stays
     win.undo()
-    win.copy_into([a, b], replace=True, all_frames=True)
+    assert np.array_equal(p.get(a).mask(k[0]), A0)  # one undo step
+    win.transfer([a, b], move=False, replace=True, all_frames=True)  # Copy, Replace, every image
     B = p.get(b)
     assert np.array_equal(B.mask(k[0]), A0) and np.array_equal(B.mask(k[2]), A0)
     assert B.frame(k[2]).status.value == "propagated"  # the frame is copied as it is
     assert k[3] in B.frames  # where A has no mask, B keeps its own
+    assert np.array_equal(p.get(a).mask(k[0]), A0)  # Copy: A keeps it
     win.undo()
-    win.choose = lambda title, text, groups, ok="OK": [1, 0]  # ⚙ (p17): Replace, this image
-    win.copy_options([b, a])  # b selected first: b -> a
-    assert np.array_equal(p.get(a).mask(k[0]), B0)
+    win.transfer([a, b], all_frames=True)  # Move everything: A is left empty, not removed
+    assert p.get(a) is not None and not p.get(a).frames
+    win.undo()
+    win.choose = lambda title, text, groups, ok="OK": [1, 1, 0]  # ⚙: Copy, Replace, this image
+    win.transfer_options([b, a])  # b selected first: b -> a
+    assert np.array_equal(p.get(a).mask(k[0]), B0) and np.array_equal(p.get(b).mask(k[0]), B0)
 
 
 def test_merge_add_or_override(qapp, win):
@@ -532,7 +538,7 @@ def test_menus_hold_every_command(qapp, win):
                 win.act_final, win.act_preview_mode, win.act_outline, win.act_changes, win.act_prev_frame,
                 win.act_next_frame, win.act_prev_object, win.act_next_object, win.act_prev_problem,
                 win.act_next_problem, win.act_prev_key, win.act_next_key, win.act_go_reference,
-                win.act_shortcuts, win.act_duplicate, win.act_duplicate_all, win.act_copy_into, win.act_merge):
+                win.act_shortcuts, win.act_duplicate, win.act_duplicate_all, win.act_move, win.act_merge):
         assert act in entries, act.text()
     hints = " ".join(a.text() for a in entries)
     assert "\tEnter" in hints and "\tZ (hold)" in hints and "W A S D" in hints
@@ -631,25 +637,19 @@ def test_lock_is_saved(qapp, win):
     assert [o.locked for o in again.objects] == [False, True]
 
 
-def test_merge_into_first_keeps_the_others_empty_and_respects_locks(qapp, win):
-    import numpy as np
-
+def test_merge_respects_locks_and_has_no_into(qapp, win):
     a, b = _two_linked(win)
     p = win.session.project
-    k = win.session.keys
-    A0, B0 = p.get(a).mask(k[0]).copy(), p.get(b).mask(k[0]).copy()
-    win.merge([a, b], "into")
-    assert [o.id for o in p.objects] == [a, b]  # nothing removed, no new Object
-    assert np.array_equal(p.get(a).mask(k[0]), A0 | B0) and not p.get(b).frames
-    win.undo()
     win.set_locked([b], True)
     win.merge([a, b])  # Add would remove the locked B: refused
     assert [o.id for o in p.objects] == [a, b] and p.get(b).frames
-    win.merge([b, a], "into")  # B locked but first: it only gains
-    assert np.array_equal(p.get(b).mask(k[0]), A0 | B0) and not p.get(a).frames
+    groups = []
+    win.choose = lambda title, text, g, ok="OK": groups.extend(g) or None
+    win.merge_options([a, b])
+    assert len(groups[0][1]) == 3  # Add / Override A / Override B (Into A went to Move, p20)
 
 
-def test_copy_is_first_into_last_add_this_image(qapp, win):
+def test_move_is_first_into_last_add_this_image(qapp, win):
     import numpy as np
 
     a, b = _two_linked(win)
@@ -659,10 +659,11 @@ def test_copy_is_first_into_last_add_this_image(qapp, win):
     A0 = p.get(a).mask(k[0]).copy()
     op = win.objects_panel
     op.select_ids([a, c, b])
-    assert op._pair() == [a, b] and op.copy_btn.isEnabled()
-    op.copy_btn.click()
+    assert op._pair() == [a, b] and op.move_btn.isEnabled()
+    op.move_btn.click()
     settle(qapp)
     assert (p.get(b).mask(k[0]) >= A0).all() and k[2] not in p.get(b).frames  # Add, this image only
+    assert p.get(a).mask(k[0]) is None and p.get(c).frames  # moved off A; the one in between untouched
 
 
 def test_ctrl_d_over_the_objects_panel(qapp, win):

@@ -660,11 +660,12 @@ class Session:
         self.sync()
         return new
 
-    def copy_into(self, src: int, dst: int, replace: bool, all_frames: bool = False) -> List[str]:
-        """Copy Object *src* into *dst* (Replace or Add) on the current image, or on all of *src*'s images."""
+    def copy_into(self, src: int, dst: int, replace: bool, all_frames: bool = False, move: bool = False) -> List[str]:
+        """Copy (*move*: move) Object *src* into *dst* (Replace or Add) on the current image,
+        or on all of *src*'s images."""
         if not all_frames and self.key is None:
             return []
-        changed = self.project.copy_into(src, dst, replace, None if all_frames else [self.key])
+        changed = self.project.copy_into(src, dst, replace, None if all_frames else [self.key], move=move)
         self.sync()
         return changed
 
