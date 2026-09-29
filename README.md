@@ -8,14 +8,15 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 현재 버전: **v0.4.0** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
 
-| 문서 | 내용 |
+문서 지도와 정리 원칙: [`docs/README.md`](docs/README.md)
+
+| 폴더 | 내용 |
 |---|---|
-| [`docs/PROGRESS_v0.3.md`](docs/PROGRESS_v0.3.md) | v0.3에서 바뀐 기능 전체 (한국어) |
-| [`docs/PROGRESS_v0.4.md`](docs/PROGRESS_v0.4.md) | v0.4 진행 현황: 리뷰 반영, UI 점검 (한국어) |
-| [`docs/ideas.md`](docs/ideas.md) · [`docs/ui-issues.md`](docs/ui-issues.md) | 기능 아이디어 백로그 · 작은 UI 문제 목록 |
-| [`docs/keymap.md`](docs/keymap.md) | 단축키 전체, 비어 있는 키, 새 단축키 제안 |
+| [`docs/design/`](docs/design) | 지키는 기준: [UX 원칙](docs/design/ux-principles.md) · [메뉴 설계](docs/design/menu-design.md) · [키맵](docs/design/keymap.md) |
+| [`docs/specs/`](docs/specs) | 기능 기획서(번호순)와 요청 원문 |
+| [`docs/backlog/`](docs/backlog) | 할 일: [아이디어](docs/backlog/ideas.md) · [UI 문제](docs/backlog/ui-issues.md) |
+| [`docs/log/`](docs/log) | 끝난 것: [v0.4 진행](docs/log/PROGRESS_v0.4.md) · [v0.3 진행](docs/log/PROGRESS_v0.3.md) · [끝난 아이디어](docs/log/ideas-log.md) |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 설계 결정, 모듈 구성, 단계별 변경 기록 (영문) |
-| [`docs/specs/`](docs/specs) | 원래 기획서와 요청 목록 원문 |
 
 ## 핵심 개념
 
@@ -50,7 +51,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 - **Frame List**(왼쪽 끝)와 **Frames** 썸네일 줄(아래)은 같은 목록입니다. 현재 이미지, 선택, ◎(전파 기준), 📌(고정)가 항상 똑같이 보입니다.
 - 캔버스 위 **작업 상태 바**: 지금 프레임 · 대상 Object(출처) · 모드(Points / Paint / Auto · 도구 (Fill/Paint) / Select on Image / 작업 중 진행)를 한 줄로 보여줍니다.
 - **메뉴 바**(File / Edit / View / Go / Help)에 모든 명령이 단축키와 함께 있습니다. Open / Save / Export / Undo / Redo / Settings는 메뉴에만,
-  작업 중 계속 켜고 끄는 보기·도구 토글만 아래 툴바에 둡니다. 설계: [`docs/menu-design.md`](docs/menu-design.md)
+  작업 중 계속 켜고 끄는 보기·도구 토글만 아래 툴바에 둡니다. 설계: [`docs/design/menu-design.md`](docs/design/menu-design.md)
 - 모든 패널은 옮기거나 띄우거나 닫을 수 있고, **View → Panels**에서 다시 켭니다. 단축키 전체는 **Help → Keyboard Shortcuts (F1)**.
 
 ## 사용법

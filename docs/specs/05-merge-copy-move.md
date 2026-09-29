@@ -1,7 +1,7 @@
 # SAM Mask GUI — Merge / Copy / Move 기획서
 
 두 개 이상의 Object 사이에서 Mask를 옮기는 세 기능의 의도, 역할, 옵션을 정리한다.
-출처: [`ideas.md`](../ideas.md) "Merge / Copy / Move 역할 나누기" (2026-09-29). 현재 구현(`v0.4-p17`)과 바꿀 점은 5장.
+출처: [`ideas.md`](../backlog/ideas.md) "Merge / Copy / Move 역할 나누기" (2026-09-29). 현재 구현(`v0.4-p17`)과 바꿀 점은 5장.
 
 ---
 
@@ -13,7 +13,7 @@
 | **Move** | A의 Mask를 B로 **옮긴다** | Object는 남고, 옮긴 이미지의 Mask만 빔 | Mask를 받음 | Object 안에서 레이어를 나눠 작업, 나눠 둔 레이어 유지 |
 | **Copy** | A의 Mask를 B에 **더한다** | 그대로 | Mask를 받음 | 같은 영역을 두 Object가 함께 가져야 할 때 |
 
-- 셋 다 **Undo 한 단계**, 확인 창 없음([`ux-principles.md`](../ux-principles.md) 1).
+- 셋 다 **Undo 한 단계**, 확인 창 없음([`ux-principles.md`](../design/ux-principles.md) 1).
 - A / B는 **선택 순서**: 먼저 선택한 행 = A(소스), 마지막에 선택한 행 = B(타겟). (Merge는 3개 이상도 가능)
 
 ---

@@ -547,7 +547,7 @@ def test_menus_hold_every_command(qapp, win):
         assert key in shown, key
 
 
-# --- p15: keys and menu fixes (docs/ideas.md feedback) ------------------------
+# --- p15: keys and menu fixes (docs/backlog/ideas.md feedback) ------------------------
 
 
 def test_preview_keys_swapped_and_toggles_do_not_repeat(qapp, win):

@@ -4,7 +4,7 @@
 
 외부(GPT) UX 리뷰 중 코드와 대조해서 타당했던 항목만 반영합니다. v0.3 기록: [`PROGRESS_v0.3.md`](PROGRESS_v0.3.md)
 
-적어두는 곳: 기능 아이디어 [`ideas.md`](ideas.md) · 작은 UI 문제 [`ui-issues.md`](ui-issues.md)
+적어두는 곳: 기능 아이디어 [`ideas.md`](../backlog/ideas.md) · 작은 UI 문제 [`ui-issues.md`](../backlog/ui-issues.md)
 
 - 브랜치 `dev`에서 단계별 브랜치(`feat/v04-pN-…`)로 작업 → `--no-ff` 병합 → 태그 `v0.4-pN`.
 - 되돌리기: 단계 전체 `git revert -m 1 <병합 커밋>`
@@ -50,7 +50,7 @@
 - 제목줄 버튼(`1`, `Aa`, 띄우기, 닫기)을 20px로 줄여, 좁은 칸의 최소 너비를 113 → 90px로.
 - 개수 요약은 좁을 때 잘리지 않고 두 줄로.
 
-### 5단계 · UI 점검 버그 (`v0.4-p5`, 목록: [`ui-issues.md`](ui-issues.md) 1~6)
+### 5단계 · UI 점검 버그 (`v0.4-p5`, 목록: [`ui-issues.md`](../backlog/ui-issues.md) 1~6)
 - Batch 탭 `Run on Images` / `Stop` / `Cancel`이 너비 0으로 사라지던 문제: 좁은 칸용 버튼 정책을 `Ignored` → `Preferred` + 최소 24px(`ui_util.shrinkable`). 오토 툴 버튼 줄도 같은 방식.
 - Frames 줄 개수 요약이 세로로 쌓이던 문제: 줄바꿈은 Frame List 쪽만.
 - Frames 줄 썸네일 아래 ID·표시가 잘리던 문제: 목록 최소 높이 = 칸 + 스크롤바, 기본 높이 150 → 190.
@@ -58,7 +58,7 @@
 - 글자 잘림: Detection `Select All` / `Select None` → `All` / `None`, 버튼 비율 조정. 왼쪽 탭은 스크롤 화살표 대신 이름 줄임.
 - 옛 이름 `Images list` → `Frame List` (Propagation / Batch 문구).
 
-### 6단계 · UI 점검 개선 (`v0.4-p6`, [`ui-issues.md`](ui-issues.md) 7~12, 14, 15)
+### 6단계 · UI 점검 개선 (`v0.4-p6`, [`ui-issues.md`](../backlog/ui-issues.md) 7~12, 14, 15)
 - 패널 폭이 상태에 따라 바뀌던 문제: 원인은 (1) 작업 상태 바의 긴 글자가 캔버스 최소 폭이 됨, (2) 디텍션 안내 한 줄이 왼쪽 칸 최소 폭이 됨. 상태 바는 넘치면 잘리게, 안내 문구는 줄바꿈.
 - 작업 상태 바 순서: `Frame │ Object │ Mode │ 파일 이름(회색)` — 좁으면 파일 이름부터 잘림. `Region Box` → `+ Region`.
 - 캔버스 왼쪽 위 배너 제거(작업 상태 바와 중복, 작업 중에도 남던 `Select on Image` 안내 포함). Final Mask 미리보기 표시는 유지.
@@ -68,7 +68,7 @@
 - 오토 툴 Settings 상자는 지금 도구의 설정 높이에 맞춤(빈 공간 제거).
 - Fill / Paint 모드 설명을 한두 줄로 줄임.
 
-### 7단계 · 남은 UI 이슈 (`v0.4-p7`, [`ui-issues.md`](ui-issues.md) 13, 17, 18, 19)
+### 7단계 · 남은 UI 이슈 (`v0.4-p7`, [`ui-issues.md`](../backlog/ui-issues.md) 13, 17, 18, 19)
 - 작은 창: 양옆 패널 시작 폭을 창 폭의 약 55% 안으로(1280×720에서 캔버스 약 400 → 550px).
 - Settings 창 최소 폭 640px. Object / 후보 색 칩에 어두운 테두리.
 - Frame List 제목줄: 버튼 고정 폭(20px) 제거 — 큰 글꼴·화면 배율에서 잘리던 원인. 접은 모드에서는 제목과 띄우기 버튼 숨김(`DockTitleBar.set_compact`).
@@ -81,7 +81,7 @@
 - `,` / `.`: 가장 가까운 이전 / 다음 키프레임(★ = 직접 편집한, 전파 소스). Frame List `1`이 켜져 있으면 선택한 Object의 ★만. 끝에서는 멈춤.
 - `F`: 전파 기준(◎, 더블클릭한 프레임)으로 이동. Show Changes는 `F` → `R`.
 - Final Mask 미리보기 → **Mask Preview**(`X`, `Z` 누르고 있기 그대로). 옆 버튼 `Preview: Final / Object`(`V`)로 Final Mask ↔ 선택한 Object의 Mask. 설정 `preview_object`로 기억, 캔버스 표시에 `MASK PREVIEW · 이름`.
-- 전체 키 정리: [`keymap.md`](keymap.md)
+- 전체 키 정리: [`keymap.md`](../design/keymap.md)
 
 ### 9단계 · Enter로 기준 지정 (`v0.4-p9`)
 - `Enter`: 현재 프레임을 전파 기준(◎)으로 지정, 이미 기준이면 해제(더블클릭과 같음). 오토 툴이 켜져 있으면 지금처럼 `Apply & Continue`가 먼저, 입력칸에서는 그 칸의 Enter. 길게 눌러도 한 번만.
@@ -109,19 +109,19 @@
 - 수식키가 있으면(Shift / Ctrl+화살표 = 목록 여러 칸 선택) 가로채지 않음. 입력칸에 커서가 있으면 가로채지 않음. 편집 중 프레임 이동은 지금처럼 막힘.
 - 구현: `MainWindow.eventFilter`가 `ShortcutOverride`를 받아 메뉴 단축키보다 먼저 처리(`_hover_step`, `_hover_zone`, `HOVER_KEYS`).
 
-### 14단계 · 메뉴 계층 (`v0.4-p14`, [`menu-design.md`](menu-design.md))
+### 14단계 · 메뉴 계층 (`v0.4-p14`, [`menu-design.md`](../design/menu-design.md))
 - 메뉴 바 File / Edit / View / Go / Help에 모든 명령과 키. `QShortcut`으로만 있던 키(`N` `E` `Delete` `Esc` `A` `S` `F` `[ ]` `, .` 화살표)도 메뉴 항목(QAction)으로.
 - `Enter`, `Z`(누르고 있기), 목록 위 `W A S D`는 안내 항목(키 표시만, `Enter` 계열은 눌러도 동작).
 - 툴바에서 Open / Save / Undo / Redo / Export / Settings를 빼고 Mask Preview · Preview 모드 · Brush · Outline · Show Changes만.
 - 패널 켜기/끄기: View → Panels. 종료는 File → Quit(키 없음: `Ctrl+Q`는 Ctrl+Z / Ctrl+A 옆이라 실수로 꺼져서 뺌).
 - 테스트: `tests/app/test_v04_features.py` p11~p14 (126 → 133개).
 
-### 15단계 · 키와 메뉴 손보기 (`v0.4-p15`, [`ux-principles.md`](ux-principles.md))
+### 15단계 · 키와 메뉴 손보기 (`v0.4-p15`, [`ux-principles.md`](../design/ux-principles.md))
 - `S`(Scroll to Current Frame) 뺌: `F`와 겹치고 목록 위에서는 "다음". 스크롤은 ⌖ 버튼.
 - `X` ↔ `V`: `Z` 누르고 있기 · `X` Final ↔ Object(메뉴 이름 `Toggle Final / Object Mask`) · `V` Mask Preview 켜기/끄기.
   토글 키는 누르고 있어도 한 번만(`setAutoRepeat(False)`), 이동 키는 반복.
 - 프레임 목록 위 `Space` = `Enter`(기준 ◎ 지정). Paint 버튼 = `A`(전체 선택으로 시작). `E` 편집은 브러쉬 켜진 채로 시작.
-- 문서: [`ux-principles.md`](ux-principles.md) — 피드백에서 뽑은 UX 원칙.
+- 문서: [`ux-principles.md`](../design/ux-principles.md) — 피드백에서 뽑은 UX 원칙.
 
 ### 16단계 · 기준 프레임을 칸 색으로 (`v0.4-p16`, 12단계 고침)
 - 12단계는 "열린 프레임"을 칠했는데, 요청은 **더블클릭한 기준(◎)**이었음. 이제 ◎ = 칸 전체 파랑(`REFERENCE_FILL`, 글자 흰색),
@@ -143,7 +143,7 @@
 - 코드: `MainWindow._colored_ids`, `act_solo`, `act_hide_masks`.
 
 ## 진행 예정
-- 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
+- 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과

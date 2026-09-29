@@ -236,7 +236,7 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Auto tools: an **Apply** button under Region writes the result in and leaves the tool; the
   Alt (unpick) stroke area is red.
 
-Progress summary for the user (Korean): `docs/PROGRESS_v0.3.md`.
+Progress summary for the user (Korean): `docs/log/PROGRESS_v0.3.md`.
 
 **P2.11 — click again = apply once more** (`v0.3-p2.11`)
 - An auto tool's button is not a toggle: clicking the active one writes its result in
