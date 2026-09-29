@@ -81,6 +81,8 @@
 |---|---|
 | 좌클릭 / 우클릭 / 드래그 | Positive / Negative 포인트 / Box (Region Box 켜면 영역 추가) |
 | 포인트 드래그 / 더블클릭 | 포인트 이동 / 삭제 |
+| Ctrl+I | 편집 중인 Mask 인버트 (Region 안에서만, 있으면) |
+| Ctrl+Backspace | 편집 중인 Mask 비우기 (이 이미지, Region 안에서만, 있으면) |
 | D | Paint 브러쉬 켜기 / 끄기 (`E`로 편집을 시작하면 켜진 채로 시작) |
 | A | 오토 툴: Fill → 전체 선택된 Paint 모드(Paint 버튼도 같음), Paint 모드에서 전체 선택 / 해제 |
 | Alt+드래그 | Paint 빼기 · 오토 툴 선택 해제 · Region Box 빼기 |
@@ -109,6 +111,7 @@
 - `v0.4-p9`: `Enter`(오토 툴 없을 때) = 현재 프레임을 기준(◎)으로 지정 / 해제.
 - `v0.4-p13`: 마우스를 올린 목록 기준 `W A S D` / 화살표. Frame List · Frames 줄 위 = 프레임, Objects 목록 위 = Object. 목록 위에서 `S` = 다음(스크롤은 ⌖ 버튼이나 목록 밖에서 `S`). Shift / Ctrl+화살표는 목록의 여러 칸 선택 그대로.
 - `v0.4-p14`: 모든 단축키를 메뉴 항목(QAction)으로 옮김. `Ctrl+Q` 종료 추가(이후 뺌: Ctrl+Z / Ctrl+A 옆이라 실수로 꺼짐, File → Quit만).
+- `v0.4-p21`: 편집 중 `Ctrl+I` 인버트, `Ctrl+Backspace` 비우기.
 - `v0.4-p19`: 캔버스 위 `W` / `S` = Object 이동. Object 이동은 끝에서 순환.
 - `v0.4-p17`: Objects 패널 위 `Ctrl+D` / `Ctrl+Shift+D`. Delete는 확인 없이.
 - `v0.4-p15`: `S`(스크롤) 뺌 — `F`와 겹치고 목록 위에서는 "다음"이라 헷갈림, 스크롤은 ⌖ 버튼. `X` ↔ `V` 교환(`Z` 누르고 있기 · `X` 대상 전환 · `V` 켜기/끄기), 토글 키는 누르고 있어도 한 번만. 프레임 목록 위 `Space` = `Enter`. Paint 버튼 = `A`처럼 전체 선택으로 시작. `E` 편집은 브러쉬가 켜진 채로 시작.

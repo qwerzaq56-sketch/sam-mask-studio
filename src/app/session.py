@@ -357,6 +357,27 @@ class Session:
         """
         return self._set_target(mask)
 
+    def _edit_area(self) -> Tuple[np.ndarray, np.ndarray]:
+        """(the edited frame's mask, where whole-mask edits apply: the region, else everywhere)."""
+        fs = self.editing_frame()
+        cur = fs.mask if fs is not None and fs.mask is not None else np.zeros(self.working_hw(), bool)
+        area = self.region if self.region is not None else np.ones(cur.shape, bool)
+        return cur, area
+
+    def invert_mask(self) -> bool:
+        """Ctrl+I: flip the edited mask on this image (inside the region only, when there is one)."""
+        if self.editing is None or self.key is None:
+            return False
+        cur, area = self._edit_area()
+        return self._set_target(cur ^ area)
+
+    def clear_mask(self) -> bool:
+        """Ctrl+Backspace: empty the edited mask on this image (inside the region only, when there is one)."""
+        if self.editing is None or self.key is None:
+            return False
+        cur, area = self._edit_area()
+        return self._set_target(cur & ~area)
+
     def set_region(self, region: Optional[np.ndarray]) -> None:
         """Limit the whole-mask tools to *region* (a bool mask); None or empty = everywhere. Undoable."""
         region = region if region is not None and region.any() else None

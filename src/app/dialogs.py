@@ -233,6 +233,8 @@ SHORTCUTS = (
         ("E", "Points: edit the selected Object with SAM2 points / finish editing"),
         ("Delete", "Delete the selected point, else the selected Objects (no question: Ctrl+Z; 🔒 locked ones stay)"),
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
+        ("Ctrl+I", "While editing: invert the mask on this image (inside the region, if any)"),
+        ("Ctrl+Backspace", "While editing: clear the mask on this image (inside the region, if any)"),
         ("Enter", "Auto tool: Apply & Continue (Fill: all, Paint: the picks)"),
         ("The active auto tool again", "Leave it, dropping its result (like Esc)"),
         ("Ctrl+D, mouse over Objects", "Duplicate the selected Objects (this image's mask)"),
