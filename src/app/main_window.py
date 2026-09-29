@@ -710,7 +710,7 @@ class MainWindow(QMainWindow):
         self.image_label.setText(f"{s.index + 1}/{len(s.keys)}  {key}" if has_folder else "")
         eng = s.engine
         self.model_label.setText(
-            "SAM2 loading…"
+            (f"SAM2 loading… ({len(s.pending)} waiting)" if s.pending else "SAM2 loading…")
             if self._loading_models
             else ("SAM2 ✓" if eng is not None and eng.sam2_ready else "SAM2 ✕")
             + ("  SAM3 ✓" if eng is not None and eng.sam3_ready else "")
@@ -1149,6 +1149,7 @@ class MainWindow(QMainWindow):
             self.log(f"SAM2 checkpoint not found: {ckpt} — set it in Settings")
             return
         self._loading_models = True
+        s.defer_prompts = True  # points / boxes made meanwhile are kept and run when SAM2 is ready
         engine = s.engine
 
         def load():
@@ -1158,14 +1159,19 @@ class MainWindow(QMainWindow):
 
         def done(e):
             self._loading_models = False
+            s.defer_prompts = False
             s.engine = e
             if s.image is not None:
                 e.set_image(s.image)
             self.log(f"SAM2 loaded on {getattr(e, 'device', '?')}")
+            n = s.run_pending()
+            if n:
+                self.log(f"Applied the points made while SAM2 was loading ({n} mask(s))")
             self.refresh()
 
         def failed(msg):
             self._loading_models = False
+            s.defer_prompts = False
             self.warn(f"Could not load SAM2: {msg}")
             self.refresh()
 
@@ -1180,7 +1186,10 @@ class MainWindow(QMainWindow):
         if self.session.effective_mode == Mode.NEW_OBJECT and not positive:
             self.log("A new Object starts from a positive (left) click or a box")
             return
+        waiting = bool(self.session.pending)
         self._prompt(lambda: self.session.click(x, y, positive))
+        if self.session.pending and not waiting:
+            self.log("SAM2 is still loading: the points are kept and the mask appears when it is ready")
 
     def set_brush(self, on: bool, redraw: bool = True) -> None:
         """Turn the Paint brush on/off (only possible while an Object is in Edit)."""

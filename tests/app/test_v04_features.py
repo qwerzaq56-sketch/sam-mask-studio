@@ -960,3 +960,42 @@ def test_spirula_shares_masks_postshot_gets_its_own_white_folder(qapp, win, tmp_
     o = dlg.options()
     assert o.out_dir == root / "masks_postshot" and not o.invert and o.name_pattern == "{stem}.png"
     assert "Remove Occluders" in dlg.note.text()
+
+
+# --- p27: points made while SAM2 loads are kept and run when it is ready ---------------------
+
+
+def test_prompts_wait_for_sam2_and_run_when_it_is_ready(qapp, win):
+    s = win.session
+    eng = s.engine
+    eng.sam2_ready = False
+    s.defer_prompts = True
+    win.new_object()
+    win.on_click(30, 30, True)  # SAM2 still loading
+    [o] = s.project.objects
+    fs = o.frame(s.key)
+    assert len(fs.points) == 1 and fs.mask is None and s.pending == {(o.id, s.key)}  # kept, shown, waiting
+    assert "still loading" in win.log_view.toPlainText()
+    win.on_click(40, 40, True)  # a second point while waiting
+    assert len(s.project.get(o.id).frame(s.key).points) == 2
+    eng.sam2_ready = True
+    s.defer_prompts = False
+    assert s.run_pending() == 1
+    fs = s.project.get(o.id).frame(s.key)
+    assert fs.mask is not None and fs.mask.any() and not s.pending
+
+
+def test_prompts_waiting_on_another_image_run_when_it_opens(qapp, win):
+    s = win.session
+    s.engine.sam2_ready = False
+    s.defer_prompts = True
+    s.start_new_object()
+    s.click(30, 30)
+    s.finish_editing()
+    oid, first = s.project.objects[0].id, s.key
+    s.go_to(1)  # still loading: nothing runs
+    s.engine.sam2_ready = True
+    s.defer_prompts = False
+    assert s.run_pending() == 0  # queued on another image
+    s.go_to(0)
+    assert s.project.get(oid).mask(first) is not None and not s.pending
