@@ -86,8 +86,20 @@ CAMERA_MODELS = {  # id: (name, number of params)
     0: ("SIMPLE_PINHOLE", 3), 1: ("PINHOLE", 4), 2: ("SIMPLE_RADIAL", 4), 3: ("RADIAL", 5),
     4: ("OPENCV", 8), 5: ("OPENCV_FISHEYE", 8), 6: ("FULL_OPENCV", 12), 7: ("FOV", 5),
     8: ("SIMPLE_RADIAL_FISHEYE", 4), 9: ("RADIAL_FISHEYE", 5), 10: ("THIN_PRISM_FISHEYE", 12),
-    11: ("RAD_TAN_THIN_PRISM_FISHEYE", 16),
+    11: ("RAD_TAN_THIN_PRISM_FISHEYE", 16), 12: ("SIMPLE_DIVISION", 4), 13: ("DIVISION", 5),
+    14: ("SIMPLE_FISHEYE", 3), 15: ("FISHEYE", 4), 16: ("EUCM", 6),
+    17: ("EQUIRECTANGULAR", 2),  # 360: params w, h (colmap/sensor/models/spherical.h)
 }
+MODEL_IDS = {name: mid for mid, (name, _n) in CAMERA_MODELS.items()}
+
+
+@dataclass(frozen=True)
+class Camera:
+    id: int
+    model: str
+    width: int
+    height: int
+    params: tuple
 
 
 def read_image_names_bin(path: Path) -> List[str]:
@@ -114,27 +126,34 @@ def read_image_names_txt(path: Path) -> List[str]:
     return [ln.split(maxsplit=9)[9] for ln in lines[0::2] if len(ln.split(maxsplit=9)) == 10]
 
 
-def read_cameras(model: Path) -> tuple:
-    """(count, model names) from cameras.bin / cameras.txt; (0, []) when missing."""
+def read_cameras_full(model: Path) -> Dict[int, Camera]:
+    """Every camera of cameras.bin / cameras.txt (empty when missing or unreadable)."""
     b, t = model / "cameras.bin", model / "cameras.txt"
-    kinds: List[str] = []
+    cams: Dict[int, Camera] = {}
     if b.is_file():
         with open(b, "rb") as f:
             (n,) = struct.unpack("<Q", f.read(8))
             for _ in range(n):
-                _cid, mid = struct.unpack("<ii", f.read(8))
-                f.read(16)  # width, height
-                name, nparams = CAMERA_MODELS.get(mid, (f"model {mid}", 0))
+                cid, mid = struct.unpack("<ii", f.read(8))
+                w, h = struct.unpack("<QQ", f.read(16))
                 if mid not in CAMERA_MODELS:
-                    kinds.append(name)
+                    cams[cid] = Camera(cid, f"model {mid}", w, h, ())
                     break  # unknown parameter count: cannot read further
-                f.read(8 * nparams)
-                kinds.append(name)
-        return n, sorted(set(kinds))
-    if t.is_file():
-        rows = [ln.split() for ln in t.read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("#")]
-        return len(rows), sorted({r[1] for r in rows if len(r) > 1})
-    return 0, []
+                name, nparams = CAMERA_MODELS[mid]
+                cams[cid] = Camera(cid, name, w, h, struct.unpack(f"<{nparams}d", f.read(8 * nparams)))
+    elif t.is_file():
+        for ln in t.read_text(encoding="utf-8").splitlines():
+            v = ln.split()
+            if ln.startswith("#") or len(v) < 4:
+                continue
+            cams[int(v[0])] = Camera(int(v[0]), v[1], int(v[2]), int(v[3]), tuple(float(x) for x in v[4:]))
+    return cams
+
+
+def read_cameras(model: Path) -> tuple:
+    """(count, model names) from cameras.bin / cameras.txt; (0, []) when missing."""
+    cams = read_cameras_full(model)
+    return len(cams), sorted({c.model for c in cams.values()})
 
 
 def count_points(model: Path) -> int:

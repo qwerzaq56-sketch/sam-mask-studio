@@ -346,6 +346,18 @@ class ExportCheck:
     keys: List[str] = field(default_factory=list, repr=False)  # every image, in sequence order
 
 
+def full_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]],
+              ids: Optional[List[int]] = None) -> Optional[np.ndarray]:
+    """The Final Mask (*ids*: a mask set's) of *key* at the image's original resolution (bool); None = no mask."""
+    m = project.final_mask(key, ids)
+    if m is None:
+        return None
+    h0, w0 = original_size(key)
+    if m.shape != (h0, w0):
+        m = cv2.resize(m.astype(np.uint8), (w0, h0), interpolation=cv2.INTER_NEAREST) > 0
+    return m
+
+
 def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Optional[List[int]] = None) -> ExportCheck:
     """Count the images with / without a Final Mask (*ids*: a mask set's), empty masks, ⚠ / ✕ frames
     and file name clashes."""

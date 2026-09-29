@@ -1048,3 +1048,40 @@ def test_excluded_frames_and_a_new_dataset(qapp, win, tmp_path):
     assert not s.project.excluded
     win.undo()
     assert s.project.excluded == {names[1]}
+
+
+# --- p29: a 360 scene exported as pinhole views (docs/specs/08) ---------------------------------
+
+
+def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
+    from src.app.dialogs import ExportDialog
+    from src.core.colmap import read_cameras_full
+    from tests.app.conftest import wait_until
+    from tests.unit.test_reproject import make_erp_scene
+
+    root = tmp_path / "scene"
+    make_erp_scene(root)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    assert win.scene.camera_models == ["EQUIRECTANGULAR"]
+    s = win.session
+    s.start_new_object()
+    s.click(60, 60)
+    s.finish_editing()
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="lichtfeld")
+    assert dlg.views() is None  # into the scene: no conversion
+    dlg.to_new.setChecked(True)
+    new = tmp_path / "pin"
+    dlg.dataset.setText(str(new))
+    assert dlg.views() is None  # the box is off: the dataset stays 360
+    dlg.pinhole.setChecked(True)
+    dlg.yaws.setValue(6)
+    dlg.pitches.setText("0")
+    dlg.side.setValue(64)
+    v = dlg.views()
+    assert len(v.pairs()) == 6 and v.size == 64
+    win.run_export(dlg.jobs(), dataset=new, views=v)
+    wait_until(qapp, lambda: not win._busy)
+    assert len(list((new / "images").iterdir())) == 12 and len(list((new / "masks").iterdir())) == 12
+    assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["PINHOLE"]
+    assert "Pinhole dataset" in win.log_view.toPlainText()

@@ -61,7 +61,8 @@ from src.core.project import FrameStatus, Source
 from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
-from src.core.storage import check_export, default_export_dir
+from src.core.reproject import MaskJob, convert_to_pinhole
+from src.core.storage import check_export, default_export_dir, full_mask
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -2122,9 +2123,9 @@ class MainWindow(QMainWindow):
             if why:
                 self.warn(why)
                 return
-        self.run_export(dlg.jobs(), dataset=root)
+        self.run_export(dlg.jobs(), dataset=root, views=dlg.views())
 
-    def run_export(self, jobs, dataset: Optional[Path] = None) -> None:
+    def run_export(self, jobs, dataset: Optional[Path] = None, views=None) -> None:
         """Write one export or several (a list: the Final Mask and mask sets, each to its folder).
 
         *dataset*: first build a new dataset there (images linked, the model without the ⊘ frames),
@@ -2138,13 +2139,24 @@ class MainWindow(QMainWindow):
         report = []
 
         def work():
+            if views is not None:  # a 360 scene as pinhole views: images, masks and model together
+                masks = [MaskJob(o.out_dir, o.name_pattern, o.invert, o.include_empty,
+                                 lambda k, ids=o.object_ids: full_mask(s.project, k, s.original_size, ids))
+                         for o in jobs]
+                report.append(convert_to_pinhole(s.image_dir, self.scene.model_dir, dataset, keep, views, masks))
+                return [sorted(o.out_dir.iterdir()) for o in jobs]
             if dataset is not None:
                 report.append(build_dataset(s.image_dir, self.scene.model_dir, dataset, keep))
             return [s.export(o, keys=keep) for o in jobs]
 
         def done(paths):
             self._busy = None
-            if report:
+            if report and views is not None:
+                r = report[0]
+                self.log(f"Pinhole dataset {dataset}: {r.images_in} 360 image(s) → {r.views_out} view(s) of {r.side} px, "
+                         f"3D points {r.points_kept} kept / {r.points_dropped} removed"
+                         + (f"; not converted: {', '.join(r.skipped[:5])}" if r.skipped else ""))
+            elif report:
                 r = report[0]
                 self.log(f"New dataset {dataset}: {r.model.images_kept} image(s) ({r.linked} linked, {r.copied} copied), "
                          f"{r.model.images_dropped} left out, 3D points {r.model.points_kept} kept / "
