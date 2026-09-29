@@ -170,6 +170,12 @@
 - File → Import Masks from Folder…: 아무 마스크 폴더나 같은 방식으로.
 - 코드: `src/core/colmap.py`(모델 읽기는 COLMAP 공개 형식을 직접 읽음, 쓰기 없음), `Session.import_masks`, `Source.IMPORTED`.
 
+### 24단계 · 학습기별 Export (`v0.4-p24`, [`specs/07`](../specs/07-export-presets.md) C2)
+- COLMAP 장면을 열었을 때 Export 창 맨 위 **For**: Brush / LichtFeld Studio / COLMAP / Custom. 프리셋은 장면의 `masks/`에
+  `<이미지 이름>.png`(예: `a.jpg.png`), 대상 = 검정(학습에서 무시), 모든 이미지에 씀(Object가 없으면 전부 흰색). 세 학습기가 모두 읽는 형식(소스 확인).
+- 덮어쓸 파일은 먼저 `masks_backup_<시각>/`으로 옮김. 검사에 카메라 모델, 백업될 파일 수. LichtFeld는 "Mask Mode = Ignore" 안내.
+- 모든 이미지를 쓰는 설정에서는 "마스크 없음"을 문제로 치지 않음(흰색으로 씀). Custom은 전과 같음. 고른 학습기를 기억.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

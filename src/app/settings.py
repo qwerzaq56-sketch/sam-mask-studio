@@ -34,6 +34,7 @@ class Settings:
     tool_settings_open: bool = True  # Properties > Edit Layer: the Settings section unfolded
     layer_section_open: bool = True  # Properties > Edit Layer: the Layer section unfolded
     preview_object: bool = False  # Mask Preview shows the selected Object's mask (else the Final Mask)
+    export_target: str = "brush"  # the Export window's trainer for a COLMAP scene (src/core/presets.py)
 
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":
