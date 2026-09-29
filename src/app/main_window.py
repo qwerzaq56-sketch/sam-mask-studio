@@ -332,12 +332,12 @@ class MainWindow(QMainWindow):
         self.act_final = self._action(
             "Mask Preview",
             self.toggle_final,
-            ["X"],
+            ["V"],
             "Show the mask in black and white (hold Z to peek; editing keeps working)",
             True,
         )
         # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
-        self.act_preview_mode = self._action("", self.toggle_preview_mode, ["V"])
+        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.toggle_preview_mode, ["X"])
         self._show_preview_mode()
         self.act_brush = self._action(
             "Brush",
@@ -366,6 +366,9 @@ class MainWindow(QMainWindow):
             checkable=True,
         )
         self.act_changes.setChecked(self.settings.show_edit_changes)
+        for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
+                  self.act_pick_all, self.act_edit, self.act_new):
+            a.setAutoRepeat(False)  # held down: one toggle, not a flicker
 
         # --- Go: moving between frames and Objects ----------------------------------------
         self.act_prev_frame = self._action("&Previous Frame", lambda: self.step(-1), ["Left", "PgUp"],
@@ -382,8 +385,6 @@ class MainWindow(QMainWindow):
         self.act_next_key = self._action("Next Keyframe ★", lambda: self.step_keyframe(1), ["."])
         self.act_go_reference = self._action("Go to Reference ◎", self.go_to_reference, ["F"],
                                              "The propagation reference (the double-clicked image)")
-        self.act_focus = self._action("Scroll to Current Frame", self.focus_frame, ["S"],
-                                      "Scroll the Frame List and the Frames strip to the current frame")
         self.act_shortcuts = self._action("&Keyboard Shortcuts", self.show_shortcuts, ["F1"])
 
         # --- the menu bar: every command, with its key -----------------------------------
@@ -421,7 +422,7 @@ class MainWindow(QMainWindow):
             m.addSeparator() if a is None else m.addAction(a)
         self._hint(m, "Set Current Frame as Reference ◎", "Enter",
                    lambda: self.session.key is not None and self.set_reference(self.session.index))
-        m.addAction(self.act_focus)
+        self._hint(m, "Mouse over a frame list: Set as Reference ◎", "Space")
         m.addSeparator()
         self._hint(m, "Mouse over a frame list: frames", "W A S D / arrows")
         self._hint(m, "Mouse over the Objects list: Objects", "W A S D / arrows")
@@ -863,6 +864,19 @@ class MainWindow(QMainWindow):
                     self.step_object(delta, self.objects_panel.listed_ids())
                 return True
         if (
+            t in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
+            and event.key() == Qt.Key.Key_Space
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and self.session.key is not None
+            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            and self.isActiveWindow()
+            and self._hover_zone() == "frames"
+        ):
+            if t == QEvent.Type.KeyPress and not event.isAutoRepeat():
+                self.set_reference(self.session.index)  # Space over a frame list = Enter (canvas: Space pans)
+            event.accept()
+            return True
+        if (
             t == QEvent.Type.KeyPress
             and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
             and self.session.auto_tool is not None
@@ -1068,7 +1082,7 @@ class MainWindow(QMainWindow):
         focus = QToolButton()
         focus.setText("⌖")
         focus.setAutoRaise(True)
-        focus.setToolTip("Focus: scroll to the current frame (S)")
+        focus.setToolTip("Focus: scroll to the current frame")
         focus.clicked.connect(self.focus_frame)
         self._goto_fields.append(goto)
         row = QHBoxLayout()
@@ -1079,7 +1093,7 @@ class MainWindow(QMainWindow):
         return row
 
     def focus_frame(self) -> None:
-        """S: scroll the frame list and strip to the current frame."""
+        """⌖: scroll the frame list and strip to the current frame."""
         self.images_panel.focus_current()
 
     def goto_frame(self, field: QLineEdit) -> None:
@@ -1164,6 +1178,8 @@ class MainWindow(QMainWindow):
         self.session.set_auto_mode(mode)
         if self.session.auto_tool:
             self.canvas.set_brush_mode(mode == "paint")
+            if mode == "paint":
+                self.session.pick_everything()  # like A: what Fill showed stays picked, Alt+drag takes parts out
         self.refresh()
 
     def close_tool(self, apply: bool = False) -> None:
@@ -1322,6 +1338,7 @@ class MainWindow(QMainWindow):
         else:
             self.session.edit(oid)
             self.canvas.setFocus()
+            self.set_brush(True, redraw=False)  # Edit starts with the brush (D / E again leave it)
         self.refresh()
 
     def edit_key(self) -> None:
@@ -1456,7 +1473,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_final_preview(on)
 
     def toggle_preview_mode(self) -> None:
-        """V: Mask Preview shows the Final Mask <-> the selected Object's mask."""
+        """X: Mask Preview shows the Final Mask <-> the selected Object's mask."""
         self.settings.preview_object = not self.settings.preview_object
         self.settings.save(self.settings_path)
         self._show_preview_mode()
@@ -1464,11 +1481,12 @@ class MainWindow(QMainWindow):
         self.canvas.update()
 
     def _show_preview_mode(self) -> None:
+        """The toolbar button names the mode in use; the menu entry keeps its command name."""
         one = self.settings.preview_object
-        self.act_preview_mode.setText("Preview: Object" if one else "Preview: Final")
+        self.act_preview_mode.setIconText("Preview: Object" if one else "Preview: Final")
         self.act_preview_mode.setToolTip(
-            "Mask Preview shows the selected Object's mask (V: switch to the Final Mask)" if one
-            else "Mask Preview shows the Final Mask, every checked Object (V: switch to the selected Object)"
+            "Mask Preview shows the selected Object's mask (X: switch to the Final Mask)" if one
+            else "Mask Preview shows the Final Mask, every checked Object (X: switch to the selected Object)"
         )
 
     def _update_preview_mask(self) -> None:

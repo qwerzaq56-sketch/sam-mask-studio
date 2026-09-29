@@ -281,11 +281,13 @@ def test_each_apply_adds_one_more_and_leaving_drops(qapp, win):
     assert s.editing_frame().mask.sum() == area2 and s.auto_tool is None
     p.tool_btns["shrink"].click()  # a new auto tool starts in Fill mode (v0.4-p10)
     assert s.auto_mode == "fill" and p.mode_fill_btn.isChecked() and not win.canvas.brush_mode
-    p.mode_paint_btn.click()  # Paint mode: nothing picked yet
-    assert s.auto_mode == "paint" and not s.auto_taken().any()
-    win.a_key()  # Paint mode: A toggles all...
+    p.mode_paint_btn.click()  # Paint mode: everything picked, like A (v0.4-p15)
+    assert s.auto_mode == "paint" and (s.auto_taken() == s.auto_changes()[1]).all()
+    win.a_key()  # Paint mode: A toggles none...
+    assert not s.auto_taken().any()
+    win.a_key()  # ...and all
     assert s.auto_taken().any()
-    win.a_key()  # ...and none
+    win.a_key()
     assert not s.auto_taken().any()
     p.apply_auto_btn.click()  # Apply & Close with nothing picked: no change, tool closed
     assert s.auto_tool is None and s.editing_frame().mask.sum() == area2 and p.apply_auto_btn.text() == "Apply && Close"
@@ -303,6 +305,7 @@ def test_mode_switch_keeps_the_same_area(qapp, win):
     styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
     assert (styles()["auto_add"] == added).all() and not styles()["guide"].any()  # all of it, green
     p.mode_paint_btn.click()  # the same area, now gray until picked
+    win.a_key()  # Paint starts with everything picked (v0.4-p15): A = none
     assert win.canvas.brush_mode and (styles()["guide"] == added).all() and not styles()["auto_add"].any()
     assert not s.editing_frame().mask[25, 25]  # switching writes nothing
     p.mode_fill_btn.click()
@@ -348,6 +351,7 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     p.fill_area.setValue(5)
     p.tool_btns["fill_holes"].click()  # starts in Fill mode...
     p.mode_paint_btn.click()  # ...then Paint
+    win.a_key()  # Paint starts with everything picked (v0.4-p15): A = none
     assert win.canvas.brush_mode and win.canvas.brush_tool == "fill_holes" and not p.brush_btn.isChecked()
     styles = lambda: {o.style: o.mask for o in win.canvas._overlays}  # noqa: E731
     assert styles()["guide"][25, 25] and styles()["guide"][35, 35]  # both holes, gray
@@ -380,7 +384,7 @@ def test_final_preview_toggle_and_editing_in_it(qapp, win):
 
     from tests.app.test_gui import canvas_pos
 
-    assert win.act_final.shortcut() == QKeySequence("X")
+    assert win.act_final.shortcut() == QKeySequence("V")  # X until v0.4-p15
     s = win.session
     win.new_object()
     s.click(30, 30)
@@ -586,6 +590,7 @@ def test_grow_shrink_tools_share_amount_and_a_toggles_picks(qapp, win):
     added, removed = s.auto_changes()
     assert removed.any() and not added.any() and p.settings_stack.currentIndex() == p._pages["grow"]
     p.mode_paint_btn.click()
+    win.a_key()  # Paint starts with everything picked (v0.4-p15): A = none
     assert not s.auto_taken().any()
     win.a_key()  # A: everything picked
     assert (s.auto_taken() == removed).all()
@@ -644,6 +649,7 @@ def test_paint_mode_picks_are_undoable(qapp, win):
     p.fill_area.setValue(5)
     p.tool_btns["fill_holes"].click()  # starts in Fill mode...
     p.mode_paint_btn.click()  # ...then Paint
+    win.a_key()  # Paint starts with everything picked (v0.4-p15): A = none
     win.canvas.set_brush_size(40)  # a few image px: covers the hole whatever the rounding
 
     def stroke(x, y, mods=Qt.KeyboardModifier.NoModifier):
@@ -1067,7 +1073,7 @@ def test_focus_and_goto_frames(qapp, win):
     from PyQt6.QtWidgets import QLineEdit
 
     ip = win.images_panel
-    assert win.act_focus.shortcut() == QKeySequence("S")
+    assert not hasattr(win, "act_focus")  # v0.4-p15: no S key (the ⌖ button and F remain)
     gotos = win._goto_fields
     assert len(gotos) == 2 and all(isinstance(g, QLineEdit) for g in gotos)  # under the list and the strip
     assert not win._list_dock.titleBarWidget().findChildren(QLineEdit)  # not in the title bar
@@ -1078,6 +1084,6 @@ def test_focus_and_goto_frames(qapp, win):
     gotos[0].returnPressed.emit()
     assert win.session.index == 3  # out of range: nothing happens
     ip.list.horizontalScrollBar().setValue(0)
-    win.focus_frame()  # S
+    win.focus_frame()  # ⌖
     item_rect = ip.list.visualItemRect(ip.list.item(3))
     assert ip.list.viewport().rect().intersects(item_rect)

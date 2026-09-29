@@ -20,7 +20,7 @@
 
 ```text
 Mask Preview │ Preview: Final/Object │ Brush │ Outline ▢px │ Show Changes
-     X                  V                D          O               R
+     V                  X                D          O               R
 ```
 
 ## 메뉴 바 (1번째 줄)
@@ -29,11 +29,14 @@ Mask Preview │ Preview: Final/Object │ Brush │ Outline ▢px │ Show Chan
 |---|---|
 | **File** | Open Folder… (`Ctrl+O`) · Save (`Ctrl+S`) · Export Final Masks… (`Ctrl+E`) ─ Settings… ─ Quit (키 없음) |
 | **Edit** | Undo (`Ctrl+Z`) · Redo (`Ctrl+Y`, `Ctrl+Shift+Z`) ─ New Object from Points (`N`) · Edit Points / Finish (`E`) · Delete (`Delete`) · Leave Tool / Finish Editing (`Esc`) ─ **Tools ▸** Brush (`D`) · Auto Tool: Pick All / None (`A`) · Auto Tool: Apply & Continue (`Enter`) · Leave the Active Auto Tool (그 버튼 다시) ─ **Objects ▸** Duplicate (this image) · Duplicate All · Copy A → B… · Merge… |
-| **View** | Mask Preview (`X`) · Preview: Final / Object (`V`) · Peek at Mask Preview (`Z` 누르고 있기) · Outline (`O`) · Show Changes (`R`) ─ **Panels ▸** Frame List · Objects / Prompt / Propagation · Properties · Frames |
-| **Go** | Previous / Next Frame (`←` `→`, `PgUp` `PgDn`) · Previous / Next Object (`↑` `↓`) ─ Previous / Next Problem ⚠ ✕ (`[` `]`) · Previous / Next Keyframe ★ (`,` `.`) ─ Go to Reference ◎ (`F`) · Set Current Frame as Reference ◎ (`Enter`) · Scroll to Current Frame (`S`) ─ (안내) 목록 위에서 `W A S D` / 화살표 |
+| **View** | Mask Preview (`V`) · Toggle Final / Object Mask (`X`, 툴바에서는 지금 모드 `Preview: Final / Object`) · Peek at Mask Preview (`Z` 누르고 있기) · Outline (`O`) · Show Changes (`R`) ─ **Panels ▸** Frame List · Objects / Prompt / Propagation · Properties · Frames |
+| **Go** | Previous / Next Frame (`←` `→`, `PgUp` `PgDn`) · Previous / Next Object (`↑` `↓`) ─ Previous / Next Problem ⚠ ✕ (`[` `]`) · Previous / Next Keyframe ★ (`,` `.`) ─ Go to Reference ◎ (`F`) · Set Current Frame as Reference ◎ (`Enter`) ─ (안내) 목록 위에서 `W A S D` / 화살표, 프레임 목록 위 `Space` = 기준 지정 |
 | **Help** | Keyboard Shortcuts (`F1`) |
 
 ## 판단 메모
+
+- **(p15) Scroll to Current Frame(`S`)을 뺀 이유**: `F`(기준으로 이동)와 역할이 겹쳐 보이고, 목록 위에서는 `S`가 "다음"이라 메뉴의 키 표시가 맞지 않았음. 스크롤은 ⌖ 버튼.
+- **(p15) 메뉴 이름과 툴바 이름을 나눈 경우**: `X`는 메뉴에서 명령 이름(`Toggle Final / Object Mask`), 툴바에서는 지금 상태(`Preview: Final`)를 보여 줌(`setIconText`).
 
 - **Undo / Redo를 툴바에서 뺀 이유**: 사용자 요청(덜 쓰는 기능은 위로). 단축키가 워낙 표준이라 버튼을 누를 일이 적고,
   Edit 메뉴 첫 줄에 항상 있습니다. 필요하면 툴바 왼쪽에 다시 넣기 쉽습니다(`tb.addAction(self.act_undo)`).
