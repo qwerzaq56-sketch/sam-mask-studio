@@ -158,6 +158,9 @@
   Edit Layer 삭제로도 되돌릴 수 있고, Undo 한 단계. 편집 중이 아니면 키는 로그 안내만. 메뉴 Edit → Tools.
 - 코드: `Session.invert_mask` / `clear_mask`, `MainWindow.mask_edit`.
 
+### 22단계 · Frame List 칸 (`v0.4-p22`)
+- ID │ 표시 │ 이름 사이에 옅은 세로선(`COLUMN_RULE`, 열린 프레임 행에서는 흰색), 행은 줄무늬(`setAlternatingRowColors`). 이름을 접으면 ID 뒤 선만.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
