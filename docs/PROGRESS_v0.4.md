@@ -128,6 +128,15 @@
   열린 프레임 = 파란 테두리(`CURRENT_OUTLINE`), Shift/Ctrl로 고른 프레임 = 옅은 파랑(`PICKED_FILL`). 기준이 없으면 칠 없음.
 - 코드: `images_panel.py` `selection_fill(option, index, reference)`, `draw_outline`, 두 delegate의 `reference`.
 
+### 17단계 · Objects 패널 (`v0.4-p17`, 11단계 고침)
+- 삭제: 확인 창 없이 바로(Ctrl+Z로 되돌림). 대신 **잠금**: 행의 🔒 버튼, `[···]` Lock / Unlock, `🔒 All` / `🔓 All`, 메뉴 Edit → Objects.
+  잠긴 Object는 Delete / × / Merge로 사라지지 않음(Merge는 거절하고 로그). 편집·덮어쓰기는 아직 막지 않음(고민 필요).
+- `Copy A → B`: 옵션 창 없이 Add + 이 이미지, 먼저 선택 → 마지막 선택. 옆 `⚙` = Add / Replace, 이 이미지 / 모든 이미지.
+- `Merge`: 옵션 창 없이 Add. 옆 `⚙` = Add / Override A / Override B / Into A(나머지는 빈 Object로 남음).
+- 마우스가 Objects 패널 위: `Ctrl+D` Duplicate, `Ctrl+Shift+D` Duplicate All.
+- 코드: `MaskObject.locked`(저장), `Project.set_locked`, `remove_objects`(잠긴 것 건너뜀), `merge(how="into")`, `merge_blocked`;
+  `MainWindow.copy_options`, `merge_options`, `set_locked`, `_over_objects_panel`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 

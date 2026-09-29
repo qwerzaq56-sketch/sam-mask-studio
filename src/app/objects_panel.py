@@ -1,11 +1,13 @@
 """Objects list (spec 01 §7, 03 §3).
 
 Each row: include checkbox (Final Mask), color, name (double-click to rename),
-[Edit], [×] delete, [···] menu. When an Object has several Variants on the
+[🔒] lock, [Edit], [×] delete, [···] menu. When an Object has several Variants on the
 current image they are listed under it as ● / ○ rows; clicking one selects it.
 Merge / Copy into / Duplicate / Delete act on the selected rows (Ctrl/Shift-click),
 so they never conflict with the include checkboxes. Duplicate copies the mask on
-the current image only; Duplicate All copies every linked mask.
+the current image only; Duplicate All copies every linked mask. Merge and Copy
+run at once (Add, this image); their small ⚙ buttons open the options.
+A locked Object is never deleted (no confirmation: Delete is undoable).
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from PyQt6.QtWidgets import (
 from src.core.project import MaskObject
 
 ID_ROLE = Qt.ItemDataRole.UserRole
-COLUMNS = 5  # name · linked (🔗 n) · Edit · × · ···
+COLUMNS = 6  # name · linked (🔗 n) · 🔒 · Edit · × · ···
 VARIANT_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
@@ -67,10 +69,13 @@ class ObjectsPanel(QWidget):
     renamed = pyqtSignal(int, str)
     edit_requested = pyqtSignal(int)  # obj id; the Object already in Edit means "finish"
     new_requested = pyqtSignal()
-    merge_requested = pyqtSignal(list)
+    merge_requested = pyqtSignal(list)  # Add, at once
+    merge_options_requested = pyqtSignal(list)  # ⚙: Add / Override / Into the first
     duplicate_requested = pyqtSignal(list)  # the current image's mask only
     duplicate_all_requested = pyqtSignal(list)  # every linked mask
-    copy_requested = pyqtSignal(list)  # [source id, target id]
+    copy_requested = pyqtSignal(list)  # [source id, target id]: Add, this image
+    copy_options_requested = pyqtSignal(list)  # ⚙: Add / Replace, this image / every image
+    lock_requested = pyqtSignal(list, bool)  # ids, locked
     delete_requested = pyqtSignal(list)
     remove_frame_requested = pyqtSignal(int)
     variant_selected = pyqtSignal(int, int)  # obj id, variant index (current image)
@@ -107,18 +112,26 @@ class ObjectsPanel(QWidget):
         self.new_btn = QPushButton("+ New Object from Points")
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
         self.new_btn.clicked.connect(lambda: later(self, self.new_requested))
-        self.merge_btn = QPushButton("Merge…")
+        self.merge_btn = QPushButton("Merge")
         self.merge_btn.setToolTip(
-            "Fuse the selected rows into one Object: Add (union) or Override with one of them"
-            " (Ctrl/Shift-click rows to select)"
+            "Fuse the selected rows into one Object (the union, named after the first selected)."
+            " ⚙: other ways. Ctrl/Shift-click rows to select"
         )
         self.merge_btn.clicked.connect(lambda: later(self, self.merge_requested, self.selected_ids()))
-        self.copy_btn = QPushButton("Copy A → B…")
-        self.copy_btn.setToolTip(
-            "Copy the first selected Object (A) into the second (B): Replace or Add,"
-            " on this image or on all of A's images"
+        self.merge_opts_btn = self._options_button(
+            "Merge options: Add, Override with A / B, or into A keeping the others (emptied)",
+            lambda: later(self, self.merge_options_requested, self.selected_ids()),
         )
-        self.copy_btn.clicked.connect(lambda: later(self, self.copy_requested, self.selected_ids()[:2]))
+        self.copy_btn = QPushButton("Copy A → B")
+        self.copy_btn.setToolTip(
+            "Add the first selected Object's (A) mask on this image to the last selected (B)."
+            " ⚙: Replace, or every image"
+        )
+        self.copy_btn.clicked.connect(lambda: later(self, self.copy_requested, self._pair()))
+        self.copy_opts_btn = self._options_button(
+            "Copy options: Add / Replace, this image / every image where A has a mask",
+            lambda: later(self, self.copy_options_requested, self._pair()),
+        )
         self.dup_btn = QPushButton("Duplicate")
         self.dup_btn.setToolTip("Copy the selected Objects' mask on this image only")
         self.dup_btn.clicked.connect(lambda: later(self, self.duplicate_requested, self.selected_ids()))
@@ -129,8 +142,11 @@ class ObjectsPanel(QWidget):
         self.del_btn.clicked.connect(lambda: later(self, self.delete_requested, self.selected_ids()))
 
         ops = QHBoxLayout()
-        for b in (self.merge_btn, self.copy_btn):
-            ops.addWidget(b)
+        ops.setSpacing(2)
+        for b, opts in ((self.merge_btn, self.merge_opts_btn), (self.copy_btn, self.copy_opts_btn)):
+            ops.addWidget(b, 1)
+            ops.addWidget(opts)
+            ops.addSpacing(4)
         ops2 = QHBoxLayout()
         for b in (self.dup_btn, self.dup_all_btn, self.del_btn):
             ops2.addWidget(b)
@@ -140,10 +156,19 @@ class ObjectsPanel(QWidget):
         self.show_all.toggled.connect(lambda _on: self.set_objects(self._objects, self._key, self._editing))
         self.shown_label = QLabel("")
         self.shown_label.setStyleSheet("color: gray;")
+        self.lock_all_btn = QPushButton("🔒 All")
+        self.lock_all_btn.setToolTip("Lock every Object (locked ones cannot be deleted)")
+        self.lock_all_btn.clicked.connect(lambda: later(self, self.lock_requested, self._all_ids(), True))
+        self.unlock_all_btn = QPushButton("🔓 All")
+        self.unlock_all_btn.setToolTip("Unlock every Object")
+        self.unlock_all_btn.clicked.connect(lambda: later(self, self.lock_requested, self._all_ids(), False))
         head = QHBoxLayout()
         head.addWidget(self.show_all)
         head.addStretch(1)
         head.addWidget(self.shown_label)
+        for b in (self.lock_all_btn, self.unlock_all_btn):
+            b.setFixedWidth(b.fontMetrics().horizontalAdvance(b.text()) + 18)
+            head.addWidget(b)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(head)
@@ -202,9 +227,10 @@ class ObjectsPanel(QWidget):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEditable)
             self.tree.addTopLevelItem(item)
             item.setSelected(o.id in keep)
-            self.tree.setItemWidget(item, 2, self._edit_button(o.id, o.id == editing))
-            self.tree.setItemWidget(item, 3, self._delete_button(o.id))
-            self.tree.setItemWidget(item, 4, self._more_button(o.id))
+            self.tree.setItemWidget(item, 2, self._lock_button(o.id))
+            self.tree.setItemWidget(item, 3, self._edit_button(o.id, o.id == editing))
+            self.tree.setItemWidget(item, 4, self._delete_button(o.id))
+            self.tree.setItemWidget(item, 5, self._more_button(o.id))
             for i in range(self._variant_count(o, key)):
                 child = QTreeWidgetItem(item)
                 child.setData(0, ID_ROLE, o.id)
@@ -230,6 +256,14 @@ class ObjectsPanel(QWidget):
             item.setText(1, link)
             item.setToolTip(1, f"Linked: masks on {n} images" if link else "")
         item.setForeground(0, QBrush() if has else QBrush(QColor(140, 140, 140)))
+        lock = self.tree.itemWidget(item, 2)
+        if isinstance(lock, QPushButton):
+            lock.setChecked(o.locked)
+            lock.setText("🔒" if o.locked else "🔓")
+        delete = self.tree.itemWidget(item, 4)
+        if isinstance(delete, QPushButton):
+            delete.setEnabled(not o.locked)
+            delete.setToolTip("Locked: unlock it to delete" if o.locked else "Delete this Object (Ctrl+Z undoes it)")
         f = QFont()
         f.setBold(o.id == editing)
         item.setFont(0, f)
@@ -249,10 +283,27 @@ class ObjectsPanel(QWidget):
         b.setObjectName(f"edit_{oid}")
         return b
 
+    def _options_button(self, tip: str, slot) -> QPushButton:
+        b = QPushButton("⚙")
+        b.setFixedWidth(26)
+        b.setToolTip(tip)
+        b.clicked.connect(slot)
+        return b
+
+    def _lock_button(self, oid: int) -> QPushButton:
+        b = QPushButton("🔓")
+        b.setCheckable(True)
+        b.setFlat(True)
+        b.setFixedWidth(26)
+        b.setToolTip("Lock: a locked Object cannot be deleted")
+        b.setObjectName(f"lock_{oid}")
+        b.clicked.connect(lambda on, i=oid: later(self, self.lock_requested, [i], on))
+        return b
+
     def _delete_button(self, oid: int) -> QPushButton:
         b = QPushButton("×")
         b.setFixedWidth(26)
-        b.setToolTip("Delete this Object")
+        b.setToolTip("Delete this Object (Ctrl+Z undoes it)")
         b.setObjectName(f"delete_{oid}")
         b.clicked.connect(lambda _=False, i=oid: later(self, self.delete_requested, [i]))
         return b
@@ -266,7 +317,8 @@ class ObjectsPanel(QWidget):
         menu.addAction("Duplicate (this image)", lambda i=oid: later(self, self.duplicate_requested, [i]))
         menu.addAction("Duplicate All (every linked mask)",
                        lambda i=oid: later(self, self.duplicate_all_requested, [i]))
-        into = menu.addMenu("Copy into")
+        menu.addAction("Lock / Unlock", lambda i=oid: self._toggle_lock(i))
+        into = menu.addMenu("Copy into (Add, this image)")
         into.aboutToShow.connect(lambda i=oid, m=into: self._fill_copy_menu(m, i))
         menu.addAction("Remove mask on this image", lambda i=oid: later(self, self.remove_frame_requested, i))
         menu.addSeparator()
@@ -283,6 +335,19 @@ class ObjectsPanel(QWidget):
                            lambda i=oid, j=o.id: later(self, self.copy_requested, [i, j]))
         if not others:
             menu.addAction("(no other Object)").setEnabled(False)
+
+    def _toggle_lock(self, oid: int) -> None:
+        o = next((o for o in self._objects if o.id == oid), None)
+        if o is not None:
+            later(self, self.lock_requested, [oid], not o.locked)
+
+    def _all_ids(self) -> List[int]:
+        return [o.id for o in self._objects]
+
+    def _pair(self) -> List[int]:
+        """Copy's source and target: the first and the last selected row."""
+        ids = self.selected_ids()
+        return [ids[0], ids[-1]] if len(ids) >= 2 else ids
 
     def listed_ids(self) -> List[int]:
         """The Object rows in list order (what hovering the list steps through)."""
@@ -366,7 +431,11 @@ class ObjectsPanel(QWidget):
     def _update_buttons(self) -> None:
         n = len(self.selected_ids())
         self.merge_btn.setEnabled(n >= 2)
-        self.copy_btn.setEnabled(n == 2)
+        self.merge_opts_btn.setEnabled(n >= 2)
+        self.copy_btn.setEnabled(n >= 2)
+        self.copy_opts_btn.setEnabled(n >= 2)
+        self.lock_all_btn.setEnabled(any(not o.locked for o in self._objects))
+        self.unlock_all_btn.setEnabled(any(o.locked for o in self._objects))
         self.dup_btn.setEnabled(n >= 1)
         self.dup_all_btn.setEnabled(n >= 1)
         self.del_btn.setEnabled(n >= 1)

@@ -28,12 +28,16 @@ Mask Preview │ Preview: Final/Object │ Brush │ Outline ▢px │ Show Chan
 | 메뉴 | 항목 (키) |
 |---|---|
 | **File** | Open Folder… (`Ctrl+O`) · Save (`Ctrl+S`) · Export Final Masks… (`Ctrl+E`) ─ Settings… ─ Quit (키 없음) |
-| **Edit** | Undo (`Ctrl+Z`) · Redo (`Ctrl+Y`, `Ctrl+Shift+Z`) ─ New Object from Points (`N`) · Edit Points / Finish (`E`) · Delete (`Delete`) · Leave Tool / Finish Editing (`Esc`) ─ **Tools ▸** Brush (`D`) · Auto Tool: Pick All / None (`A`) · Auto Tool: Apply & Continue (`Enter`) · Leave the Active Auto Tool (그 버튼 다시) ─ **Objects ▸** Duplicate (this image) · Duplicate All · Copy A → B… · Merge… |
+| **Edit** | Undo (`Ctrl+Z`) · Redo (`Ctrl+Y`, `Ctrl+Shift+Z`) ─ New Object from Points (`N`) · Edit Points / Finish (`E`) · Delete (`Delete`) · Leave Tool / Finish Editing (`Esc`) ─ **Tools ▸** Brush (`D`) · Auto Tool: Pick All / None (`A`) · Auto Tool: Apply & Continue (`Enter`) · Leave the Active Auto Tool (그 버튼 다시) ─ **Objects ▸** Duplicate (this image) (`Ctrl+D`\*) · Duplicate All (`Ctrl+Shift+D`\*) ─ Copy A → B · Copy A → B (Options)… · Merge · Merge (Options)… ─ Lock / Unlock · Lock All · Unlock All |
 | **View** | Mask Preview (`V`) · Toggle Final / Object Mask (`X`, 툴바에서는 지금 모드 `Preview: Final / Object`) · Peek at Mask Preview (`Z` 누르고 있기) · Outline (`O`) · Show Changes (`R`) ─ **Panels ▸** Frame List · Objects / Prompt / Propagation · Properties · Frames |
 | **Go** | Previous / Next Frame (`←` `→`, `PgUp` `PgDn`) · Previous / Next Object (`↑` `↓`) ─ Previous / Next Problem ⚠ ✕ (`[` `]`) · Previous / Next Keyframe ★ (`,` `.`) ─ Go to Reference ◎ (`F`) · Set Current Frame as Reference ◎ (`Enter`) ─ (안내) 목록 위에서 `W A S D` / 화살표, 프레임 목록 위 `Space` = 기준 지정 |
 | **Help** | Keyboard Shortcuts (`F1`) |
 
+\* 마우스가 Objects 패널 위일 때만 동작(메뉴에서는 키 표시만, 항목을 누르면 실행).
+
 ## 판단 메모
+
+- **(p17) 옵션은 `⚙`와 메뉴의 `(Options)…`로**: 기본 버튼은 창 없이 한 번에([`ux-principles.md`](ux-principles.md) 4).
 
 - **(p15) Scroll to Current Frame(`S`)을 뺀 이유**: `F`(기준으로 이동)와 역할이 겹쳐 보이고, 목록 위에서는 `S`가 "다음"이라 메뉴의 키 표시가 맞지 않았음. 스크롤은 ⌖ 버튼.
 - **(p15) 메뉴 이름과 툴바 이름을 나눈 경우**: `X`는 메뉴에서 명령 이름(`Toggle Final / Object Mask`), 툴바에서는 지금 상태(`Preview: Final`)를 보여 줌(`setIconText`).
