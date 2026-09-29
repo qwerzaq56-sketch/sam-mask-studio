@@ -232,6 +232,10 @@
 - 360으로 만든 데이터셋은 다시 열어 Pinhole views로 내보낼 수 있음(듀얼 피시아이 → 360 → Pinhole).
 - 코드: `colmap.frame_groups` / `read_frames_bin`, `reproject.stitch_to_erp`.
 
+### 33단계 · 장면과 함께 연 마스크는 Undo로 안 사라짐 (`v0.4-p33`, 피드백)
+- COLMAP 장면을 열며 마스크 폴더를 Object로 불러오면, 그 상태가 Undo의 시작점. 전에는 Ctrl+Z 한 번에 불러온 Object가 통째로 사라졌음.
+- File → Import Masks로 나중에 불러온 것은 전처럼 Undo 한 단계. 코드: `Project.forget_history`, `offer_masks(undoable=)`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

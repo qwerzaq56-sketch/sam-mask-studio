@@ -836,8 +836,13 @@ def test_open_a_colmap_scene_and_load_its_masks(qapp, win, tmp_path):
     assert sorted(o.frames) == names[:3]
     m0 = o.mask(names[0])
     assert m0.any() and m0.mean() < 0.5  # the black square became the object
+    assert not s.project.can_undo  # p33: the scene's masks open with it; Ctrl+Z does not take them away
     win.undo()
-    assert not s.project.objects
+    assert len(s.project.objects) == 1
+    win.offer_masks([masks], "Import Masks")  # File > Import Masks: an ordinary, undoable step
+    assert len(s.project.objects) == 2
+    win.undo()
+    assert len(s.project.objects) == 1
 
 
 def test_scene_mismatch_is_logged(qapp, win, tmp_path):

@@ -277,6 +277,13 @@ class Project:
     def can_redo(self) -> bool:
         return bool(self._redo)
 
+    def forget_history(self) -> None:
+        """Start the history here: what is loaded now is what Ctrl+Z goes back to (a scene's masks, found
+        as it opens). The depth keeps counting, so a save made earlier never looks current again."""
+        self._dropped += len(self._undo)
+        self._undo.clear()
+        self._redo.clear()
+
     def undo(self) -> bool:
         if not self._undo:
             return False
