@@ -1,9 +1,11 @@
 """Projection conversion of a COLMAP scene (docs/specs/08-erp-to-pinhole.md).
 
-The converter walks the *target* pixels: each one becomes a ray, and the
-*source* camera model's projection (ray -> pixel) says where to sample the
-source image. Adding a source model therefore means adding one projection
-function (``SOURCE_PROJECTIONS``). P1: EQUIRECTANGULAR -> pinhole views.
+The converter walks the *target* pixels: each becomes a ray, and the *source*
+camera model's projection (ray -> pixel) says where to sample the source image.
+Sources: EQUIRECTANGULAR, the pinhole family (with its distortion) and the
+fisheye family; targets: pinhole views (``Views``) or one 360 image (``Erp``).
+Parts of a target the source lens never saw are marked ignored in every mask
+written, so trainers do not learn the black fill.
 
 Camera frame (COLMAP): X right, Y down, Z forward. Pixel coordinates put the
 upper-left corner at (0, 0), so pixel centers are at i + 0.5.
@@ -14,7 +16,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
@@ -25,6 +27,8 @@ from src.core.colmap_model import POINT2D, TRACK, _read_images_bin, _write_image
 DEFAULT_YAWS = (0.0, 90.0, 180.0, 270.0)
 DEFAULT_PITCHES = (-35.0, 0.0, 35.0)
 DEFAULT_FOV = 90.0
+FISHEYE_YAWS = (-45.0, 0.0, 45.0)  # a fisheye looks one way: views around its axis
+MAX_FISHEYE_ANGLE = np.radians(110)  # beyond this the distortion polynomial is not trusted
 
 
 # --- rotations -------------------------------------------------------------------------------
@@ -65,10 +69,10 @@ def view_rotation(yaw_deg: float, pitch_deg: float) -> np.ndarray:
     return np.stack([right, down, fwd])
 
 
-# --- source projections: rays (N, 3) in the source camera frame -> pixels -------------------------
+# --- source projections: rays (..., 3) in the source camera frame -> (x, y, valid) ----------------
 
 
-def project_equirect(cam: Camera, rays: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def project_equirect(cam: Camera, rays: np.ndarray):
     w, h = cam.params[0], cam.params[1]
     x, y, z = rays[..., 0], rays[..., 1], rays[..., 2]
     theta = np.arctan2(x, z)
@@ -76,23 +80,88 @@ def project_equirect(cam: Camera, rays: np.ndarray) -> Tuple[np.ndarray, np.ndar
     return (theta / (2 * np.pi) + 0.5) * w, (0.5 - phi / np.pi) * h, np.ones(theta.shape, bool)
 
 
-SOURCE_PROJECTIONS: Dict[str, Callable] = {"EQUIRECTANGULAR": project_equirect}
+def _pinhole(fx, fy, cx, cy, k1=0.0, k2=0.0, p1=0.0, p2=0.0):
+    """COLMAP's OPENCV projection (PINHOLE / SIMPLE_* / RADIAL are special cases)."""
+    def project(_cam, rays):
+        z = rays[..., 2]
+        ok = z > 1e-9
+        zz = np.where(ok, z, 1.0)
+        u, v = rays[..., 0] / zz, rays[..., 1] / zz
+        r2 = u * u + v * v
+        radial = k1 * r2 + k2 * r2 * r2
+        du = u * radial + 2 * p1 * u * v + p2 * (r2 + 2 * u * u)
+        dv = v * radial + 2 * p2 * u * v + p1 * (r2 + 2 * v * v)
+        return fx * (u + du) + cx, fy * (v + dv) + cy, ok
+    return project
 
 
-# --- pinhole views ----------------------------------------------------------------------------------
+def _fisheye(fx, fy, cx, cy, ks=()):
+    """COLMAP's fisheye family: equidistant angle theta, then theta * (1 + k1 theta^2 + k2 theta^4 + ...)."""
+    def project(_cam, rays):
+        x, y, z = rays[..., 0], rays[..., 1], rays[..., 2]
+        r = np.hypot(x, y)
+        theta = np.arctan2(r, z)
+        scale = np.where(r > 1e-12, theta / np.where(r > 1e-12, r, 1.0), 1.0 / np.where(z > 1e-12, z, 1.0))
+        uu, vv = x * scale, y * scale
+        t2 = theta * theta
+        radial = sum(k * t2 ** (i + 1) for i, k in enumerate(ks))
+        return fx * uu * (1 + radial) + cx, fy * vv * (1 + radial) + cy, theta < MAX_FISHEYE_ANGLE
+    return project
+
+
+def source_projection(cam: Camera) -> Optional[Callable]:
+    """The projection of *cam*'s model, or None when it cannot be converted."""
+    p, m = cam.params, cam.model
+    if m == "EQUIRECTANGULAR":
+        return project_equirect
+    if m == "SIMPLE_PINHOLE":
+        return _pinhole(p[0], p[0], p[1], p[2])
+    if m == "PINHOLE":
+        return _pinhole(*p[:4])
+    if m == "SIMPLE_RADIAL":
+        return _pinhole(p[0], p[0], p[1], p[2], p[3])
+    if m == "RADIAL":
+        return _pinhole(p[0], p[0], p[1], p[2], p[3], p[4])
+    if m == "OPENCV":
+        return _pinhole(*p[:8])
+    if m == "SIMPLE_FISHEYE":
+        return _fisheye(p[0], p[0], p[1], p[2])
+    if m == "FISHEYE":
+        return _fisheye(*p[:4])
+    if m == "SIMPLE_RADIAL_FISHEYE":
+        return _fisheye(p[0], p[0], p[1], p[2], (p[3],))
+    if m == "RADIAL_FISHEYE":
+        return _fisheye(p[0], p[0], p[1], p[2], (p[3], p[4]))
+    if m == "OPENCV_FISHEYE":
+        return _fisheye(p[0], p[1], p[2], p[3], tuple(p[4:8]))
+    return None
+
+
+CONVERTIBLE = ("EQUIRECTANGULAR", "SIMPLE_PINHOLE", "PINHOLE", "SIMPLE_RADIAL", "RADIAL", "OPENCV",
+               "SIMPLE_FISHEYE", "FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE")
+FISHEYES = ("SIMPLE_FISHEYE", "FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE")
+
+
+def _focal(cam: Camera) -> float:
+    return float(cam.params[0]) if cam.model != "EQUIRECTANGULAR" else cam.width / (2 * np.pi)
+
+
+# --- targets --------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Views:
+    """Pinhole views: every yaw at every pitch, square, *fov* wide."""
+
     yaws: Tuple[float, ...] = DEFAULT_YAWS
     pitches: Tuple[float, ...] = DEFAULT_PITCHES
     fov: float = DEFAULT_FOV
-    size: int = 0  # square views; 0 = the source width / 4 (the equator's resolution at 90°)
+    size: int = 0  # 0 = auto: the source's resolution at that field of view
 
     def pairs(self) -> List[Tuple[float, float]]:
         return [(y, p) for p in self.pitches for y in self.yaws]
 
-    def side(self, source_width: int) -> int:
+    def side(self, source_width: int) -> int:  # kept for callers of v0.4-p29
         s = self.size or max(64, source_width // 4)
         return int(s) // 2 * 2
 
@@ -100,19 +169,83 @@ class Views:
         return side / 2.0 / np.tan(np.radians(self.fov) / 2.0)
 
 
+@dataclass(frozen=True)
+class Erp:
+    """One 360 image per source image (same pose), *width* x width / 2."""
+
+    width: int = 0  # 0 = auto: 2 pi x the source focal length (its angular resolution)
+
+
+Target = Union[Views, Erp]
+
+
+class _Plan:
+    """What one target makes of one source camera: the views (name suffix, rotation) and the output camera."""
+
+    def __init__(self, target: Target, src: Camera):
+        self.erp = isinstance(target, Erp)
+        f = _focal(src)
+        if self.erp:
+            w = target.width or int(round(2 * np.pi * f))
+            self.w = max(64, min(16384, int(w) // 2 * 2))
+            self.h = self.w // 2
+            self.views = [("", np.eye(3))]
+            self.camera = (MODEL_IDS["EQUIRECTANGULAR"], self.w, self.h, (float(self.w), float(self.h)))
+        else:
+            side = target.size or int(round(2 * f * np.tan(np.radians(target.fov) / 2)))
+            if src.model == "EQUIRECTANGULAR" and not target.size:
+                side = src.width // 4 if target.fov == 90 else side
+            self.w = self.h = max(64, min(8192, int(side) // 2 * 2))
+            self.focal = target.focal(self.w)
+            self.views = [(view_name("", y, p), view_rotation(y, p)) for y, p in target.pairs()]
+            c = self.w / 2.0
+            self.camera = (MODEL_IDS["PINHOLE"], self.w, self.h, (self.focal, self.focal, c, c))
+
+    def rays(self) -> np.ndarray:
+        """The target pixels' rays in the target camera frame, (h, w, 3)."""
+        j, i = np.meshgrid(np.arange(self.w) + 0.5, np.arange(self.h) + 0.5)
+        if self.erp:
+            theta = 2 * np.pi * (j / self.w - 0.5)
+            phi = np.pi * (0.5 - i / self.h)
+            return np.stack([np.cos(phi) * np.sin(theta), -np.sin(phi), np.cos(phi) * np.cos(theta)], axis=-1)
+        c = self.w / 2.0
+        return np.stack([(j - c) / self.focal, (i - c) / self.focal, np.ones_like(j)], axis=-1)
+
+    def project(self, pts: np.ndarray):
+        """Points in the target camera frame -> (x, y, inside)."""
+        if self.erp:
+            x, y, _ = project_equirect(Camera(0, "EQUIRECTANGULAR", self.w, self.h, (self.w, self.h)), pts)
+            return x, y, np.ones(len(pts), bool)
+        z = pts[:, 2]
+        ok = z > 1e-9
+        zz = np.where(ok, z, 1.0)
+        c = self.w / 2.0
+        x, y = self.focal * pts[:, 0] / zz + c, self.focal * pts[:, 1] / zz + c
+        return x, y, ok & (x >= 0) & (x < self.w) & (y >= 0) & (y < self.h)
+
+
 def view_name(stem: str, yaw: float, pitch: float) -> str:
     """``frame_010_y090_pm35`` (m = minus)."""
     p = int(round(pitch))
-    return f"{stem}_y{int(round(yaw)) % 360:03d}_p{'m' if p < 0 else ''}{abs(p):02d}"
+    y = int(round(yaw)) % 360
+    return f"{stem}_y{y:03d}_p{'m' if p < 0 else ''}{abs(p):02d}"
 
 
 def remap_tables(src: Camera, rot: np.ndarray, side: int, focal: float) -> Tuple[np.ndarray, np.ndarray]:
-    """cv2.remap maps (pixel-index coordinates) sampling *src* for a pinhole view turned by *rot*."""
+    """cv2.remap maps sampling *src* for a pinhole view turned by *rot* (kept from v0.4-p29)."""
     c = side / 2.0
     j, i = np.meshgrid(np.arange(side) + 0.5, np.arange(side) + 0.5)
-    rays = np.stack([(j - c) / focal, (i - c) / focal, np.ones_like(j)], axis=-1) @ rot  # view -> source
-    x, y, _ok = SOURCE_PROJECTIONS[src.model](src, rays)
+    rays = np.stack([(j - c) / focal, (i - c) / focal, np.ones_like(j)], axis=-1) @ rot
+    x, y, _ok = source_projection(src)(src, rays)
     return (x - 0.5).astype(np.float32), (y - 0.5).astype(np.float32)
+
+
+def _tables(src: Camera, plan: _Plan, rot: np.ndarray):
+    """(map x, map y, valid) for one view: valid = the source lens saw that direction and it is in its frame."""
+    x, y, ok = source_projection(src)(src, plan.rays() @ rot)
+    if src.model != "EQUIRECTANGULAR":
+        ok = ok & (x >= 0) & (x < src.width) & (y >= 0) & (y < src.height)
+    return (x - 0.5).astype(np.float32), (y - 0.5).astype(np.float32), ok
 
 
 @dataclass
@@ -121,7 +254,7 @@ class MaskJob:
 
     out_dir: Path
     name_pattern: str  # "{name}.png" / "{stem}.png"
-    invert: bool  # write the object black
+    invert: bool  # write the object (what training ignores) black
     include_empty: bool
     get: Callable[[str], Optional[np.ndarray]]  # image key -> the full-resolution mask (bool), None = none
 
@@ -132,7 +265,7 @@ class ConvertReport:
     views_out: int = 0
     points_kept: int = 0
     points_dropped: int = 0
-    side: int = 0
+    side: int = 0  # the output width
     skipped: List[str] = field(default_factory=list)  # images whose camera cannot be converted
 
 
@@ -160,31 +293,28 @@ def _write_image(path: Path, img: np.ndarray) -> None:
     buf.tofile(str(path))
 
 
-def convert_to_pinhole(images_dir: Path, model_dir: Path, root: Path, keep: Sequence[str], views: Views,
-                       masks: Sequence[MaskJob] = (), progress: Optional[Callable[[int, int], None]] = None
-                       ) -> ConvertReport:
-    """``root/images`` + ``root/sparse/0`` (binary) with pinhole views of the kept images, and the masks.
+def convert(images_dir: Path, model_dir: Path, root: Path, keep: Sequence[str], target: Target,
+            masks: Sequence[MaskJob] = (), progress: Optional[Callable[[int, int], None]] = None) -> ConvertReport:
+    """``root/images`` + ``root/sparse/0`` (binary) with the kept images converted to *target*, and the masks.
 
-    Only images whose camera model has a source projection are converted; the source is only read.
+    Images whose camera model has no projection here are left out (listed in the report); the source is only read.
     """
     why = dataset_blocker(root)
     if why:
         raise FileExistsError(why)
     if not (model_dir / "images.bin").is_file():
-        raise ValueError("Pinhole conversion reads a binary model (images.bin); convert the text model with COLMAP first")
+        raise ValueError("The conversion reads a binary model (images.bin); convert a text model with COLMAP first")
     cams = read_cameras_full(model_dir)
     keep_set = set(keep)
     images = [im for im in _read_images_bin(model_dir / "images.bin") if im[3] in keep_set]
     report = ConvertReport(images_in=len(images))
-    convertible = [im for im in images if cams.get(im[2]) is not None and cams[im[2]].model in SOURCE_PROJECTIONS]
+    convertible = [im for im in images if cams.get(im[2]) is not None and source_projection(cams[im[2]]) is not None]
     report.skipped = [im[3] for im in images if im not in convertible]
     if not convertible:
-        raise ValueError("No image here uses a camera this can convert (EQUIRECTANGULAR)")
-    side = views.side(max(cams[im[2]].width for im in convertible))
-    focal = views.focal(side)
-    report.side = side
-    pairs = views.pairs()
-    rots = [view_rotation(y, p) for y, p in pairs]
+        raise ValueError("No image here uses a camera this can convert")
+    plans = {cid: _Plan(target, cams[cid]) for cid in {im[2] for im in convertible}}
+    first = plans[convertible[0][2]]
+    report.side = first.w
     if (model_dir / "points3D.bin").is_file():
         pids, xyz, rgb, err = _read_points(model_dir / "points3D.bin")
     else:
@@ -194,12 +324,15 @@ def convert_to_pinhole(images_dir: Path, model_dir: Path, root: Path, keep: Sequ
     out_img.mkdir(parents=True)
     for job in masks:
         job.out_dir.mkdir(parents=True, exist_ok=True)
-    tables: Dict[Tuple[int, int], tuple] = {}  # (camera id, view) -> remap tables, reused across images
+    out_cams: Dict[tuple, int] = {}  # one output camera per distinct (model, size, params)
+    tables: Dict[Tuple[int, int], tuple] = {}
     new_images: List[tuple] = []
     tracks: Dict[int, List[Tuple[int, int]]] = {}
     next_id = 1
     for n, (iid, pose, cid, name, pts) in enumerate(convertible):
-        cam = cams[cid]
+        cam, plan = cams[cid], plans[cid]
+        ocid = out_cams.setdefault(plan.camera, len(out_cams) + 1)
+        border = cv2.BORDER_WRAP if cam.model == "EQUIRECTANGULAR" else cv2.BORDER_CONSTANT
         q, t = np.array(struct.unpack("<4d", pose[:32])), np.array(struct.unpack("<3d", pose[32:]))
         r_src = qvec_to_rotmat(q)
         data = np.fromfile(str(images_dir / name), dtype=np.uint8)
@@ -212,55 +345,48 @@ def convert_to_pinhole(images_dir: Path, model_dir: Path, root: Path, keep: Sequ
         rows = np.array([row_of[int(p)] for p in seen if int(p) in row_of], dtype=int)
         cam_pts = (xyz[rows] @ r_src.T + t) if rows.size else np.zeros((0, 3))
         stem = Path(name).stem
-        for v, ((yaw, pitch), rot) in enumerate(zip(pairs, rots)):
-            key = (cid, v)
-            if key not in tables:
-                tables[key] = remap_tables(cam, rot, side, focal)
-            mx, my = tables[key]
-            vname = view_name(stem, yaw, pitch) + ".jpg"
-            _write_image(out_img / vname, cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP))
+        for v, (suffix, rot) in enumerate(plan.views):
+            if (cid, v) not in tables:
+                tables[(cid, v)] = _tables(cam, plan, rot)
+            mx, my, valid = tables[(cid, v)]
+            vname = f"{stem}{suffix}.jpg"
+            _write_image(out_img / vname, cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=border))
             for job, m in zip(masks, full_masks):
-                if m is None and not job.include_empty:
+                if m is None and not job.include_empty and valid.all():
                     continue
                 src = (m.astype(np.uint8) * 255) if m is not None else np.zeros(img.shape[:2], np.uint8)
                 if src.shape != img.shape[:2]:
                     src = cv2.resize(src, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-                out = cv2.remap(src, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
+                ignore = cv2.remap(src, mx, my, cv2.INTER_NEAREST, borderMode=border) > 0
+                ignore |= ~valid  # never seen by the source lens: not to be learned
+                out = ignore.astype(np.uint8) * 255
                 if job.invert:
                     out = 255 - out
-                mname = job.name_pattern.format(stem=Path(vname).stem, name=vname)
                 ok, buf = cv2.imencode(".png", out)
-                buf.tofile(str(job.out_dir / mname))
-            # the view's pose and the 3D points it sees
-            r_view = rot @ r_src
-            t_view = rot @ t
-            vp = cam_pts @ rot.T
-            ok = vp[:, 2] > 1e-9
-            x = focal * vp[:, 0] / np.where(ok, vp[:, 2], 1) + side / 2.0
-            y = focal * vp[:, 1] / np.where(ok, vp[:, 2], 1) + side / 2.0
-            inside = ok & (x >= 0) & (x < side) & (y >= 0) & (y < side)
+                buf.tofile(str(job.out_dir / job.name_pattern.format(stem=Path(vname).stem, name=vname)))
             vid = next_id
             next_id += 1
+            x, y, inside = plan.project(cam_pts @ rot.T)
             obs = np.zeros(int(inside.sum()), dtype=POINT2D)
             obs["x"], obs["y"] = x[inside], y[inside]
             obs["id"] = pids[rows[inside]].astype(np.int64) if rows.size else []
             for idx, pid in enumerate(obs["id"]):
                 tracks.setdefault(int(pid), []).append((vid, idx))
-            new_pose = struct.pack("<4d", *rotmat_to_qvec(r_view)) + struct.pack("<3d", *t_view)
-            new_images.append((vid, new_pose, 1, vname, obs))
+            new_pose = struct.pack("<4d", *rotmat_to_qvec(rot @ r_src)) + struct.pack("<3d", *(rot @ t))
+            new_images.append((vid, new_pose, ocid, vname, obs))
             report.views_out += 1
         if progress:
             progress(n + 1, len(convertible))
-    # points: keep those seen twice or more; the views forget the rest
     kept = {pid for pid, tr in tracks.items() if len(tr) >= 2}
+    keep_arr = np.array(sorted(kept), dtype=np.int64)
     for im in new_images:
-        gone = ~np.isin(im[4]["id"], np.array(sorted(kept), dtype=np.int64))
-        im[4]["id"][gone] = -1
+        im[4]["id"][~np.isin(im[4]["id"], keep_arr)] = -1
     sparse = root / "sparse" / "0"
     sparse.mkdir(parents=True)
     with open(sparse / "cameras.bin", "wb") as f:
-        f.write(struct.pack("<QiiQQ", 1, 1, MODEL_IDS["PINHOLE"], side, side))
-        f.write(struct.pack("<4d", focal, focal, side / 2.0, side / 2.0))
+        f.write(struct.pack("<Q", len(out_cams)))
+        for (mid, w, h, params), ocid in sorted(out_cams.items(), key=lambda kv: kv[1]):
+            f.write(struct.pack("<iiQQ", ocid, mid, w, h) + struct.pack(f"<{len(params)}d", *params))
     _write_images_bin(sparse / "images.bin", new_images)
     head = struct.Struct("<Q3d3BdQ")
     with open(sparse / "points3D.bin", "wb") as f:
@@ -272,3 +398,10 @@ def convert_to_pinhole(images_dir: Path, model_dir: Path, root: Path, keep: Sequ
     report.points_kept = len(kept)
     report.points_dropped = len(row_of) - len(kept)
     return report
+
+
+def convert_to_pinhole(images_dir: Path, model_dir: Path, root: Path, keep: Sequence[str], views: Views,
+                       masks: Sequence[MaskJob] = (), progress: Optional[Callable[[int, int], None]] = None
+                       ) -> ConvertReport:
+    """Pinhole views of every kept image (the v0.4-p29 entry point)."""
+    return convert(images_dir, model_dir, root, keep, views, masks, progress)

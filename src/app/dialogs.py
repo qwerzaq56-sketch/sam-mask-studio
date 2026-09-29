@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
-from src.core.reproject import Views
+from src.core.reproject import CONVERTIBLE, FISHEYES, Erp, Views
 from src.core.storage import ExportCheck, ExportOptions
 
 
@@ -186,31 +186,37 @@ class ExportDialog(QDialog):
         orow.addWidget(self.to_scene)
         orow.addWidget(self.to_new)
         orow.addWidget(_path_row(self.dataset, self._pick_dataset), 1)
-        # a 360 (EQUIRECTANGULAR) scene: the new dataset may be pinhole views instead (docs/specs/08)
-        self._erp = scene is not None and "EQUIRECTANGULAR" in scene.camera_models
-        self.pinhole = QCheckBox("Convert to pinhole views:")
-        self.pinhole.setToolTip("Each 360 image becomes perspective views (images, masks and the model); "
-                                "unchecked, the dataset stays 360 (EQUIRECTANGULAR)")
-        self.yaws = QSpinBox()
-        self.yaws.setRange(1, 24)
-        self.yaws.setValue(4)
-        self.yaws.setSuffix(" around")
-        self.pitches = QLineEdit("-35, 0, 35")
+        # the new dataset's cameras: kept, or converted to pinhole views / one 360 image (docs/specs/08)
+        models = set(scene.camera_models) if scene is not None else set()
+        self._erp = "EQUIRECTANGULAR" in models
+        fisheye = bool(models & set(FISHEYES))
+        self._convertible = bool(models & set(CONVERTIBLE)) and not models <= {"PINHOLE", "SIMPLE_PINHOLE"}
+        self.convert = QComboBox()
+        self.convert.addItem("Keep the cameras", None)
+        self.convert.addItem("Pinhole views", "pinhole")
+        if not self._erp:
+            self.convert.addItem("360 (ERP)", "erp")
+        self.convert.setToolTip("Pinhole views: every image becomes perspective views (images, masks, model). "
+                                "360: one equirectangular image each (a fisheye's unseen part is masked out)")
+        self.yaws = QLineEdit("0, 90, 180, 270" if self._erp else "-45, 0, 45" if fisheye else "0")
+        self.yaws.setToolTip("Left / right angles in degrees (right is positive), one view each per pitch")
+        self.pitches = QLineEdit("-35, 0, 35" if self._erp or fisheye else "0")
         self.pitches.setToolTip("Up / down angles in degrees (up is positive), one row of views each")
         self.fov = QSpinBox()
         self.fov.setRange(30, 150)
         self.fov.setValue(90)
         self.fov.setSuffix("° FOV")
         self.side = QSpinBox()
-        self.side.setRange(0, 8192)
+        self.side.setRange(0, 16384)
         self.side.setSingleStep(64)
         self.side.setSpecialValueText("auto px")
         self.side.setSuffix(" px")
-        self.side.setToolTip("Square view size; auto = the 360 width / 4")
+        self.side.setToolTip("Output width; auto = the source's own resolution at that angle")
         self._pin_row = QWidget()
         prow = QHBoxLayout(self._pin_row)
         prow.setContentsMargins(0, 0, 0, 0)
-        for w in (self.pinhole, self.yaws, QLabel("× pitch"), self.pitches, self.fov, self.side):
+        self._view_widgets = (QLabel("yaw"), self.yaws, QLabel("pitch"), self.pitches, self.fov)
+        for w in (self.convert,) + self._view_widgets + (self.side,):
             prow.addWidget(w)
         self.out = QLineEdit(str(default_dir))
         self.pattern = QComboBox()
@@ -255,11 +261,11 @@ class ExportDialog(QDialog):
         self.empty.toggled.connect(self._run_check)
         self.target.currentIndexChanged.connect(self._apply_target)
         self.to_new.toggled.connect(lambda _on: self._apply_target())
-        for w in (self.pinhole,):
-            w.toggled.connect(lambda _on: self._apply_target())
-        for w in (self.yaws, self.fov, self.side):
+        self.convert.currentIndexChanged.connect(lambda _i: self._apply_target())
+        for w in (self.fov, self.side):
             w.valueChanged.connect(lambda _v: self._run_check())
-        self.pitches.textChanged.connect(lambda _t: self._run_check())
+        for w in (self.yaws, self.pitches):
+            w.textChanged.connect(lambda _t: self._run_check())
         self.dataset.textChanged.connect(lambda _t: self._apply_target())
         self.mask.currentIndexChanged.connect(self._run_check)
         self.out.textChanged.connect(lambda _t: self._show_folders())
@@ -306,15 +312,20 @@ class ExportDialog(QDialog):
         return Path(text) if text else None
 
     def views(self):
-        """The pinhole views to make (New dataset of a 360 scene with the box checked), else None."""
-        if not (self._erp and self.dataset_root() is not None and self.pinhole.isChecked()):
+        """What the new dataset's cameras become: ``Views`` (pinhole), ``Erp`` (360) or None (kept)."""
+        kind = self.convert.currentData()
+        if not (self._convertible and kind and self.dataset_root() is not None):
             return None
-        try:
-            pitches = tuple(float(v) for v in self.pitches.text().replace(";", ",").split(",") if v.strip())
-        except ValueError:
-            pitches = ()
-        n = self.yaws.value()
-        return Views(yaws=tuple(360.0 * i / n for i in range(n)), pitches=pitches or (0.0,),
+        if kind == "erp":
+            return Erp(width=self.side.value())
+
+        def angles(field: QLineEdit):
+            try:
+                return tuple(float(v) for v in field.text().replace(";", ",").split(",") if v.strip())
+            except ValueError:
+                return ()
+
+        return Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
                      fov=float(self.fov.value()), size=self.side.value())
 
     def _pick_dataset(self) -> None:
@@ -351,9 +362,11 @@ class ExportDialog(QDialog):
             w.setEnabled(p is None)
         self._out_row.setVisible(p is not None and self._scene is not None)
         self.dataset.setEnabled(self.to_new.isChecked())
-        self._pin_row.setVisible(self._erp and p is not None and self.to_new.isChecked())
-        for w in (self.yaws, self.pitches, self.fov, self.side):
-            w.setEnabled(self.pinhole.isChecked())
+        self._pin_row.setVisible(self._convertible and p is not None and self.to_new.isChecked())
+        kind = self.convert.currentData()
+        for w in self._view_widgets:
+            w.setVisible(kind == "pinhole")
+        self.side.setVisible(kind is not None)
         if p is None:
             self.out.setText(self._custom_dir)
             self.note.setText("")
@@ -386,7 +399,7 @@ class ExportDialog(QDialog):
         if self.dataset_root() is not None and self.empty.isChecked():
             written = c.images - self._excluded  # a new dataset holds the kept frames only
         v = self.views()
-        if v is not None:
+        if isinstance(v, Views):
             written *= len(v.pairs())  # one mask per view
         rows = [
             f"<b>{written}</b> file(s) will be written for <b>{c.images}</b> image(s)",
@@ -425,7 +438,8 @@ class ExportDialog(QDialog):
         if root is not None:
             why = dataset_blocker(root)
             v = self.views()
-            what = (f"{len(v.pairs())} pinhole views per 360 image ({v.fov:.0f}°)" if v is not None
+            what = ("one 360 image each" if isinstance(v, Erp)
+                    else f"{len(v.pairs())} pinhole views per image ({v.fov:.0f}°)" if v is not None
                     else "images/ linked, sparse/0/ filtered")
             rows.append(line(not why, why or f"New dataset: {root.name}/ — {what}"
                                               + (f", {self._excluded} ⊘ frame(s) left out" if self._excluded else "")))
@@ -433,7 +447,8 @@ class ExportDialog(QDialog):
             rows.append(line(False, f"{self._excluded} frame(s) are ⊘ excluded: that only applies to a New dataset"))
         odd = [m for m in sc.camera_models if m in p.unconfirmed_cameras]
         if self.views() is not None:
-            rows.append(line(True, f"Cameras: {', '.join(sc.camera_models)} → PINHOLE views"))
+            to = "EQUIRECTANGULAR (360)" if isinstance(self.views(), Erp) else "PINHOLE views"
+            rows.append(line(True, f"Cameras: {', '.join(sc.camera_models)} → {to}"))
         elif sc.camera_models:
             rows.append(line(not odd, "Cameras: " + ", ".join(sc.camera_models)
                              + (f" ({', '.join(odd)}: not confirmed for {p.label})" if odd else "")))
