@@ -201,6 +201,14 @@
 - 검사: 새 데이터셋이면 폴더가 비었는지와 뺄 장수, 장면에 쓰기인데 ⊘가 있으면 "새 데이터셋에서만 빠짐" 경고.
 - 코드: `src/core/colmap_model.py`(`filter_model`, `build_dataset`), `Project.excluded` / `set_excluded`, `MainWindow.toggle_excluded`.
 
+### 29단계 · 360 ERP → Pinhole 데이터셋 (`v0.4-p29`, [`specs/08`](../specs/08-erp-to-pinhole.md) P1)
+- 360 장면(카메라 `EQUIRECTANGULAR`)의 Export → New dataset에 **Convert to pinhole views**: 방위 개수(기본 4) × 고도 목록(기본 −35, 0, 35),
+  FOV(기본 90°), 크기(auto = 360 너비 ÷ 4). 끄면 360 그대로(LichtFeld, Spirula용), 켜면 모든 학습기용 Pinhole — 같은 장면으로 둘 다 만들어 비교.
+- 이미지(양선형, 좌우 이어짐), 마스크(최근접, 학습기 흑백 규칙), 모델(뷰마다 포즈, `PINHOLE` 카메라 하나, 3D 점은 뷰에 다시 투영해 트랙을 새로 만들고
+  관측 2개 미만은 삭제)을 함께 씀. ⊘ 프레임은 빠짐. 원본은 그대로.
+- 카메라 표에 COLMAP id 12~17 추가(전에는 ERP 카메라를 만나면 읽기를 멈췄음).
+- 코드: `src/core/reproject.py`(원본 모델의 투영식을 표로 두어 Fisheye 등을 더하기 쉬운 틀), `storage.full_mask`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

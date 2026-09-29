@@ -13,7 +13,7 @@
 
 ## COLMAP 호환 (기획 중)
 
-- 기획서: [`specs/06-colmap.md`](../specs/06-colmap.md)(장면 열기, 마스크 세트) · [`specs/07-export-presets.md`](../specs/07-export-presets.md)(학습기별 Export, 프레임 빼기). C1 `v0.4-p23`, 학습기별 Export `v0.4-p24`. 마스크 세트 `v0.4-p25`, Spirula / Postshot `v0.4-p26`, 프레임 제외 + 새 데이터셋 `v0.4-p28`. 다음: 360 → Pinhole(08 기획, 작업 흐름 확인 필요).
+- 기획서: [`specs/06-colmap.md`](../specs/06-colmap.md)(장면 열기, 마스크 세트) · [`specs/07-export-presets.md`](../specs/07-export-presets.md)(학습기별 Export, 프레임 빼기). C1 `v0.4-p23`, 학습기별 Export `v0.4-p24`. 마스크 세트 `v0.4-p25`, Spirula / Postshot `v0.4-p26`, 프레임 제외 + 새 데이터셋 `v0.4-p28`. 360 → Pinhole `v0.4-p29`([`specs/08`](../specs/08-erp-to-pinhole.md)). 다음: Fisheye → Pinhole / ERP(08 P2).
 - 원래 요청은 아래 "보류 / 구상"의 콜맵 호환 1~8.
 
 ---
