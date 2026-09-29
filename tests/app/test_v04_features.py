@@ -781,3 +781,20 @@ def test_invert_and_clear_only_while_editing(qapp, win):
     win.act_clear_mask.trigger()
     assert not s.project.get(ids[0]).mask(k).any()
     assert s.project.get(ids[0]) is not None  # the Object stays
+
+
+# --- p22: Frame List columns -------------------------------------------------------------
+
+
+def test_frame_list_rows_are_striped_with_column_rules(qapp, win):
+    ip = win.images_panel
+    fl = ip.frame_list
+    assert fl.alternatingRowColors()
+    win.go_to(0)
+    settle(qapp)
+    img = fl.viewport().grab().toImage()
+    rect = fl.visualRect(fl.model().index(2, 0))  # a plain row (not open, not ◎)
+    y = rect.center().y()
+    row = [img.pixelColor(x, y) for x in range(rect.left(), min(rect.right(), 80))]
+    background = row[1]
+    assert sum(1 for c in row if c != background) >= 2  # text and at least one rule

@@ -78,6 +78,7 @@ def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
 PIN_COLOR = QColor(255, 225, 140)  # pinned tiles
 CURRENT_FILL = QColor(40, 110, 220)  # the open frame: the whole row / tile filled (white text)
 PICKED_FILL = QColor(40, 110, 220, 70)  # the other picked frames (Shift / Ctrl-click): a light tint
+COLUMN_RULE = QColor(128, 128, 128, 70)  # the Frame List's faint lines between ID | marks | name
 REFERENCE_OUTLINE = QColor(255, 130, 0)  # the propagation reference ◎: an orange frame (stands out from blue / 📌)
 
 
@@ -216,8 +217,15 @@ class OneLineDelegate(QStyledItemDelegate):
         painter.setPen(color)
         v = Qt.AlignmentFlag.AlignVCenter
         painter.drawText(QRect(r.left(), r.top(), id_w, r.height()), Qt.AlignmentFlag.AlignRight | v, num)
-        x = r.left() + id_w + 5
+        x = r.left() + id_w + 7
         painter.drawText(QRect(x, r.top(), marks_w, r.height()), Qt.AlignmentFlag.AlignLeft | v, marks)
+        # faint column rules (ID | marks | name), so the three read as columns, not as one line of text
+        rule = QColor(255, 255, 255, 90) if fill is CURRENT_FILL else QColor(COLUMN_RULE)
+        painter.setPen(rule)
+        cols = [x - 4] + ([x + marks_w - 4] if self.names and name else [])
+        for cx in cols:
+            painter.drawLine(cx, r.top() + 3, cx, r.bottom() - 3)
+        painter.setPen(color)
         if self.names and name:
             x += marks_w
             text = fm.elidedText(name, Qt.TextElideMode.ElideMiddle, max(0, r.right() - x))
@@ -286,6 +294,7 @@ class ImagesPanel(QWidget):
         self.frame_list.setItemDelegate(self._delegate)
         self.frame_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.frame_list.setUniformItemSizes(True)
+        self.frame_list.setAlternatingRowColors(True)  # striped rows: easier to follow a row across
         self.frame_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.frame_list.doubleClicked.connect(lambda ix: self.reference_requested.emit(ix.row()))
         self.frame_list.setToolTip(self.list.toolTip())
