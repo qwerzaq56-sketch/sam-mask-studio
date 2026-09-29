@@ -963,6 +963,9 @@ class Session:
     def save(self, force: bool = False) -> bool:
         return self.store.save(self.project, force=force) if self.store is not None else False
 
-    def export(self, options: ExportOptions, progress: Optional[Callable[[int, int], None]] = None) -> List[Path]:
+    def export(self, options: ExportOptions, progress: Optional[Callable[[int, int], None]] = None,
+               keys: Optional[List[str]] = None) -> List[Path]:
+        """Write the masks (*keys*: only those images, e.g. the ones a new dataset keeps)."""
         assert self.image_dir is not None
-        return export_final_masks(self.project, self.image_dir, self.original_size, options, progress=progress)
+        return export_final_masks(self.project, self.image_dir, self.original_size, options, keys=keys,
+                                  progress=progress)

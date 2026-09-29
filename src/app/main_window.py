@@ -60,6 +60,7 @@ from src.app.workers import PropagationWorker, Task
 from src.core.project import FrameStatus, Source
 from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
+from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.storage import check_export, default_export_dir
 from src.logging_config import get_logger
 
@@ -429,6 +430,11 @@ class MainWindow(QMainWindow):
         self.act_next_key = self._action("Next Keyframe ★", lambda: self.step_keyframe(1), ["."])
         self.act_go_reference = self._action("Go to Reference ◎", self.go_to_reference, ["F"],
                                              "The propagation reference (the double-clicked image)")
+        self.act_exclude = self._action(
+            "Exclude from Dataset / Include", self.toggle_excluded,
+            tip="The picked frames (or this one) are left out of a new dataset (⊘); again: back in. "
+                "The source scene is never changed",
+        )
         self.act_shortcuts = self._action("&Keyboard Shortcuts", self.show_shortcuts, ["F1"])
 
         # --- the menu bar: every command, with its key -----------------------------------
@@ -469,6 +475,7 @@ class MainWindow(QMainWindow):
                   self.act_prev_problem, self.act_next_problem, self.act_prev_key, self.act_next_key, None,
                   self.act_go_reference):
             m.addSeparator() if a is None else m.addAction(a)
+        m.addAction(self.act_exclude)
         self._hint(m, "Set Current Frame as Reference ◎", "Enter",
                    lambda: self.session.key is not None and self.set_reference(self.session.index))
         self._hint(m, "Mouse over a frame list: Set as Reference ◎", "Space")
@@ -667,6 +674,7 @@ class MainWindow(QMainWindow):
             self.detection_panel.select_btn.setChecked(False)
             self.detection_panel.select_btn.blockSignals(False)
         self.images_panel.set_reference(self._reference)  # before the marks: they draw the ◎
+        self.images_panel.set_excluded(project.excluded)
         self.images_panel.update_marks(project, self.marks_object())
         self.images_panel.set_current(s.index)
         ref = self._reference if self._reference is not None else s.index
@@ -1902,6 +1910,20 @@ class MainWindow(QMainWindow):
         self._reference = None if index == self._reference else index
         self.refresh()
 
+    def toggle_excluded(self) -> None:
+        """⊘: leave the picked frames (else the current one) out of a new dataset, or take them back."""
+        s = self.session
+        if s.key is None:
+            return
+        rows = self.images_panel.selected_rows() or [s.index]
+        keys = [s.keys[i] for i in rows]
+        out = not all(k in s.project.excluded for k in keys)
+        changed = s.project.set_excluded(keys, out)
+        if changed:
+            self.log(f"{'Excluded' if out else 'Included again'}: {len(changed)} frame(s) (⊘ = not in a new dataset; "
+                     f"{len(s.project.excluded)} excluded in all)")
+        self.refresh()
+
     def set_pinned(self, on: bool) -> None:
         self._pinned = self.images_panel.selected_rows() if on else None
         self.refresh()
@@ -2081,6 +2103,7 @@ class MainWindow(QMainWindow):
             sets=project.mask_sets,
             save_set=lambda name: project.set_mask_set(name, [o.id for o in project.objects if o.included]),
             delete_set=lambda name: project.set_mask_set(name, None),
+            excluded=len(project.excluded),
         )
         if dlg.exec() != ExportDialog.DialogCode.Accepted:
             if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
@@ -2093,16 +2116,40 @@ class MainWindow(QMainWindow):
         p = dlg.preset()
         if p is not None:
             self.log(f"Export for {p.label}: {p.note}")
-        self.run_export(dlg.jobs())
+        root = dlg.dataset_root()
+        if root is not None:
+            why = dataset_blocker(root)
+            if why:
+                self.warn(why)
+                return
+        self.run_export(dlg.jobs(), dataset=root)
 
-    def run_export(self, jobs) -> None:
-        """Write one export or several (a list: the Final Mask and mask sets, each to its folder)."""
+    def run_export(self, jobs, dataset: Optional[Path] = None) -> None:
+        """Write one export or several (a list: the Final Mask and mask sets, each to its folder).
+
+        *dataset*: first build a new dataset there (images linked, the model without the ⊘ frames),
+        and write the masks of the kept frames only.
+        """
         jobs = jobs if isinstance(jobs, list) else [jobs]
+        s = self.session
         self.save()
         self._busy = "Exporting…"
+        keep = [k for k in s.keys if k not in s.project.excluded] if dataset is not None else None
+        report = []
+
+        def work():
+            if dataset is not None:
+                report.append(build_dataset(s.image_dir, self.scene.model_dir, dataset, keep))
+            return [s.export(o, keys=keep) for o in jobs]
 
         def done(paths):
             self._busy = None
+            if report:
+                r = report[0]
+                self.log(f"New dataset {dataset}: {r.model.images_kept} image(s) ({r.linked} linked, {r.copied} copied), "
+                         f"{r.model.images_dropped} left out, 3D points {r.model.points_kept} kept / "
+                         f"{r.model.points_dropped} removed"
+                         + (f"; not carried over: {', '.join(r.model.skipped_files)}" if r.model.skipped_files else ""))
             for opts, written in zip(jobs, paths):
                 self.log(f"Exported {len(written)} mask(s) to {opts.out_dir}")
             self.refresh()
@@ -2112,7 +2159,7 @@ class MainWindow(QMainWindow):
             self.refresh()
             self.warn(f"Export failed: {msg}")
 
-        self._start(Task(lambda: [self.session.export(o) for o in jobs]), done, failed)
+        self._start(Task(work), done, failed)
         self.refresh()
 
     def show_settings(self) -> None:

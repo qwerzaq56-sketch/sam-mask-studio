@@ -231,6 +231,8 @@ class Project:
         self.label_counts: Dict[str, int] = {}
         # named mask sets for export (docs/specs/06-colmap.md 4): name -> Object ids; the Final Mask is the unnamed one
         self.mask_sets: Dict[str, Tuple[int, ...]] = {}
+        # images left out of a dataset export (docs/specs/07 6); the source scene is never changed
+        self.excluded: frozenset = frozenset()
         self.revision: int = 0
         self._undo: List[tuple] = []
         self._redo: List[tuple] = []
@@ -244,10 +246,10 @@ class Project:
     def _state(self) -> tuple:
         # MaskObject is frozen and its frames dict is never mutated in place,
         # so a shallow tuple is a complete snapshot.
-        return (tuple(self.objects), self.next_id, dict(self.label_counts), dict(self.mask_sets))
+        return (tuple(self.objects), self.next_id, dict(self.label_counts), dict(self.mask_sets), self.excluded)
 
     def _restore(self, state: tuple) -> None:
-        objects, self.next_id, labels, sets = state
+        objects, self.next_id, labels, sets, self.excluded = state
         self.objects = list(objects)
         self.label_counts = dict(labels)
         self.mask_sets = dict(sets)
@@ -409,6 +411,15 @@ class Project:
         else:
             self.mask_sets[name] = new
         return True
+
+    def set_excluded(self, keys: Iterable[str], excluded: bool) -> List[str]:
+        """Leave images out of (or take them back into) a new dataset — one undo step; returns the keys changed."""
+        keys = [k for k in keys if (k in self.excluded) != excluded]
+        if not keys:
+            return []
+        self._checkpoint()
+        self.excluded = self.excluded - set(keys) if not excluded else self.excluded | set(keys)
+        return keys
 
     def rename(self, obj_id: int, name: str) -> None:
         obj = self.get(obj_id)
