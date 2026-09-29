@@ -1188,3 +1188,65 @@ def test_dual_fisheye_scene_stitched_from_the_export(qapp, win, tmp_path):
     assert read_image_names_bin(new / "sparse" / "0" / "images.bin") == ["000.jpg", "002.jpg"]
     assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["EQUIRECTANGULAR"]
     assert sorted(p.name for p in (new / "masks").iterdir()) == ["000.jpg.png", "002.jpg.png"]
+
+
+# --- p34: the selected Objects on many picked frames at once (clear, copy the mask) ------------------
+
+
+def _pick(win, rows):
+    lst = win.images_panel.list
+    lst.clearSelection()
+    for r in rows:
+        lst.item(r).setSelected(True)
+
+
+def test_clear_masks_on_picked_frames(qapp, win):
+    a, b = _two_linked(win)
+    s = win.session
+    k = s.keys
+    win.objects_panel.select_ids([a])
+    _pick(win, [0, 2, 3])
+    win.clear_picked_frames()
+    assert not s.project.get(a).frames  # A's masks on 0 and 2 went
+    assert sorted(s.project.get(b).frames) == [k[0], k[3]]  # B was not selected
+    assert "Cleared 2 mask(s)" in win.log_view.toPlainText()
+    win.undo()  # one step
+    assert sorted(s.project.get(a).frames) == [k[0], k[2]]
+    assert win.act_clear_frames in win.images_panel.frame_list.actions()  # also on right-click
+
+
+def test_copy_mask_to_picked_frames_add_or_replace(qapp, win):
+    import numpy as np
+
+    from src.core.project import FrameStatus
+
+    a, b = _two_linked(win)
+    s = win.session
+    k = s.keys
+    win.go_to(0)
+    win.objects_panel.select_ids([b])
+    _pick(win, [0, 1, 3])
+    win.stamp_picked_frames()  # Add (default)
+    o = s.project.get(b)
+    src = o.mask(k[0])
+    assert np.array_equal(o.mask(k[1]), src) and o.frame(k[1]).status == FrameStatus.PROPAGATED
+    assert np.array_equal(o.mask(k[3]), src)  # the same box: the union is that box
+    win.undo()
+    assert sorted(s.project.get(b).frames) == [k[0], k[3]]
+    win.set_reference(2)  # the reference ◎ is the source, wherever the open image went
+    win.go_to(2)
+    win.objects_panel.select_ids([a])
+    qapp.processEvents()
+    win.go_to(3)  # picking frames opened one where A is not listed: A stays the Object to copy
+    assert win.objects_panel.selected_ids() == []
+    _pick(win, [0, 3])
+    win.choose = lambda title, text, groups, ok="OK": [1]  # Options: Replace
+    win.stamp_options()
+    assert np.array_equal(s.project.get(a).mask(k[3]), s.project.get(a).mask(k[2]))
+    assert "on " + k[2] in win.log_view.toPlainText()
+    win.set_reference(2)  # off again
+    win.objects_panel.select_ids([a])
+    _pick(win, [3])  # only the source (no reference now: the open image) picked: nothing to copy to
+    before = s.project.revision
+    win.stamp_picked_frames()
+    assert s.project.revision == before and "Pick the frames to copy to" in win.log_view.toPlainText()

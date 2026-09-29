@@ -16,6 +16,27 @@
 - 기획서: [`specs/06-colmap.md`](../specs/06-colmap.md)(장면 열기, 마스크 세트) · [`specs/07-export-presets.md`](../specs/07-export-presets.md)(학습기별 Export, 프레임 빼기). C1 `v0.4-p23`, 학습기별 Export `v0.4-p24`. 마스크 세트 `v0.4-p25`, Spirula / Postshot `v0.4-p26`, 프레임 제외 + 새 데이터셋 `v0.4-p28`. 360 → Pinhole `v0.4-p29`([`specs/08`](../specs/08-erp-to-pinhole.md)). Fisheye → Pinhole / ERP `v0.4-p30`. 하위 폴더 `v0.4-p31`, 듀얼 피시아이 → 360 `v0.4-p32`. 다음: 뷰 배치 프리셋(08 P4), 실제 촬영본으로 점검.
 - 원래 요청은 아래 "보류 / 구상"의 콜맵 호환 1~8.
 
+## 피드백 (완료, v0.4-p33)
+
+콜맵 불러왔을 때 ( 마스크 폴더 내용 )
+언두 누르면 마스크 오브젝트 사라짐.
+
+- 장면을 열며 불러온 마스크는 Undo의 시작점이 됨. File → Import Masks로 나중에 불러온 것은 전처럼 Undo 한 단계.
+
+## 여러 프레임에 걸쳐 오브젝트 작업 구현 (완료, v0.4-p34)
+
+1) 선택한 여러 프레임의 마스크 내용 삭제
+2) 선택한 오브젝트의 마스크를 여러 프레임으로 복사 
+( 옵션 기능으로 수행할 시 애드/리플레이스 선택. 기본 동작 애드 )
+
+기능의 목적 : 
+
+1) 여러 프레임의 작업을 날리고 다시 작업 진행
+2) 특정 형태의 마스킹을 여러 프레임에 전파.
+
+- Edit → Objects / Frame List 우클릭: **Copy Mask to Picked Frames**(기본 Add, `(Options)…`에서 Replace), **Clear Masks on Picked Frames**.
+  대상은 선택한 Object, 프레임은 Frame List에서 고른 것. 복사 원본은 기준 ◎(없으면 열린 이미지): Ctrl-클릭으로 고르면 열린 이미지가 따라 바뀌기 때문.
+
 ---
 
 # 보류 / 구상

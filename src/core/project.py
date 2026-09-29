@@ -564,6 +564,19 @@ class Project:
             frames[key] = frame
         self._replace(dataclasses.replace(obj, frames=frames))
 
+    def clear_frames(self, obj_ids: Iterable[int], keys: Iterable[str]) -> int:
+        """Empty the Objects' masks on images *keys*, as one undo step; returns how many masks went."""
+        wanted, ids = set(keys), set(obj_ids)
+        hits = [o for o in self.objects if o.id in ids and wanted & set(o.frames)]
+        if not hits:
+            return 0
+        self._checkpoint()
+        gone = 0
+        for o in hits:
+            gone += len(wanted & set(o.frames))
+            self._replace(dataclasses.replace(o, frames={k: f for k, f in o.frames.items() if k not in wanted}))
+        return gone
+
     def set_frames(self, updates: Dict[int, Dict[str, FrameState]]) -> None:
         """Apply many frame updates across Objects as one undo step (propagation)."""
         if not updates:

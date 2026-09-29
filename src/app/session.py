@@ -722,6 +722,45 @@ class Session:
         self.selected_point = None
         return True
 
+    def clear_frames(self, ids: Iterable[int], rows: Iterable[int]) -> int:
+        """Empty the Objects' masks on the images *rows* (one undo step); returns how many masks went."""
+        gone = self.project.clear_frames(ids, [self.keys[i] for i in rows])
+        self.sync()
+        return gone
+
+    def stamp_frames(self, ids: Iterable[int], source: int, rows: Iterable[int],
+                     replace: bool = False) -> Dict[int, List[str]]:
+        """Each Object's mask on image *source*, copied onto the images *rows* (one undo step): added to the
+        mask there, or (*replace*) instead of it. {Object id: image keys changed}."""
+        if not (0 <= source < len(self.keys)):
+            return {}
+        skey = self.keys[source]
+        rows = list(rows)
+        updates: Dict[int, Dict[str, FrameState]] = {}
+        for oid in ids:
+            o = self.project.get(oid)
+            m = o.mask(skey) if o is not None else None
+            if m is None:
+                continue
+            per: Dict[str, FrameState] = {}
+            for i in rows:
+                k = self.keys[i]
+                if k == skey:
+                    continue
+                size = working_size(*self.original_size(k), self.max_side)
+                src = m if m.shape == tuple(size) else resize_mask(m, size)
+                old = o.frame(k)
+                if replace or old is None or old.mask is None:
+                    per[k] = FrameState.from_mask(src, status=FrameStatus.PROPAGATED)
+                else:
+                    kept = FrameStatus.MANUAL if old.status == FrameStatus.MANUAL else FrameStatus.PROPAGATED
+                    per[k] = FrameState.from_mask(union([old.mask, src]), status=kept)
+            if per:
+                updates[oid] = per
+        self.project.set_frames(updates)
+        self.sync()
+        return {oid: list(per) for oid, per in updates.items()}
+
     def remove_frame(self, obj_id: int) -> None:
         """Remove an Object's mask on the current image only."""
         if self.key is not None:
