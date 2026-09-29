@@ -61,7 +61,7 @@ from src.core.project import FrameStatus, Source
 from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
-from src.core.reproject import Erp, MaskJob, convert
+from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
 from src.core.storage import check_export, default_export_dir, full_mask
 from src.logging_config import get_logger
 
@@ -2139,11 +2139,15 @@ class MainWindow(QMainWindow):
         report = []
 
         def work():
-            if views is not None:  # a 360 scene as pinhole views: images, masks and model together
+            if views is not None:  # converted cameras: images, masks and model together (docs/specs/08)
                 masks = [MaskJob(o.out_dir, o.name_pattern, o.invert, o.include_empty,
                                  lambda k, ids=o.object_ids: full_mask(s.project, k, s.original_size, ids))
                          for o in jobs]
-                report.append(convert(s.image_dir, self.scene.model_dir, dataset, keep, views, masks))
+                if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
+                    groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]
+                    report.append(stitch_to_erp(s.image_dir, self.scene.model_dir, dataset, groups, views.width, masks))
+                else:
+                    report.append(convert(s.image_dir, self.scene.model_dir, dataset, keep, views, masks))
                 return [sorted(o.out_dir.iterdir()) for o in jobs]
             if dataset is not None:
                 report.append(build_dataset(s.image_dir, self.scene.model_dir, dataset, keep))
@@ -2154,7 +2158,7 @@ class MainWindow(QMainWindow):
             if report and views is not None:
                 r = report[0]
                 self.log(f"Converted dataset {dataset}: {r.images_in} image(s) → {r.views_out} "
-                         f"{'360 image(s)' if isinstance(views, Erp) else 'pinhole view(s)'} {r.side} px wide, "
+                         f"{'pinhole view(s)' if isinstance(views, Views) else '360 image(s)'} {r.side} px wide, "
                          f"3D points {r.points_kept} kept / {r.points_dropped} removed"
                          + (f"; not converted: {', '.join(r.skipped[:5])}" if r.skipped else ""))
             elif report:

@@ -1149,3 +1149,37 @@ def test_scene_images_in_sub_folders(qapp, win, tmp_path):
     assert (root / "masks" / "cam0" / "frame_000.png.png") in written
     assert (root / "masks" / "cam1" / "frame_000.png.png").is_file()  # the other camera's own file
     assert "1 image(s) in images/ but not in the model" not in win.log_view.toPlainText()
+
+
+# --- p32: dual fisheye stitched into 360 images --------------------------------------------------------
+
+
+def test_dual_fisheye_scene_stitched_from_the_export(qapp, win, tmp_path):
+    from src.app.dialogs import ExportDialog
+    from src.core.colmap import read_cameras_full, read_image_names_bin
+    from src.core.reproject import Stitch
+    from tests.app.conftest import wait_until
+    from tests.unit.test_reproject import make_dual_fisheye_scene
+
+    root = tmp_path / "rig"
+    make_dual_fisheye_scene(root, frames=3)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    s = win.session
+    assert s.keys[0] == "cam0/000.png" and len(s.keys) == 6
+    win.go_to(s.keys.index("cam1/001.png"))
+    win.toggle_excluded()  # one lens of the second moment: that moment is left out
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="brush", excluded=1)
+    dlg.to_new.setChecked(True)
+    new = tmp_path / "pano"
+    dlg.dataset.setText(str(new))
+    i = dlg.convert.findData("stitch")
+    assert i >= 0 and "3 moments" in dlg.convert.itemText(i)
+    dlg.convert.setCurrentIndex(i)
+    dlg.side.setValue(256)
+    assert isinstance(dlg.views(), Stitch)
+    win.run_export(dlg.jobs(), dataset=new, views=dlg.views())
+    wait_until(qapp, lambda: not win._busy)
+    assert read_image_names_bin(new / "sparse" / "0" / "images.bin") == ["000.jpg", "002.jpg"]
+    assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["EQUIRECTANGULAR"]
+    assert sorted(p.name for p in (new / "masks").iterdir()) == ["000.jpg.png", "002.jpg.png"]

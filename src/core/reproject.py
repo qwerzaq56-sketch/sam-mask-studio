@@ -177,6 +177,13 @@ class Erp:
     width: int = 0  # 0 = auto: 2 pi x the source focal length (its angular resolution)
 
 
+@dataclass(frozen=True)
+class Stitch:
+    """One 360 image per moment from a rig's cameras (dual fisheye), *width* x width / 2."""
+
+    width: int = 0  # 0 = auto: 2 pi x the first camera's focal length
+
+
 Target = Union[Views, Erp]
 
 
@@ -409,3 +416,150 @@ def convert_to_pinhole(images_dir: Path, model_dir: Path, root: Path, keep: Sequ
                        ) -> ConvertReport:
     """Pinhole views of every kept image (the v0.4-p29 entry point)."""
     return convert(images_dir, model_dir, root, keep, views, masks, progress)
+
+
+# --- a rig's cameras stitched into one 360 image per moment (dual fisheye, docs/specs/08 P3) --------------
+
+CENTER_FIRST = ("SIMPLE_FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL")
+
+
+def _circle_weight(cam: Camera, x: np.ndarray, y: np.ndarray, ok: np.ndarray, feather: float = 0.05) -> np.ndarray:
+    """How much a camera's pixel counts: 1 inside its image circle (the largest circle around the principal
+    point inside the frame, where a circular fisheye's picture is), fading to 0 over its outer *feather*."""
+    p = cam.params
+    cx, cy = (p[1], p[2]) if cam.model in CENTER_FIRST else (p[2], p[3])
+    radius = min(cx, cy, cam.width - cx, cam.height - cy)
+    d = np.hypot(x - cx, y - cy)
+    return np.where(ok, np.clip((radius - d) / (feather * radius), 0.0, 1.0), 0.0)
+
+
+def _group_name(names: Sequence[str]) -> str:
+    """The stitched image's name: the first image's path without its camera folder (cam0/0001.jpg -> 0001)."""
+    first = names[0]
+    return key_stem(first.split("/", 1)[1] if "/" in first else first)
+
+
+def stitch_to_erp(images_dir: Path, model_dir: Path, root: Path, groups: Sequence[Sequence[str]], width: int = 0,
+                  masks: Sequence[MaskJob] = (), progress: Optional[Callable[[int, int], None]] = None) -> ConvertReport:
+    """root/images + root/sparse/0: one 360 image per group of images (a rig's cameras at one moment),
+    facing the group's first camera. Where lenses overlap they blend by how far each pixel is inside its image
+    circle; masks take the stronger lens's value; what no lens saw is marked ignored."""
+    why = dataset_blocker(root)
+    if why:
+        raise FileExistsError(why)
+    if not (model_dir / "images.bin").is_file():
+        raise ValueError("Stitching reads a binary model (images.bin)")
+    cams = read_cameras_full(model_dir)
+    by_name = {im[3]: im for im in _read_images_bin(model_dir / "images.bin")}
+    groups = [[n for n in g if n in by_name and source_projection(cams[by_name[n][2]]) is not None] for g in groups]
+    groups = [g for g in groups if len(g) >= 2]
+    report = ConvertReport(images_in=sum(len(g) for g in groups))
+    if not groups:
+        raise ValueError("No group of two or more convertible images to stitch")
+    ref_cam = cams[by_name[groups[0][0]][2]]
+    w = width or int(round(2 * np.pi * _focal(ref_cam)))
+    w = max(64, min(16384, int(w) // 2 * 2))
+    h = w // 2
+    report.side = w
+    j, i = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+    theta, phi = 2 * np.pi * (j / w - 0.5), np.pi * (0.5 - i / h)
+    rays = np.stack([np.cos(phi) * np.sin(theta), -np.sin(phi), np.cos(phi) * np.cos(theta)], axis=-1)
+    erp = _Plan(Erp(w), Camera(0, "EQUIRECTANGULAR", w, h, (w, h)))
+    if (model_dir / "points3D.bin").is_file():
+        pids, xyz, rgb, err = _read_points(model_dir / "points3D.bin")
+    else:
+        pids, xyz, rgb, err = np.zeros(0, np.uint64), np.zeros((0, 3)), np.zeros((0, 3), np.uint8), np.zeros(0)
+    row_of = {int(p): k for k, p in enumerate(pids)}
+    (root / "images").mkdir(parents=True)
+    for job in masks:
+        job.out_dir.mkdir(parents=True, exist_ok=True)
+    tables: Dict[tuple, tuple] = {}
+    new_images: List[tuple] = []
+    tracks: Dict[int, List[Tuple[int, int]]] = {}
+
+    def pose(im):
+        return qvec_to_rotmat(np.array(struct.unpack("<4d", im[1][:32]))), np.array(struct.unpack("<3d", im[1][32:]))
+
+    for n, names in enumerate(groups):
+        r_ref, t_ref = pose(by_name[names[0]])
+        acc = np.zeros((h, w, 3), np.float64)
+        total = np.zeros((h, w), np.float64)
+        weights, samples = [], []
+        seen = set()
+        for name in names:
+            im = by_name[name]
+            cam = cams[im[2]]
+            r_j, _t = pose(im)
+            rel = r_j @ r_ref.T  # reference camera -> this camera
+            key = (im[2], np.round(rel, 6).tobytes())
+            if key not in tables:
+                x, y, ok = source_projection(cam)(cam, rays @ rel.T)
+                ok = ok & (x >= 0) & (x < cam.width) & (y >= 0) & (y < cam.height)
+                tables[key] = ((x - 0.5).astype(np.float32), (y - 0.5).astype(np.float32),
+                               _circle_weight(cam, x, y, ok))
+            mx, my, wt = tables[key]
+            data = np.fromfile(str(images_dir / name), dtype=np.uint8)
+            img = cv2.imdecode(data, cv2.IMREAD_COLOR) if data.size else None
+            if img is None:
+                report.skipped.append(name)
+                continue
+            acc += cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT) * wt[..., None]
+            total += wt
+            weights.append(wt)
+            samples.append((name, mx, my, img.shape[:2]))
+            seen.update(int(p) for p in im[4]["id"][im[4]["id"] >= 0])
+        out_name = f"{_group_name(names)}.jpg"
+        (root / "images" / out_name).parent.mkdir(parents=True, exist_ok=True)
+        pano = np.where(total[..., None] > 0, acc / np.maximum(total, 1e-9)[..., None], 0).astype(np.uint8)
+        _write_image(root / "images" / out_name, pano)
+        strongest = np.argmax(np.stack(weights), axis=0) if weights else None
+        for job in masks:
+            ignore = total <= 0  # no lens saw it
+            for k, (name, mx, my, shape) in enumerate(samples):
+                m = job.get(name)
+                if m is None:
+                    continue
+                src = m.astype(np.uint8) * 255
+                if src.shape != shape:
+                    src = cv2.resize(src, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+                ignore |= (strongest == k) & (cv2.remap(src, mx, my, cv2.INTER_NEAREST) > 0)
+            out = ignore.astype(np.uint8) * 255
+            if job.invert:
+                out = 255 - out
+            mpath = job.out_dir / job.name_pattern.format(stem=key_stem(out_name), name=out_name)
+            mpath.parent.mkdir(parents=True, exist_ok=True)
+            ok, buf = cv2.imencode(".png", out)
+            buf.tofile(str(mpath))
+        rows = np.array([row_of[p] for p in sorted(seen) if p in row_of], dtype=int)
+        cam_pts = (xyz[rows] @ r_ref.T + t_ref) if rows.size else np.zeros((0, 3))
+        x, y, inside = erp.project(cam_pts)
+        vid = len(new_images) + 1
+        obs = np.zeros(int(inside.sum()), dtype=POINT2D)
+        obs["x"], obs["y"] = x[inside], y[inside]
+        obs["id"] = pids[rows[inside]].astype(np.int64) if rows.size else []
+        for idx, pid in enumerate(obs["id"]):
+            tracks.setdefault(int(pid), []).append((vid, idx))
+        new_images.append((vid, struct.pack("<4d", *rotmat_to_qvec(r_ref)) + struct.pack("<3d", *t_ref), 1,
+                           out_name, obs))
+        report.views_out += 1
+        if progress:
+            progress(n + 1, len(groups))
+    kept = {pid for pid, tr in tracks.items() if len(tr) >= 2}
+    keep_arr = np.array(sorted(kept), dtype=np.int64)
+    for im in new_images:
+        im[4]["id"][~np.isin(im[4]["id"], keep_arr)] = -1
+    sparse = root / "sparse" / "0"
+    sparse.mkdir(parents=True)
+    with open(sparse / "cameras.bin", "wb") as f:
+        f.write(struct.pack("<QiiQQ2d", 1, 1, MODEL_IDS["EQUIRECTANGULAR"], w, h, float(w), float(h)))
+    _write_images_bin(sparse / "images.bin", new_images)
+    head = struct.Struct("<Q3d3BdQ")
+    with open(sparse / "points3D.bin", "wb") as f:
+        f.write(struct.pack("<Q", len(kept)))
+        for pid in sorted(kept):
+            k = row_of[pid]
+            tr = np.array(tracks[pid], dtype=TRACK)
+            f.write(head.pack(pid, *xyz[k], *(int(c) for c in rgb[k]), err[k], len(tr)) + tr.tobytes())
+    report.points_kept = len(kept)
+    report.points_dropped = len(row_of) - len(kept)
+    return report

@@ -35,6 +35,16 @@ class Scene:
         """``masks/`` and ``masks_*/`` in the scene, by name."""
         return sorted(p for p in self.root.iterdir() if p.is_dir() and (p.name == "masks" or p.name.startswith("masks_")))
 
+    def rig_groups(self) -> List[List[str]]:
+        """The images taken together by a rig's cameras (dual fisheye), for stitching; [] when none."""
+        if not hasattr(self, "_groups"):
+            try:
+                index = read_image_index(self.model_dir / "images.bin") if (self.model_dir / "images.bin").is_file() else []
+                self._groups = frame_groups(self.model_dir, index) if index else []
+            except (OSError, ValueError, struct.error):
+                self._groups = []
+        return self._groups
+
     def summary(self) -> str:
         return f"COLMAP scene {self.root.name}: {len(self.image_names)} images in the model, " \
                f"{self.cameras} camera(s), {self.points} 3D points"
@@ -115,6 +125,24 @@ def read_image_names_bin(path: Path) -> List[str]:
             (npts,) = struct.unpack("<Q", f.read(8))
             f.seek(24 * npts, 1)  # x, y (double), point3D_id (int64)
     return names
+
+
+def read_image_index(path: Path) -> List[tuple]:
+    """[(image id, camera id, name)] of images.bin, skipping the 2D points."""
+    out = []
+    with open(path, "rb") as f:
+        (n,) = struct.unpack("<Q", f.read(8))
+        for _ in range(n):
+            (iid,) = struct.unpack("<i", f.read(4))
+            f.read(8 * 7)
+            (cid,) = struct.unpack("<i", f.read(4))
+            name = bytearray()
+            while (ch := f.read(1)) not in (b"\0", b""):
+                name += ch
+            out.append((iid, cid, name.decode("utf-8")))
+            (npts,) = struct.unpack("<Q", f.read(8))
+            f.seek(24 * npts, 1)
+    return out
 
 
 def read_image_names_txt(path: Path) -> List[str]:
@@ -211,3 +239,49 @@ def matched(mask_dir: Path, image_names: List[str]) -> Dict[str, Path]:
         if p is not None:
             out[name] = p
     return out
+
+
+# --- frames: the images taken at one moment by a rig's cameras (dual fisheye) -----------------------
+
+
+def read_frames_bin(path: Path) -> List[List[int]]:
+    """frames.bin (COLMAP 3.12+): per frame, the image ids of its cameras."""
+    groups = []
+    with open(path, "rb") as f:
+        (n,) = struct.unpack("<Q", f.read(8))
+        for _ in range(n):
+            f.read(4 + 4 + 8 * 7)  # frame_id, rig_id, rig_from_world
+            (m,) = struct.unpack("<I", f.read(4))
+            ids = []
+            for _ in range(m):
+                kind, _sensor, data = struct.unpack("<iIQ", f.read(16))
+                if kind == 0:  # a camera image
+                    ids.append(data)
+            groups.append(ids)
+    return groups
+
+
+def frame_groups(model: Path, images: List[tuple]) -> List[List[str]]:
+    """The images to stitch together, by name: [(image id, camera id, name)] -> groups of two or more.
+
+    From frames.bin when the model has one; else by folder pairing (``cam0/0001.jpg`` with
+    ``cam1/0001.jpg``: the same path once the first folder is taken off, a different camera).
+    Each group is ordered by camera id (the first is the reference the 360 image faces).
+    """
+    by_id = {iid: (cid, name) for iid, cid, name in images}
+    groups: List[List[tuple]] = []
+    if (model / "frames.bin").is_file():
+        try:
+            for ids in read_frames_bin(model / "frames.bin"):
+                members = [by_id[i] for i in ids if i in by_id]
+                if len({c for c, _ in members}) >= 2:
+                    groups.append(members)
+        except (OSError, struct.error):
+            groups = []
+    if not groups:
+        pairs: Dict[str, List[tuple]] = {}
+        for cid, name in by_id.values():
+            if "/" in name:
+                pairs.setdefault(name.split("/", 1)[1], []).append((cid, name))
+        groups = [m for m in pairs.values() if len({c for c, _ in m}) >= 2]
+    return [[name for _c, name in sorted(m)] for m in sorted(groups, key=lambda m: sorted(m)[0][1])]
