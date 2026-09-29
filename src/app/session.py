@@ -33,7 +33,7 @@ from src.core.propagation import Direction, PropagationPlan, existing_targets, g
 from src.core.refine import fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
-from src.engine.imageio import find_images, read_rgb, to_working
+from src.engine.imageio import find_images, read_rgb, resize_mask, to_working, working_size
 
 DEFAULT_MAX_SIDE = 1024
 # auto tool -> the settings it uses (Grow and Shrink share one amount)
@@ -363,6 +363,41 @@ class Session:
         cur = fs.mask if fs is not None and fs.mask is not None else np.zeros(self.working_hw(), bool)
         area = self.region if self.region is not None else np.ones(cur.shape, bool)
         return cur, area
+
+    def import_masks(self, folders, progress=None) -> List[int]:
+        """Mask folders as Objects (one per folder, named after it): [(folder, black_is_object)].
+
+        Each image's mask file (``a.jpg.png`` or ``a.png``) is read, flipped when black
+        marks the object, and brought to the working resolution. Images with an empty
+        mask get no frame. One undo step for all; returns the new ids.
+        """
+        from src.core.colmap import matched, read_mask
+
+        frames_by_label: Dict[str, Dict[str, FrameState]] = {}
+        todo = [(Path(d), black, matched(Path(d), list(self.keys))) for d, black in folders]
+        total, done = sum(len(m) for _, _, m in todo), 0
+        for folder, black, files in todo:
+            frames: Dict[str, FrameState] = {}
+            for key, path in files.items():
+                m = read_mask(path)
+                done += 1
+                if progress:
+                    progress(done, total)
+                if m is None:
+                    continue
+                if black:
+                    m = ~m
+                if not m.any():
+                    continue
+                h0, w0 = self.original_size(key)
+                if m.shape != (h0, w0):
+                    m = resize_mask(m, (h0, w0))  # a mask saved at another size: match the image first
+                m = resize_mask(m, working_size(h0, w0, self.max_side))
+                frames[key] = FrameState.from_mask(m, status=FrameStatus.PROPAGATED)
+            frames_by_label[folder.name] = frames
+        ids = self.project.add_label_objects(frames_by_label, Source.IMPORTED)
+        self.sync()
+        return ids
 
     def invert_mask(self) -> bool:
         """Ctrl+I: flip the edited mask on this image (inside the region only, when there is one)."""

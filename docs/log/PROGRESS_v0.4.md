@@ -161,6 +161,15 @@
 ### 22단계 · Frame List 칸 (`v0.4-p22`)
 - ID │ 표시 │ 이름 사이에 옅은 세로선(`COLUMN_RULE`, 열린 프레임 행에서는 흰색), 행은 줄무늬(`setAlternatingRowColors`). 이름을 접으면 ID 뒤 선만.
 
+### 23단계 · COLMAP 장면 열기 (`v0.4-p23`, [`specs/06`](../specs/06-colmap.md) C1)
+- 장면 폴더(`images/` + `sparse/0` 또는 `sparse/`)나 그 `images/`를 열면 COLMAP 장면으로 인식: 로그에 모델의 이미지 수, 카메라 수·모델, 3D 점 수.
+  모델과 `images/`가 안 맞는 이미지는 ⚠ 로그(앞 5개 이름).
+- 작업 파일은 **장면 옆** `<scene>.sms/`. 전에 장면 안(`images.sms/`)에 저장한 프로젝트가 있으면 그대로 씀.
+- 처음 여는 장면에 `masks/`, `masks_*/`가 있으면 Object로 불러올지 물음: 폴더마다 건너뛰기 / 흰색 = 대상 / 검정 = 대상
+  (흰 면적이 많으면 검정 = 대상을 추천). 파일은 `a.jpg.png`(COLMAP) 또는 `a.png`. 폴더 하나 = Object 하나(상태 ✓, ★ 아님), Undo 한 번.
+- File → Import Masks from Folder…: 아무 마스크 폴더나 같은 방식으로.
+- 코드: `src/core/colmap.py`(모델 읽기는 COLMAP 공개 형식을 직접 읽음, 쓰기 없음), `Session.import_masks`, `Source.IMPORTED`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

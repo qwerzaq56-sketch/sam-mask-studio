@@ -31,7 +31,21 @@ FORMAT_VERSION = 1
 
 
 def sidecar_dir(image_dir: Path) -> Path:
-    return image_dir.parent / f"{image_dir.name}.sms"
+    """``<folder>.sms`` beside the image folder; for a COLMAP scene's ``images/``, beside the
+    scene (``<scene>.sms``) so trainers reading the scene never see it. A project already
+    saved at the old place (inside the scene) keeps being used."""
+    old = image_dir.parent / f"{image_dir.name}.sms"
+    root = scene_root(image_dir)
+    if root is None or root == image_dir:
+        return old
+    new = root.parent / f"{root.name}.sms"
+    return old if old.is_dir() and not new.exists() else new
+
+
+def scene_root(image_dir: Path):
+    from src.core.colmap import scene_root as find  # late: colmap imports imageio only
+
+    return find(image_dir)
 
 
 def default_export_dir(image_dir: Path) -> Path:

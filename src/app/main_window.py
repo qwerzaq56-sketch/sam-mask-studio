@@ -59,6 +59,7 @@ from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.project import FrameStatus, Source
 from src.core.propagation import Direction, PropagationPlan
+from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.storage import check_export, default_export_dir
 from src.logging_config import get_logger
 
@@ -117,6 +118,7 @@ class MainWindow(QMainWindow):
         self._discard = False  # the running batch/propagation was cancelled: drop its results
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._reference: Optional[int] = None  # propagation reference (double-clicked image); None = current
+        self.scene = None  # the COLMAP scene the open folder belongs to (src/core/colmap.py)
         self._pinned: Optional[List[int]] = None  # the pinned Frame List selection (Selection scope)
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
         self._last_prop: Optional[tuple] = None
@@ -292,6 +294,10 @@ class MainWindow(QMainWindow):
     def _build_actions(self) -> None:
         # --- File / Edit: less used, in the menu bar (docs/design/menu-design.md) -------------
         self.act_open = self._action("&Open Folder…", self.choose_folder, ["Ctrl+O"], "Open an image folder")
+        self.act_import_masks = self._action(
+            "&Import Masks from Folder…", self.choose_mask_folder,
+            tip="A folder of mask images (a.jpg.png or a.png) as a new Object",
+        )
         self.act_save = self._action(
             "&Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
         )
@@ -428,7 +434,8 @@ class MainWindow(QMainWindow):
         # --- the menu bar: every command, with its key -----------------------------------
         mb = self.menuBar()
         m = mb.addMenu("&File")
-        for a in (self.act_open, self.act_save, self.act_export, None, self.act_settings, None, self.act_quit):
+        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, None, self.act_settings, None,
+                  self.act_quit):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Edit")
         for a in (self.act_undo, self.act_redo, None, self.act_new, self.act_edit, self.act_delete,
@@ -815,6 +822,9 @@ class MainWindow(QMainWindow):
     def open_folder(self, folder: Path) -> bool:
         if self._busy:
             return False
+        folder = Path(folder)
+        if scene_root(folder) == folder:
+            folder = folder / "images"  # a COLMAP scene: its images/ (docs/specs/06-colmap.md)
         self.save()
         self.session.max_side = self.settings.max_side
         try:
@@ -832,12 +842,71 @@ class MainWindow(QMainWindow):
         self.propagation_panel.set_resumable(False)
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
-        self.setWindowTitle(f"SAM Mask Studio — {folder}")
+        self.scene = find_scene(folder)
+        self.setWindowTitle(f"SAM Mask Studio — {folder}" + (" (COLMAP scene)" if self.scene else ""))
         loaded = len(self.session.project.objects)
         self.log(f"Opened {folder} ({n} images" + (f", {loaded} saved Objects)" if loaded else ")"))
+        if self.scene is not None:
+            self._report_scene(self.scene)
         self.ensure_models()
         self.refresh()
+        if self.scene is not None and not loaded and self.scene.mask_dirs:
+            self.offer_masks(self.scene.mask_dirs, "Masks in this COLMAP scene")
         return True
+
+    def _report_scene(self, scene) -> None:
+        """The scene's model in the log: counts, camera models, images that do not match."""
+        self.log(scene.summary() + (f" · cameras: {', '.join(scene.camera_models)}" if scene.camera_models else ""))
+        files, model = set(self.session.keys), set(scene.image_names)
+        for what, names in (("in the model but not in images/", model - files),
+                            ("in images/ but not in the model", files - model)):
+            if names and model:
+                shown = ", ".join(sorted(names)[:5]) + (" …" if len(names) > 5 else "")
+                self.log(f"⚠ {len(names)} image(s) {what}: {shown}")
+
+    def offer_masks(self, folders, title: str) -> List[int]:
+        """Ask which mask folders to load as Objects and which color is the object in each."""
+        keys = list(self.session.keys)
+        groups, found = [], []
+        for d in folders:
+            n = len(matched(d, keys))
+            if not n:
+                continue
+            share = white_share(d, keys)
+            black = share is not None and share > 0.5  # mostly white: the object is probably black
+            groups.append((f"{d.name}/ — masks for {n} of {len(keys)} images",
+                           ["Skip", "White = the object", "Black = the object"], 2 if black else 1))
+            found.append(d)
+        if not found:
+            self.log("No masks matching these images (a.jpg.png or a.png)")
+            return []
+        picked = self.choose(title, "Load mask folders as Objects (one Object per folder; Ctrl+Z undoes it).",
+                             groups, "Load")
+        if picked is None:
+            return []
+        chosen = [(d, p == 2) for d, p in zip(found, picked) if p]
+        if not chosen:
+            return []
+
+        def progress(done, total):
+            if done % 50 == 0 or done == total:
+                self.statusBar().showMessage(f"Loading masks {done} / {total}…")
+                QApplication.processEvents()
+
+        ids = self.session.import_masks(chosen, progress)
+        self._select_new(ids)
+        for oid in ids:
+            o = self.session.project.get(oid)
+            self.log(f"Loaded {o.name}: masks on {len(o.frames)} image(s)")
+        return ids
+
+    def choose_mask_folder(self) -> None:
+        if self.session.image_dir is None:
+            return
+        start = str(self.scene.root if self.scene else self.session.image_dir.parent)
+        d = QFileDialog.getExistingDirectory(self, "Mask folder to load as an Object", start)
+        if d:
+            self.offer_masks([Path(d)], "Import Masks")
 
     def go_to(self, index: int) -> None:
         if self._busy or index is None:

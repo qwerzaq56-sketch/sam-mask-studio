@@ -13,7 +13,7 @@
 
 ## COLMAP 호환 (기획 중)
 
-- 기획서: [`specs/06-colmap.md`](../specs/06-colmap.md)(장면 열기, 마스크 세트) · [`specs/07-export-presets.md`](../specs/07-export-presets.md)(학습기별 Export, 프레임 빼기). C1 구현 중, 07 11장 체크리스트 답 대기.
+- 기획서: [`specs/06-colmap.md`](../specs/06-colmap.md)(장면 열기, 마스크 세트) · [`specs/07-export-presets.md`](../specs/07-export-presets.md)(학습기별 Export, 프레임 빼기). C1 완료(`v0.4-p23`). C2(마스크 세트 + 장면에 쓰기)는 07 11장 체크리스트 답 대기.
 - 원래 요청은 아래 "보류 / 구상"의 콜맵 호환 1~8.
 
 ---
