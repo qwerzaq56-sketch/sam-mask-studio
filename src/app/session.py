@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Protocol, Sequence, Set, Tuple
 
 import numpy as np
 
@@ -90,6 +90,10 @@ class Session:
 
     def __init__(self, engine: Optional[Engine] = None, max_side: int = DEFAULT_MAX_SIDE):
         self.engine = engine
+        # While SAM2 loads, prompts are kept (the points show) and run once it is ready
+        self.defer_prompts = False
+        self.pending: Set[Tuple[int, str]] = set()  # (Object id, image key) whose prompts wait for SAM2
+        self._deferred = False
         self.max_side = max_side
         self.image_dir: Optional[Path] = None
         self.paths: List[Path] = []
@@ -163,6 +167,7 @@ class Session:
         self.image = to_working(read_rgb(self.paths[index]), self.max_side)
         if self.engine is not None:
             self.engine.set_image(self.image)
+            self.run_pending()
         self.cancel_mode()
         self.detections, self.detection_checked = self._detections_by_key.pop(self.key, ([], []))
         return True
@@ -239,23 +244,55 @@ class Session:
         return self.engine
 
     def _run(self, fs: FrameState) -> FrameState:
-        """Recompute a frame's Variants from its full prompt set (seeded by its base mask)."""
+        """Recompute a frame's Variants from its full prompt set (seeded by its base mask).
+
+        While SAM2 is still loading (``defer_prompts``) the prompts are kept as they
+        are and the frame is queued; ``run_pending`` computes it once SAM2 is ready.
+        """
+        if self.defer_prompts and fs.has_prompts and (self.engine is None or not self.engine.sam2_ready):
+            self._deferred = True
+            return dataclasses.replace(fs, status=FrameStatus.MANUAL)
         variants = self._require_sam2().predict(fs.points, fs.box, fs.base_mask) if fs.has_prompts else ()
         if not variants and fs.base_mask is not None:
             variants = (Variant(fs.base_mask, 1.0),)
         return dataclasses.replace(fs, variants=tuple(variants), selected=0, status=FrameStatus.MANUAL)
 
     def _create(self, fs: FrameState, source: Source) -> int:
+        self._deferred = False
         fs = self._run(fs)
         assert self.key is not None
         oid = self.project.add_object(self.key, fs, source)
+        if self._deferred:
+            self.pending.add((oid, self.key))
         self.edit(oid)
         return oid
 
     def _update(self, change: Callable[[FrameState], FrameState]) -> None:
         assert self.editing is not None and self.key is not None
         fs = self.editing_frame() or FrameState()
+        self._deferred = False
         self.project.set_frame(self.editing, self.key, self._run(change(fs)))
+        if self._deferred:
+            self.pending.add((self.editing, self.key))
+
+    def run_pending(self) -> int:
+        """SAM2 is ready: compute the queued prompts on the current image (one undo step).
+
+        Frames queued on other images run when those images open (``go_to``).
+        Returns how many frames were computed.
+        """
+        if self.key is None or self.engine is None or not self.engine.sam2_ready:
+            return 0
+        here = [(oid, k) for oid, k in self.pending if k == self.key]
+        updates: Dict[int, Dict[str, FrameState]] = {}
+        for oid, key in here:
+            self.pending.discard((oid, key))
+            obj = self.project.get(oid)
+            fs = obj.frame(key) if obj is not None else None
+            if fs is not None and fs.has_prompts:
+                updates.setdefault(oid, {})[key] = self._run(fs)
+        self.project.set_frames(updates)
+        return sum(len(v) for v in updates.values())
 
     def click(self, x: float, y: float, positive: bool = True) -> Optional[int]:
         """A canvas click in working-resolution pixels. Returns the Object id it affected.

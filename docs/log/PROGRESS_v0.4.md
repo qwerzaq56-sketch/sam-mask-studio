@@ -187,6 +187,11 @@
 - **Postshot**: Remove Occluders가 **흰색 = 무시**(반대)라 `masks_postshot/`에 대상 = 흰색, `a.png`로 따로 씀. Postshot에서 Image Masks에
   끌어다 놓고 Mask Mode = Remove Occluders. 파일 짝 규칙은 문서에 없어 실제로 확인 필요.
 
+### 27단계 · SAM2 로딩 중 포인트 (`v0.4-p27`)
+- 로딩 중에 찍은 포인트 / 박스를 버리지 않음: 포인트는 바로 보이고(새 Object면 Mask 없이 생김) 대기열에 들어감. SAM2가 준비되면
+  지금 이미지의 대기분을 계산(Undo 한 단계), 다른 이미지의 대기분은 그 이미지를 열 때. 상태 표시줄 `SAM2 loading… (N waiting)`.
+- 코드: `Session.defer_prompts` / `pending` / `run_pending`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
