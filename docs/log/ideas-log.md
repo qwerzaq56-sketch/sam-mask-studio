@@ -1,6 +1,6 @@
 # 아이디어 로그 (완료)
 
-[`ideas.md`](ideas.md)에서 구현을 마친 항목을 옮겨 두는 곳입니다. 원래 요청(인용)과 결과를 단계 태그별로 적습니다.
+[`ideas.md`](../backlog/ideas.md)에서 구현을 마친 항목을 옮겨 두는 곳입니다. 원래 요청(인용)과 결과를 단계 태그별로 적습니다.
 자세한 구현 기록은 [`PROGRESS_v0.4.md`](PROGRESS_v0.4.md).
 
 ---
@@ -17,7 +17,7 @@
 
 > 단축키 목록을 정리하는 문서.
 
-- [`keymap.md`](keymap.md): 현재 키맵, 비어 있는 키, 제안.
+- [`keymap.md`](../design/keymap.md): 현재 키맵, 비어 있는 키, 제안.
 
 ## `v0.4-p10` · 오토 툴은 Fill로 시작
 
@@ -41,7 +41,7 @@
 
 > 상단 2줄의 위계: 덜 쓰는 기능은 위, 자주 쓰는 기능은 아래. 단축키를 모를 수 있으니 기능의 존재를 위에서 알리기. 기획 방향성 문서로.
 
-- [`menu-design.md`](menu-design.md). 메뉴 = 모든 명령과 키, 툴바 = 작업 중 토글만.
+- [`menu-design.md`](../design/menu-design.md). 메뉴 = 모든 명령과 키, 툴바 = 작업 중 토글만.
 
 ## `v0.4-p15` · 키와 메뉴 손보기
 
@@ -67,7 +67,7 @@
 
 > 에딧모드 처음 진입하면 브러쉬 켜기. UX 원칙을 세우고 문서로.
 
-- `E` 편집은 브러쉬가 켜진 채 시작. [`ux-principles.md`](ux-principles.md).
+- `E` 편집은 브러쉬가 켜진 채 시작. [`ux-principles.md`](../design/ux-principles.md).
 
 ## `v0.4-p12` → `v0.4-p16` · 선택 프레임을 칸 색으로
 
@@ -90,7 +90,7 @@
 > 카피는 Add + 현재 이미지로, 옵션 버튼은 오른쪽에 작게.
 
 - `Copy A → B` / `Merge` = 바로 실행, 옆 `⚙` = 옵션(Copy: Add / Replace, 이 이미지 / 모든 이미지 · Merge: Add / Override A / B / Into A).
-  (Copy / Move / Merge 역할 재정리: [`specs/05-merge-copy-move.md`](specs/05-merge-copy-move.md))
+  (Copy / Move / Merge 역할 재정리: [`specs/05-merge-copy-move.md`](../specs/05-merge-copy-move.md))
 
 ## `v0.4-p18` · 캔버스 Solo / Hide Masks
 
@@ -100,4 +100,4 @@
 
 ## 기타
 
-- 마스크 프리뷰에서 브러쉬로 칠한 것이 잠깐 안 보임 → 재현 조건 모름, [`ui-issues.md`](ui-issues.md) 21로 옮김.
+- 마스크 프리뷰에서 브러쉬로 칠한 것이 잠깐 안 보임 → 재현 조건 모름, [`ui-issues.md`](../backlog/ui-issues.md) 21로 옮김.

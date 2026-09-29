@@ -1,7 +1,7 @@
 # 아이디어 백로그
 
-아직 안 한 기능 아이디어를 적어두는 곳입니다. **끝난 항목은 [`ideas-log.md`](ideas-log.md)로 옮깁니다.**
-작은 UI 문제는 [`ui-issues.md`](ui-issues.md), 진행 기록은 [`PROGRESS_v0.4.md`](PROGRESS_v0.4.md), 원칙은 [`ux-principles.md`](ux-principles.md).
+아직 안 한 기능 아이디어를 적어두는 곳입니다. **끝난 항목은 [`ideas-log.md`](../log/ideas-log.md)로 옮깁니다.**
+작은 UI 문제는 [`ui-issues.md`](ui-issues.md), 진행 기록은 [`PROGRESS_v0.4.md`](../log/PROGRESS_v0.4.md), 원칙은 [`ux-principles.md`](../design/ux-principles.md).
 
 - 새 아이디어는 해당 섹션에 한 줄씩 추가합니다. 섹션이 없으면 새로 만들어도 됩니다.
 - 구현을 시작하면 `(진행 중)`, 끝나면 `(완료, v0.x-pN)`을 붙이고, 다음 정리 때 로그로 옮깁니다.
@@ -30,7 +30,7 @@
 > 무브 / 카피 세부 옵션: Add / Replace, 현재 오브젝트만 / 전체.
 > 추가 구상: 카피 / 무브는 옵션을 공유하므로 기능 결합. 기본 = 무브 A → B, Add, 현재만. 옵션 최상위에 무브 / 카피 선택.
 
-- (메모) 기획서: [`specs/05-merge-copy-move.md`](specs/05-merge-copy-move.md). 확인 필요한 질문 3개가 맨 아래에 있음.
+- (메모) 기획서: [`specs/05-merge-copy-move.md`](../specs/05-merge-copy-move.md). 확인 필요한 질문 3개가 맨 아래에 있음.
 
 ## 마스크 인버트 / 전체 지우기 단축키
 
@@ -72,7 +72,7 @@
 7. 마스킹은 단일 폴더가 아닌 여러 세팅으로 내보낼 수 있음.
 8. 이때 각 마스킹에 대해 이름(폴더명 구분자)과 어떤 오브젝트를 Merge해서 만들지 선택할 수 있어야 함.
 
-- (메모) v0.3 요청 목록의 6단계(COLMAP)와 같은 주제: [`specs/04-v0.3-requests.md`](specs/04-v0.3-requests.md).
+- (메모) v0.3 요청 목록의 6단계(COLMAP)와 같은 주제: [`specs/04-v0.3-requests.md`](../specs/04-v0.3-requests.md).
   지금 Export는 `{stem}.png` / `{name}.png`(COLMAP 방식) 한 폴더만 지원.
 
 ## 스카이 마스크 (구상 미확정)

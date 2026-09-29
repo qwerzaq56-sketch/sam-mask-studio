@@ -1,7 +1,7 @@
 """Main window: wires the Session to the canvas and panels (spec 01 §5 layout).
 
 Menu bar (File, Edit, View, Go, Help: every command and its key, see
-docs/menu-design.md) · toolbar with the often-used view / tool toggles (Mask
+docs/design/menu-design.md) · toolbar with the often-used view / tool toggles (Mask
 Preview + mode, Brush, Outline + width, Show Changes) ·
 left Objects + Images · center canvas · right Properties · bottom
 Prompt/Detection, Propagation and Logs tabs · status bar with the mode.
@@ -290,7 +290,7 @@ class MainWindow(QMainWindow):
         return a
 
     def _build_actions(self) -> None:
-        # --- File / Edit: less used, in the menu bar (docs/menu-design.md) -------------
+        # --- File / Edit: less used, in the menu bar (docs/design/menu-design.md) -------------
         self.act_open = self._action("&Open Folder…", self.choose_folder, ["Ctrl+O"], "Open an image folder")
         self.act_save = self._action(
             "&Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
@@ -1435,7 +1435,7 @@ class MainWindow(QMainWindow):
             self.delete_objects(self.objects_panel.selected_ids())
 
     def delete_objects(self, ids: List[int]) -> None:
-        """Delete at once (Ctrl+Z undoes it); locked Objects stay (docs/ux-principles.md 1)."""
+        """Delete at once (Ctrl+Z undoes it); locked Objects stay (docs/design/ux-principles.md 1)."""
         objs = [o for o in self.session.project.objects if o.id in set(ids)]
         if not objs or self._busy:
             return

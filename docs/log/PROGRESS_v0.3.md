@@ -2,7 +2,7 @@
 
 **v0.3.0 릴리스 (2026-09-28):** 아래 "완료" 항목 전부(1~5단계)가 `main`에 병합되고 `v0.3.0` 태그가 붙었습니다. 안정판 실행기(`SAM Mask Studio.bat`)도 v0.3.0을 실행합니다. 6단계(COLMAP)는 다음 버전으로 넘어갑니다.
 
-원래 요청 목록: [`docs/specs/04-v0.3-requests.md`](specs/04-v0.3-requests.md) · 개발 메모(영문): [`docs/DEVELOPMENT.md`](DEVELOPMENT.md)
+원래 요청 목록: [`docs/specs/04-v0.3-requests.md`](../specs/04-v0.3-requests.md) · 개발 메모(영문): [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md)
 
 - 브랜치 `dev`에서 단계별로 진행하고, 단계마다 `v0.3-pN` 태그를 붙입니다.
 - 되돌리기

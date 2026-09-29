@@ -1,6 +1,6 @@
 # UX 원칙
 
-기능을 넣거나 바꿀 때 지키는 기준입니다. 사용자 피드백([`ideas.md`](ideas.md), [`ui-issues.md`](ui-issues.md))에서 나온 판단을
+기능을 넣거나 바꿀 때 지키는 기준입니다. 사용자 피드백([`ideas.md`](../backlog/ideas.md), [`ui-issues.md`](../backlog/ui-issues.md))에서 나온 판단을
 일반 규칙으로 적었습니다. 메뉴·툴바 배치는 [`menu-design.md`](menu-design.md), 키는 [`keymap.md`](keymap.md).
 
 ## 1. 되돌릴 수 있으면 묻지 않는다
