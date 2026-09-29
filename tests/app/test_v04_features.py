@@ -798,3 +798,52 @@ def test_frame_list_rows_are_striped_with_column_rules(qapp, win):
     row = [img.pixelColor(x, y) for x in range(rect.left(), min(rect.right(), 80))]
     background = row[1]
     assert sum(1 for c in row if c != background) >= 2  # text and at least one rule
+
+
+# --- c1: COLMAP scenes (docs/specs/06-colmap.md) ------------------------------------------
+
+
+def test_open_a_colmap_scene_and_load_its_masks(qapp, win, tmp_path):
+    import cv2
+    import numpy as np
+
+    from tests.unit.test_colmap import make_scene
+
+    root = make_scene(tmp_path / "scene", n=4)
+    names = sorted(p.name for p in (root / "images").iterdir())
+    h, w = cv2.imread(str(root / "images" / names[0])).shape[:2]
+    masks = root / "masks"
+    masks.mkdir()
+    for name in names[:3]:  # COLMAP style, black = the object (mostly white)
+        m = np.full((h, w), 255, np.uint8)
+        m[5:25, 5:25] = 0
+        cv2.imwrite(str(masks / f"{name}.png"), m)
+    asked = []
+
+    def choose(title, text, groups, ok="OK"):
+        asked.append(groups)
+        return [g[2] for g in groups]  # the suggested color
+
+    win.choose = choose
+    assert win.open_folder(root)  # the scene root: its images/ open
+    s = win.session
+    assert s.image_dir == root / "images" and win.scene is not None
+    assert s.store.root == tmp_path / "scene.sms"  # beside the scene
+    assert asked and asked[0][0][2] == 2  # mostly white: "Black = the object" suggested
+    [o] = s.project.objects
+    assert o.name.startswith("masks") and o.source.value == "IMPORTED"
+    assert sorted(o.frames) == names[:3]
+    m0 = o.mask(names[0])
+    assert m0.any() and m0.mean() < 0.5  # the black square became the object
+    win.undo()
+    assert not s.project.objects
+
+
+def test_scene_mismatch_is_logged(qapp, win, tmp_path):
+    from tests.unit.test_colmap import make_scene
+
+    root = make_scene(tmp_path / "scene", n=3, model_names=["frame_000.png", "gone.png"])
+    assert win.open_folder(root / "images")
+    log = win.log_view.toPlainText()
+    assert "1 image(s) in the model but not in images/: gone.png" in log
+    assert "2 image(s) in images/ but not in the model" in log

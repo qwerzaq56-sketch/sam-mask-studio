@@ -43,6 +43,7 @@ class Source(str, Enum):
     SAM2_BOX = "SAM2_BOX"
     MERGED = "MERGED"
     DUPLICATE = "DUPLICATE"
+    IMPORTED = "IMPORTED"  # read from a mask folder (a COLMAP scene's masks/)
 
 
 class FrameStatus(str, Enum):
