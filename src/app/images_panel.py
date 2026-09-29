@@ -147,10 +147,17 @@ def read_thumbnail(path: Path, height: int = THUMB_H) -> Optional[np.ndarray]:
     return np.ascontiguousarray(small)
 
 
+def thumb_name(path: Path) -> str:
+    """The cache file of *path*: its name, plus its folder when that is not the image folder's own
+    (cam0/0001.jpg and cam1/0001.jpg must not share one)."""
+    parent = path.parent.name
+    return f"{path.name}.jpg" if parent.lower().startswith("images") else f"{parent}__{path.name}.jpg"
+
+
 def cached_thumbnail(path: Path, cache: Optional[Path]) -> Optional[np.ndarray]:
     """read_thumbnail through a disk cache (``<cache>/<name>.jpg``, rebuilt when the image is newer)."""
     if cache is not None:
-        c = cache / f"{path.name}.jpg"
+        c = cache / thumb_name(path)
         try:
             if c.is_file() and c.stat().st_mtime >= path.stat().st_mtime:
                 img = cv2.imdecode(np.fromfile(str(c), dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -164,7 +171,7 @@ def cached_thumbnail(path: Path, cache: Optional[Path]) -> Optional[np.ndarray]:
             cache.mkdir(parents=True, exist_ok=True)
             ok, buf = cv2.imencode(".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
             if ok:
-                buf.tofile(str(cache / f"{path.name}.jpg"))
+                buf.tofile(str(cache / thumb_name(path)))
         except OSError:
             pass  # a read-only folder just means no cache
     return img

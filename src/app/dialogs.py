@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
+from src.engine.imageio import key_stem
 from src.core.reproject import CONVERTIBLE, FISHEYES, Erp, Views
 from src.core.storage import ExportCheck, ExportOptions
 
@@ -455,7 +456,7 @@ class ExportDialog(QDialog):
         out = Path(self.out.text().strip())
         c = getattr(self, "check_result", None)
         if c is not None and out.is_dir():
-            names = [p.pattern.format(stem=Path(k).stem, name=k) for k in c.keys]
+            names = [p.pattern.format(stem=key_stem(k), name=k) for k in c.keys]
             n = sum(1 for nm in names if (out / nm).is_file())
             if n:
                 rows.append(line(False, f"{n} file(s) in {out.name}/ will be moved to {out.name}_backup_…/ first"))

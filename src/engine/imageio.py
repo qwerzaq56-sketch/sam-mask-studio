@@ -11,11 +11,32 @@ import numpy as np
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
-def find_images(directory: Path) -> list[Path]:
-    """Supported image files directly in *directory*, sorted by name."""
+def find_images(directory: Path, recursive: bool = False) -> list[Path]:
+    """Supported image files in *directory*, sorted by (relative) name.
+
+    *recursive*: also in sub-folders (a multi-camera COLMAP scene: images/cam0/, images/cam1/),
+    never inside a mask folder (``masks*``) that may sit among them.
+    """
     if not directory.is_dir():
         return []
-    return sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in IMG_EXTS)
+    if not recursive:
+        return sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in IMG_EXTS)
+    found = [
+        p for p in directory.rglob("*")
+        if p.is_file() and p.suffix.lower() in IMG_EXTS
+        and not any(part.lower().startswith("masks") for part in p.relative_to(directory).parts[:-1])
+    ]
+    return sorted(found, key=lambda p: p.relative_to(directory).as_posix())
+
+
+def image_key(directory: Path, path: Path) -> str:
+    """The name an image goes by: its path under *directory*, with ``/`` (``cam0/0001.jpg``)."""
+    return path.relative_to(directory).as_posix()
+
+
+def key_stem(key: str) -> str:
+    """*key* without its extension, folders kept: ``cam0/0001.jpg`` -> ``cam0/0001``."""
+    return key[: -len(Path(key).suffix)] if Path(key).suffix else key
 
 
 def read_rgb(path: Path) -> np.ndarray:

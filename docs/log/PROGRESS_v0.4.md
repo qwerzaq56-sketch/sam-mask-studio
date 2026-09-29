@@ -218,6 +218,11 @@
 - **Fisheye → ERP → Pinhole**: 피시아이 장면을 360으로 내보낸 뒤, 그 데이터셋을 열어(마스크는 Object로 불러와짐) 다시 Pinhole로 내보내면 됨.
 - 코드: `reproject.convert(target = Views | Erp)`, `source_projection`.
 
+### 31단계 · 장면의 하위 폴더 이미지 (`v0.4-p31`, 듀얼 피시아이 준비)
+- COLMAP 장면의 `images/` 아래 하위 폴더(`cam0/`, `cam1/` …)의 이미지도 엶. 이미지 이름은 `cam0/0001.jpg`처럼 폴더 포함(COLMAP 모델의 이름과 같음).
+  `images/` 안의 `masks*` 폴더는 이미지로 치지 않음. 장면이 아닌 폴더는 전처럼 바로 아래만.
+- 썸네일 캐시, 작업 파일의 마스크, Export 마스크(`masks/cam0/0001.jpg.png`), 변환 결과 이름이 모두 폴더를 유지해 카메라끼리 겹치지 않음.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
