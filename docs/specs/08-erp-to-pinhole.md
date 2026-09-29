@@ -58,7 +58,7 @@
 |---|---|
 | P1 (`v0.4-p29`, **완료**) | 카메라 표에 id 12~17(ERP 포함), 변환 틀(`src/core/reproject.py`), **ERP → Pinhole 뷰**: 이미지·마스크·모델 |
 | P2 (`v0.4-p30`, **완료**) | **Fisheye → Pinhole 뷰 / ERP**: OPENCV_FISHEYE, SIMPLE_FISHEYE / FISHEYE 등 원본 모델의 투영식 추가. Pinhole → Pinhole(왜곡 제거)도 같은 틀 |
-| P3 | 듀얼 피시아이(카메라 두 대, 리그) → ERP 한 장으로 이어 붙이기: 리그(`rigs.bin`, `frames.bin`) 읽기가 필요 |
+| P3 (`v0.4-p32`, **완료**) | 듀얼 피시아이(카메라 두 대, 리그) → ERP 한 장으로 이어 붙이기: `frames.bin` 또는 폴더 짝으로 묶음. 하위 폴더 이미지(`v0.4-p31`) 필요 |
 | P4 | 쓰면서 조정: 뷰 배치 프리셋(6면 큐브, 8방위 × 1), 하늘 / 바닥 뷰 제외 |
 
 ## 7. 정할 것

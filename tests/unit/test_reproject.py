@@ -213,3 +213,141 @@ def test_fisheye_to_pinhole_views(tmp_path):
     s = front.shape[0]
     assert front[s // 2, s // 2][1] > 150
     assert cv2.imread(str(out / "masks" / "f0_y000_p00.jpg.png"), cv2.IMREAD_GRAYSCALE).min() == 255  # all seen
+
+
+# --- p32: a dual fisheye rig stitched into 360 images ---------------------------------------------
+
+
+def make_dual_fisheye_scene(root: Path, frames: int = 2, size: int = 160, with_frames_bin: bool = False):
+    """cam0 looks along +Z (a red picture circle), cam1 back along -Z (blue); circles reach ~95°."""
+    f = (size / 2) / np.radians(95)
+    yy, xx = np.mgrid[0:size, 0:size]
+    circle = (xx + 0.5 - size / 2) ** 2 + (yy + 0.5 - size / 2) ** 2 < (size / 2) ** 2
+    names = []
+    for cam, color in (("cam0", (0, 0, 220)), ("cam1", (220, 0, 0))):
+        (root / "images" / cam).mkdir(parents=True)
+        for k in range(frames):
+            img = np.zeros((size, size, 3), np.uint8)
+            img[circle] = color
+            ok, buf = cv2.imencode(".png", img)
+            buf.tofile(str(root / "images" / cam / f"{k:03d}.png"))
+            names.append(f"{cam}/{k:03d}.png")
+    model = root / "sparse" / "0"
+    model.mkdir(parents=True)
+    with open(model / "cameras.bin", "wb") as fh:
+        fh.write(struct.pack("<Q", 2))
+        for cid in (1, 2):
+            fh.write(struct.pack("<iiQQ8d", cid, 5, size, size, f, f, size / 2, size / 2, 0, 0, 0, 0))
+    world = np.array([[0, 0, 5], [0, 0, -5], [3, 0.5, 0]], float)
+    back = np.diag([-1.0, 1, -1])  # cam1: turned 180° about Y
+    q_back = rotmat_to_qvec(back)
+    images = []  # (id, camera, name, R, t)
+    iid = 1
+    for k in range(frames):
+        c = np.array([0.5 * k, 0, 0])
+        images.append((iid, 1, f"cam0/{k:03d}.png", np.eye(3), -c))
+        images.append((iid + 1, 2, f"cam1/{k:03d}.png", back, -back @ c))
+        iid += 2
+    with open(model / "images.bin", "wb") as fh:
+        fh.write(struct.pack("<Q", len(images)))
+        for iid, cid, name, r, t in images:
+            obs = np.zeros(len(world), POINT2D)
+            obs["id"] = np.arange(1, len(world) + 1)
+            q = rotmat_to_qvec(r)
+            fh.write(struct.pack("<i4d3di", iid, *q, *t, cid) + name.encode() + b"\0")
+            fh.write(struct.pack("<Q", len(obs)) + obs.tobytes())
+    with open(model / "points3D.bin", "wb") as fh:
+        fh.write(struct.pack("<Q", len(world)))
+        for pid, p in enumerate(world, 1):
+            tr = np.array([(im[0], pid - 1) for im in images], TRACK)
+            fh.write(struct.pack("<Q3d3BdQ", pid, *p, 1, 2, 3, 0.1, len(tr)) + tr.tobytes())
+    if with_frames_bin:
+        with open(model / "frames.bin", "wb") as fh:
+            fh.write(struct.pack("<Q", frames))
+            for k in range(frames):
+                fh.write(struct.pack("<II7d", k + 1, 1, 1, 0, 0, 0, 0, 0, 0))
+                fh.write(struct.pack("<I", 2))
+                for cid, iid in ((1, 2 * k + 1), (2, 2 * k + 2)):
+                    fh.write(struct.pack("<iIQ", 0, cid, iid))
+    return names
+
+
+def _group_input(model):
+    return [(im[0], im[2], im[3]) for im in _read_images_bin(model / "images.bin")]
+
+
+def test_rig_frames_are_found_by_folder_or_frames_bin(tmp_path):
+    from src.core.colmap import frame_groups
+
+    a = tmp_path / "a"
+    make_dual_fisheye_scene(a)
+    assert frame_groups(a / "sparse" / "0", _group_input(a / "sparse" / "0")) == [
+        ["cam0/000.png", "cam1/000.png"], ["cam0/001.png", "cam1/001.png"]]
+    b = tmp_path / "b"
+    make_dual_fisheye_scene(b, with_frames_bin=True)
+    (b / "images" / "cam1" / "000.png").rename(b / "images" / "cam1" / "zzz.png")  # names no longer pair up
+    model = b / "sparse" / "0"
+    renamed = [(i, c, n.replace("cam1/000", "cam1/zzz")) for i, c, n in _group_input(model)]
+    assert frame_groups(model, renamed)[0] == ["cam0/000.png", "cam1/zzz.png"]  # frames.bin decides
+
+
+def test_dual_fisheye_stitched_into_360(tmp_path):
+    from src.core.colmap import frame_groups
+    from src.core.reproject import stitch_to_erp
+
+    src = tmp_path / "rig"
+    make_dual_fisheye_scene(src)
+    model = src / "sparse" / "0"
+    groups = frame_groups(model, _group_input(model))
+    out = tmp_path / "pano"
+    person = np.zeros((160, 160), bool)
+    person[60:100, 60:100] = True  # in the middle of cam1's picture: straight behind
+    job = MaskJob(out / "masks", "{name}.png", invert=True, include_empty=True,
+                  get=lambda k: person if k.startswith("cam1/") else None)
+    r = stitch_to_erp(src / "images", model, out, groups, width=256, masks=[job])
+    assert (r.images_in, r.views_out, r.side) == (4, 2, 256) and r.points_kept == 3
+    [cam] = read_cameras_full(out / "sparse" / "0").values()
+    assert cam.model == "EQUIRECTANGULAR" and (cam.width, cam.height) == (256, 128)
+    pano = cv2.imread(str(out / "images" / "000.jpg"))
+    assert pano[64, 128][2] > 150 and pano[64, 128][0] < 60  # ahead: cam0's red
+    assert pano[64, 2][0] > 150 and pano[64, 2][2] < 60  # behind: cam1's blue
+    m = cv2.imread(str(out / "masks" / "000.jpg.png"), cv2.IMREAD_GRAYSCALE)
+    assert m[64, 128] == 255 and m[64, 2] == 0  # the person behind is ignored (black), ahead is trained
+    imgs = {n: pts for _, _, _, n, pts in _read_images_bin(out / "sparse" / "0" / "images.bin")}
+    ahead = imgs["000.jpg"][imgs["000.jpg"]["id"] == 1]
+    assert np.allclose([ahead["x"][0], ahead["y"][0]], [128, 64])  # the point ahead: the 360 image's center
+    behind = imgs["000.jpg"][imgs["000.jpg"]["id"] == 2]
+    assert np.isclose(behind["x"][0] % 256, 0) or np.isclose(behind["x"][0], 256)  # straight behind: the seam
+
+
+def test_stitching_gives_the_panorama_back(tmp_path):
+    """A panorama (hue by azimuth, brightness by elevation) cut into a back-to-back fisheye pair and stitched."""
+    from src.core.colmap import frame_groups
+    from src.core.reproject import stitch_to_erp
+
+    w, h, s = 256, 128, 200
+    jj, ii = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+    hsv = np.dstack([(jj / w * 180).astype(np.uint8), np.full((h, w), 230, np.uint8),
+                     (60 + 195 * (1 - ii / h)).astype(np.uint8)])
+    pano = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    root = tmp_path / "rig"
+    make_dual_fisheye_scene(root, frames=2, size=s)
+    f = (s / 2) / np.radians(95)
+    yy, xx = np.mgrid[0:s, 0:s]
+    u, v = (xx + 0.5 - s / 2) / f, (yy + 0.5 - s / 2) / f
+    th = np.hypot(u, v)
+    ray = np.stack([np.sin(th) * u / np.maximum(th, 1e-9), np.sin(th) * v / np.maximum(th, 1e-9), np.cos(th)], -1)
+    for cam, r in (("cam0", np.eye(3)), ("cam1", np.diag([-1.0, 1, -1]))):
+        d = ray @ r  # this camera's rays in the reference (cam0) frame
+        az, el = np.arctan2(d[..., 0], d[..., 2]), np.arctan2(-d[..., 1], np.hypot(d[..., 0], d[..., 2]))
+        mx = ((az / (2 * np.pi) + 0.5) * w - 0.5).astype(np.float32)
+        my = ((0.5 - el / np.pi) * h - 0.5).astype(np.float32)
+        img = cv2.remap(pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
+        img[th > np.radians(95)] = 0
+        for k in range(2):
+            cv2.imwrite(str(root / "images" / cam / f"{k:03d}.png"), img)
+    model = root / "sparse" / "0"
+    stitch_to_erp(root / "images", model, tmp_path / "pano", frame_groups(model, _group_input(model)), width=w)
+    back = cv2.imread(str(tmp_path / "pano" / "images" / "000.jpg"))
+    diff = np.abs(back.astype(int) - pano.astype(int)).mean(axis=2)[10:-10]  # away from the poles
+    assert diff.mean() < 3 and np.percentile(diff, 99) < 12

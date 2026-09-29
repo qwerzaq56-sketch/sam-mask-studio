@@ -32,7 +32,7 @@ from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
 from src.engine.imageio import key_stem
-from src.core.reproject import CONVERTIBLE, FISHEYES, Erp, Views
+from src.core.reproject import CONVERTIBLE, FISHEYES, Erp, Stitch, Views
 from src.core.storage import ExportCheck, ExportOptions
 
 
@@ -197,6 +197,10 @@ class ExportDialog(QDialog):
         self.convert.addItem("Pinhole views", "pinhole")
         if not self._erp:
             self.convert.addItem("360 (ERP)", "erp")
+        self._groups = scene.rig_groups() if scene is not None and not self._erp else []
+        if self._groups:
+            self._convertible = True
+            self.convert.addItem(f"360 from camera pairs ({len(self._groups)} moments)", "stitch")
         self.convert.setToolTip("Pinhole views: every image becomes perspective views (images, masks, model). "
                                 "360: one equirectangular image each (a fisheye's unseen part is masked out)")
         self.yaws = QLineEdit("0, 90, 180, 270" if self._erp else "-45, 0, 45" if fisheye else "0")
@@ -319,6 +323,8 @@ class ExportDialog(QDialog):
             return None
         if kind == "erp":
             return Erp(width=self.side.value())
+        if kind == "stitch":
+            return Stitch(width=self.side.value())
 
         def angles(field: QLineEdit):
             try:
@@ -402,6 +408,8 @@ class ExportDialog(QDialog):
         v = self.views()
         if isinstance(v, Views):
             written *= len(v.pairs())  # one mask per view
+        elif isinstance(v, Stitch):
+            written = len(self._groups)  # one mask per moment (a moment with a ⊘ image is left out)
         rows = [
             f"<b>{written}</b> file(s) will be written for <b>{c.images}</b> image(s)",
             line(missing == 0 or self.empty.isChecked(), f"Images without a mask: {missing}"
@@ -439,7 +447,8 @@ class ExportDialog(QDialog):
         if root is not None:
             why = dataset_blocker(root)
             v = self.views()
-            what = ("one 360 image each" if isinstance(v, Erp)
+            what = (f"{len(self._groups)} 360 image(s) stitched from camera pairs" if isinstance(v, Stitch)
+                    else "one 360 image each" if isinstance(v, Erp)
                     else f"{len(v.pairs())} pinhole views per image ({v.fov:.0f}°)" if v is not None
                     else "images/ linked, sparse/0/ filtered")
             rows.append(line(not why, why or f"New dataset: {root.name}/ — {what}"
@@ -448,7 +457,7 @@ class ExportDialog(QDialog):
             rows.append(line(False, f"{self._excluded} frame(s) are ⊘ excluded: that only applies to a New dataset"))
         odd = [m for m in sc.camera_models if m in p.unconfirmed_cameras]
         if self.views() is not None:
-            to = "EQUIRECTANGULAR (360)" if isinstance(self.views(), Erp) else "PINHOLE views"
+            to = "EQUIRECTANGULAR (360)" if isinstance(self.views(), (Erp, Stitch)) else "PINHOLE views"
             rows.append(line(True, f"Cameras: {', '.join(sc.camera_models)} → {to}"))
         elif sc.camera_models:
             rows.append(line(not odd, "Cameras: " + ", ".join(sc.camera_models)
