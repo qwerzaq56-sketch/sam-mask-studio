@@ -176,6 +176,12 @@
 - 덮어쓸 파일은 먼저 `masks_backup_<시각>/`으로 옮김. 검사에 카메라 모델, 백업될 파일 수. LichtFeld는 "Mask Mode = Ignore" 안내.
 - 모든 이미지를 쓰는 설정에서는 "마스크 없음"을 문제로 치지 않음(흰색으로 씀). Custom은 전과 같음. 고른 학습기를 기억.
 
+### 25단계 · 마스크 세트 (`v0.4-p25`, [`specs/06`](../specs/06-colmap.md) 4장)
+- Export 창 **Mask**: Final Mask(체크한 Object) / 이름 붙인 세트 / Every set(Final + 모든 세트). `Save Checked as Set…` = 지금 체크한 Object를
+  이름으로 저장, `Delete Set`. 세트는 `<폴더>_<이름>/`(장면이면 `masks_people/`)으로 따로 씀. 작업 파일에 저장, Undo 가능.
+- 학습기는 `masks/`만 읽으므로, 세트로 학습하려면 폴더 이름을 `masks/`로 바꾸거나 그 Object만 체크해 Final로 내보내기(창에 안내).
+- 코드: `Project.mask_sets` / `set_mask_set`, `final_mask(key, ids)`, `ExportOptions.object_ids`, `ExportDialog.jobs()`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

@@ -115,7 +115,7 @@
 | 단계 | 내용 | 06과의 관계 |
 |---|---|---|
 | C1 | 장면 인식 + 기존 마스크 폴더를 Object로 불러오기 | 06 C1 그대로 (**완료, `v0.4-p23`**) |
-| C2 | **장면에 마스크 쓰기** + 프리셋(Brush, LichtFeld, COLMAP, Custom) + 검사 확장 (**완료, `v0.4-p24`**) → 마스크 세트는 `p25` | 06 C2 |
+| C2 | **장면에 마스크 쓰기** + 프리셋(Brush, LichtFeld, COLMAP, Custom) + 검사 확장 (**완료, `v0.4-p24`**) → 마스크 세트 **완료, `v0.4-p25`** | 06 C2 |
 | C2-확인 | 작은 테스트 장면으로 LichtFeld / Spirula / Postshot에 넣어 보고 3장 표 채우기 → 프리셋 추가 | 06 C4 |
 | C3 | 프레임 제외 + **새 데이터셋 만들기**(하드링크, `.bin` 걸러 쓰기) | 06 C3를 바꿈(원본 수정 없음) |
 
@@ -158,4 +158,4 @@ PRESETS = {
   색(대상 검정)·모든 이미지 쓰기를 정하고(회색으로 표시), 덮어쓸 파일은 `masks_backup_<시각>/`으로 먼저 옮김. 검사에 카메라 모델 줄,
   백업될 파일 수. 마지막으로 고른 학습기를 기억. 코드: `src/core/presets.py`, `storage.backup_existing`.
 
-출처: [Brush README](https://github.com/ArthurBrussee/brush) · LichtFeld 소스(`src/io/include/io/filesystem_utils.hpp`, `src/core/include/core/parameters.hpp`, `tests/test_mask_loss.cpp`) · [Brush 원문](https://github.com/ArthurBrussee/brush) · [LichtFeld Studio v0.5.3](https://lichtfeld.io/blog/release-lichtfeld-studio-v0-5-3/) · [LichtFeld 360 plugin](https://github.com/alexmgee/lichtfeld-360-plugin) · [Spirula Studio](https://github.com/harry7557558/spirula-studio) · [COLMAP cameras](https://github.com/colmap/colmap/blob/main/doc/cameras.rst)
+출처: [Brush README](https://github.com/ArthurBrussee/brush) · LichtFeld 소스(`src/io/include/io/filesystem_utils.hpp`, `src/core/include/core/parameters.hpp`, `tests/test_mask_loss.cpp`) · [LichtFeld Studio v0.5.3](https://lichtfeld.io/blog/release-lichtfeld-studio-v0-5-3/) · [LichtFeld 360 plugin](https://github.com/alexmgee/lichtfeld-360-plugin) · [Spirula Studio](https://github.com/harry7557558/spirula-studio) · [COLMAP cameras](https://github.com/colmap/colmap/blob/main/doc/cameras.rst)

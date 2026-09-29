@@ -2064,8 +2064,15 @@ class MainWindow(QMainWindow):
         if not s.project.keys_with_masks():
             self.warn("Nothing to export: no checked Object has a mask yet.")
             return
-        dlg = ExportDialog(default_export_dir(s.image_dir), self, check=lambda pattern: check_export(s.project, pattern),
-                           scene=self.scene, target=self.settings.export_target if self.scene else "custom")
+        project = s.project
+        dlg = ExportDialog(
+            default_export_dir(s.image_dir), self,
+            check=lambda pattern, ids=None: check_export(project, pattern, ids),
+            scene=self.scene, target=self.settings.export_target if self.scene else "custom",
+            sets=project.mask_sets,
+            save_set=lambda name: project.set_mask_set(name, [o.id for o in project.objects if o.included]),
+            delete_set=lambda name: project.set_mask_set(name, None),
+        )
         if dlg.exec() != ExportDialog.DialogCode.Accepted:
             if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
                 self.go_to(s.keys.index(dlg.goto))
@@ -2077,15 +2084,18 @@ class MainWindow(QMainWindow):
         p = dlg.preset()
         if p is not None:
             self.log(f"Export for {p.label}: {p.note}")
-        self.run_export(dlg.options())
+        self.run_export(dlg.jobs())
 
-    def run_export(self, options) -> None:
+    def run_export(self, jobs) -> None:
+        """Write one export or several (a list: the Final Mask and mask sets, each to its folder)."""
+        jobs = jobs if isinstance(jobs, list) else [jobs]
         self.save()
         self._busy = "Exporting…"
 
         def done(paths):
             self._busy = None
-            self.log(f"Exported {len(paths)} mask(s) to {options.out_dir}")
+            for opts, written in zip(jobs, paths):
+                self.log(f"Exported {len(written)} mask(s) to {opts.out_dir}")
             self.refresh()
 
         def failed(msg):
@@ -2093,7 +2103,7 @@ class MainWindow(QMainWindow):
             self.refresh()
             self.warn(f"Export failed: {msg}")
 
-        self._start(Task(lambda: self.session.export(options)), done, failed)
+        self._start(Task(lambda: [self.session.export(o) for o in jobs]), done, failed)
         self.refresh()
 
     def show_settings(self) -> None:

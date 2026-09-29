@@ -7,6 +7,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QInputDialog,
     QButtonGroup,
     QCheckBox,
     QGroupBox,
@@ -126,15 +127,20 @@ class ExportDialog(QDialog):
 
     For a COLMAP scene a trainer preset (docs/specs/07-export-presets.md) fixes the
     folder (the scene's masks/), the names and the colors; "Custom" leaves them free.
+    Mask: the Final Mask (the checked Objects) goes to the folder, a named mask set
+    to ``<folder>_<name>`` (masks_people/); "Every set" writes all of them.
     """
+
+    EVERY = "*"  # the Mask choice that writes the Final Mask and every set
 
     PATTERNS = (
         ("{stem}.png  (frame_001.png)", "{stem}.png"),
         ("{name}.png  (COLMAP: frame_001.jpg.png)", "{name}.png"),
     )
 
-    def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[[str], ExportCheck]] = None,
-                 scene=None, target: str = CUSTOM):
+    def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[..., ExportCheck]] = None,
+                 scene=None, target: str = CUSTOM, sets: Optional[dict] = None,
+                 save_set: Optional[Callable[[str], bool]] = None, delete_set: Optional[Callable[[str], None]] = None):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
         self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
@@ -151,6 +157,18 @@ class ExportDialog(QDialog):
         self.note = QLabel()
         self.note.setWordWrap(True)
         self.note.setStyleSheet("color: gray;")
+        self._sets = sets if sets is not None else {}
+        self._save_set, self._delete_set = save_set, delete_set
+        self.mask = QComboBox()
+        self.save_set_btn = QPushButton("Save Checked as Set…")
+        self.save_set_btn.setToolTip("The Objects checked now, under a name: exported to <folder>_<name>")
+        self.save_set_btn.clicked.connect(self._new_set)
+        self.delete_set_btn = QPushButton("Delete Set")
+        self.delete_set_btn.clicked.connect(self._remove_set)
+        self.folders = QLabel()
+        self.folders.setWordWrap(True)
+        self.folders.setStyleSheet("color: gray;")
+        self._fill_sets()
         self.out = QLineEdit(str(default_dir))
         self.pattern = QComboBox()
         for label, _ in self.PATTERNS:
@@ -172,7 +190,14 @@ class ExportDialog(QDialog):
         if check is not None:
             form.addRow(self.summary)
             form.addRow(self.problems)
+        if save_set is not None:
+            row = QHBoxLayout()
+            row.addWidget(self.mask, 1)
+            row.addWidget(self.save_set_btn)
+            row.addWidget(self.delete_set_btn)
+            form.addRow("Mask", row)
         form.addRow("Folder", _path_row(self.out, self._pick))
+        form.addRow(self.folders)
         form.addRow("File names", self.pattern)
         form.addRow(self.invert)
         form.addRow(self.empty)
@@ -184,7 +209,59 @@ class ExportDialog(QDialog):
         self.pattern.currentIndexChanged.connect(self._run_check)
         self.empty.toggled.connect(self._run_check)
         self.target.currentIndexChanged.connect(self._apply_target)
+        self.mask.currentIndexChanged.connect(self._run_check)
+        self.out.textChanged.connect(lambda _t: self._show_folders())
         self._apply_target()
+
+    # --- mask sets -------------------------------------------------------------------------
+
+    def _fill_sets(self, select: Optional[str] = None) -> None:
+        self.mask.blockSignals(True)
+        self.mask.clear()
+        self.mask.addItem("Final Mask (the checked Objects)", None)
+        for name, ids in sorted(self._sets.items()):
+            self.mask.addItem(f"{name} ({len(ids)} Object{'s' if len(ids) != 1 else ''})", name)
+        if self._sets:
+            self.mask.addItem("Every set, one folder each (and the Final Mask)", self.EVERY)
+        i = self.mask.findData(select) if select is not None else 0
+        self.mask.setCurrentIndex(max(0, i))
+        self.mask.blockSignals(False)
+
+    def _new_set(self) -> None:
+        name, ok = QInputDialog.getText(self, "Save Mask Set", "Name (the folder becomes <folder>_<name>):")
+        name = name.strip()
+        if ok and name and name != self.EVERY and self._save_set is not None and self._save_set(name):
+            self._fill_sets(select=name)
+            self._run_check()
+
+    def _remove_set(self) -> None:
+        name = self.mask.currentData()
+        if name not in (None, self.EVERY) and self._delete_set is not None:
+            self._delete_set(name)
+            self._fill_sets()
+            self._run_check()
+
+    def _chosen(self) -> List[Optional[str]]:
+        """The masks to write: None = the Final Mask, else set names."""
+        v = self.mask.currentData()
+        return [None] + sorted(self._sets) if v == self.EVERY else [v]
+
+    def _folder(self, name: Optional[str]) -> Path:
+        base = Path(self.out.text().strip())
+        return base if name is None else base.parent / f"{base.name}_{name}"
+
+    def _show_folders(self) -> None:
+        chosen = self._chosen()
+        self.delete_set_btn.setEnabled(self.mask.currentData() not in (None, self.EVERY))
+        if chosen == [None]:
+            self.folders.setText("")
+        else:
+            text = "Writes: " + " · ".join(f"{n or 'Final'} → {self._folder(n).name}/" for n in chosen)
+            p = self.preset()
+            if p is not None and any(n is not None for n in chosen):
+                text += (f" — {p.label} reads {p.folder}/ only: to train with a set, rename its folder"
+                         f" to {p.folder}/ (or pick the set's Objects and export the Final Mask)")
+            self.folders.setText(text)
 
     def preset(self):
         return preset(self.target.currentData())
@@ -210,9 +287,12 @@ class ExportDialog(QDialog):
         self._run_check()
 
     def _run_check(self) -> None:
+        self._show_folders()
         if self._check is None:
             return
-        c = self._check(self.PATTERNS[self.pattern.currentIndex()][1])
+        name = self._chosen()[0] if len(self._chosen()) == 1 else None  # Every set: the Final Mask's check
+        pattern = self.PATTERNS[self.pattern.currentIndex()][1]
+        c = self._check(pattern) if name is None else self._check(pattern, list(self._sets[name]))
         self.check_result = c
 
         def line(ok: bool, text: str) -> str:
@@ -276,14 +356,22 @@ class ExportDialog(QDialog):
         if d:
             self.out.setText(d)
 
+    def jobs(self) -> List[ExportOptions]:
+        """One export per chosen mask (the Final Mask and / or mask sets), each in its own folder."""
+        return [
+            ExportOptions(
+                out_dir=self._folder(name),
+                name_pattern=self.PATTERNS[self.pattern.currentIndex()][1],
+                invert=self.invert.isChecked(),
+                include_empty=self.empty.isChecked(),
+                backup=self.preset() is not None,
+                object_ids=None if name is None else list(self._sets[name]),
+            )
+            for name in self._chosen()
+        ]
+
     def options(self) -> ExportOptions:
-        return ExportOptions(
-            out_dir=Path(self.out.text().strip()),
-            name_pattern=self.PATTERNS[self.pattern.currentIndex()][1],
-            invert=self.invert.isChecked(),
-            include_empty=self.empty.isChecked(),
-            backup=self.preset() is not None,
-        )
+        return self.jobs()[0]
 
 
 # Every keyboard / mouse shortcut, by area (kept here so the Help window and the code agree).
