@@ -896,3 +896,47 @@ def test_export_outside_a_scene_has_no_trainer_choice(qapp, win, tmp_path):
 
     dlg = ExportDialog(tmp_path / "out", win)
     assert dlg.target.count() == 1 and dlg.preset() is None and dlg.out.isEnabled()
+
+
+# --- p25: mask sets, one folder each ------------------------------------------------------
+
+
+def test_mask_sets_are_saved_undone_and_exported_to_their_folders(qapp, win, tmp_path):
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+
+    from src.app.dialogs import ExportDialog
+    from src.core.storage import ProjectStore, check_export
+
+    ids = make_objects(win, 2)
+    s = win.session
+    p = s.project
+    k = s.key
+    assert p.set_mask_set("people", [ids[0]]) and p.mask_sets == {"people": (ids[0],)}
+    win.undo()
+    assert p.mask_sets == {}
+    win.redo()
+    win.save(force=True)
+    again = ProjectStore(s.image_dir, s.max_side).load(list(s.keys))
+    assert again.mask_sets == {"people": (ids[0],)}
+    base = tmp_path / "out"
+    dlg = ExportDialog(base, win, check=lambda pat, ids=None: check_export(p, pat, ids), sets=p.mask_sets,
+                       save_set=lambda n: p.set_mask_set(n, [o.id for o in p.objects if o.included]),
+                       delete_set=lambda n: p.set_mask_set(n, None))
+    dlg.mask.setCurrentIndex(dlg.mask.findData("people"))
+    [job] = dlg.jobs()
+    assert job.out_dir == tmp_path / "out_people" and job.object_ids == [ids[0]]
+    assert "out_people/" in dlg.folders.text() and dlg.delete_set_btn.isEnabled()
+    dlg.mask.setCurrentIndex(dlg.mask.findData(ExportDialog.EVERY))
+    jobs = dlg.jobs()
+    assert [j.out_dir for j in jobs] == [base, tmp_path / "out_people"] and jobs[0].object_ids is None
+    for j in jobs:
+        s.export(j)
+    one = cv2.imread(str(tmp_path / "out_people" / f"{Path(k).stem}.png"), cv2.IMREAD_GRAYSCALE) > 0
+    both = cv2.imread(str(base / f"{Path(k).stem}.png"), cv2.IMREAD_GRAYSCALE) > 0
+    assert one.sum() < both.sum() and np.array_equal(one & both, one)  # the set holds one of the two Objects
+    dlg.mask.setCurrentIndex(dlg.mask.findData("people"))
+    dlg._remove_set()
+    assert p.mask_sets == {} and dlg.mask.count() == 1

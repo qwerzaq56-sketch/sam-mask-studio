@@ -229,6 +229,8 @@ class Project:
         self.objects: List[MaskObject] = []
         self.next_id: int = 1
         self.label_counts: Dict[str, int] = {}
+        # named mask sets for export (docs/specs/06-colmap.md 4): name -> Object ids; the Final Mask is the unnamed one
+        self.mask_sets: Dict[str, Tuple[int, ...]] = {}
         self.revision: int = 0
         self._undo: List[tuple] = []
         self._redo: List[tuple] = []
@@ -242,12 +244,13 @@ class Project:
     def _state(self) -> tuple:
         # MaskObject is frozen and its frames dict is never mutated in place,
         # so a shallow tuple is a complete snapshot.
-        return (tuple(self.objects), self.next_id, dict(self.label_counts))
+        return (tuple(self.objects), self.next_id, dict(self.label_counts), dict(self.mask_sets))
 
     def _restore(self, state: tuple) -> None:
-        objects, self.next_id, labels = state
+        objects, self.next_id, labels, sets = state
         self.objects = list(objects)
         self.label_counts = dict(labels)
+        self.mask_sets = dict(sets)
         self.revision += 1
 
     def _checkpoint(self) -> None:
@@ -305,15 +308,23 @@ class Project:
     def _replace(self, obj: MaskObject) -> None:
         self.objects[self._index(obj.id)] = obj
 
-    def final_mask(self, key: str) -> Optional[np.ndarray]:
-        """Union of the included Objects' masks on image *key*."""
-        return union(o.mask(key) for o in self.objects if o.included)
+    def final_mask(self, key: str, ids: Optional[Iterable[int]] = None) -> Optional[np.ndarray]:
+        """Union of the included Objects' masks on image *key* (*ids*: those Objects instead, a mask set)."""
+        use = self._members(ids)
+        return union(o.mask(key) for o in self.objects if use(o))
 
-    def keys_with_masks(self, included_only: bool = True) -> List[str]:
-        """Image keys (in sequence order) where at least one Object has a mask."""
+    def _members(self, ids: Optional[Iterable[int]]):
+        if ids is None:
+            return lambda o: o.included
+        wanted = set(ids)
+        return lambda o: o.id in wanted
+
+    def keys_with_masks(self, included_only: bool = True, ids: Optional[Iterable[int]] = None) -> List[str]:
+        """Image keys (in sequence order) where at least one Object has a mask (*ids*: of those Objects)."""
         present = set()
+        use = self._members(ids) if included_only or ids is not None else (lambda o: True)
         for o in self.objects:
-            if included_only and not o.included:
+            if not use(o):
                 continue
             present.update(k for k, fs in o.frames.items() if fs.mask is not None)
         return [k for k in self.image_keys if k in present]
@@ -385,6 +396,19 @@ class Project:
         for o in change:
             self._replace(dataclasses.replace(o, locked=locked))
         return [o.id for o in change]
+
+    def set_mask_set(self, name: str, ids: Optional[Iterable[int]]) -> bool:
+        """Save (*ids*) or delete (None) the mask set *name* — one undo step."""
+        name = name.strip()
+        new = tuple(sorted(set(ids))) if ids is not None else None
+        if not name or self.mask_sets.get(name) == new:
+            return False
+        self._checkpoint()
+        if new is None:
+            self.mask_sets.pop(name, None)
+        else:
+            self.mask_sets[name] = new
+        return True
 
     def rename(self, obj_id: int, name: str) -> None:
         obj = self.get(obj_id)

@@ -211,6 +211,7 @@ class ProjectStore:
             "max_side": self.max_side,
             "next_id": project.next_id,
             "label_counts": project.label_counts,
+            "mask_sets": {k: list(v) for k, v in project.mask_sets.items()},
             "objects": objects_json,
         }
         job.json_path = self.root / "project.json"
@@ -231,6 +232,7 @@ class ProjectStore:
         self.max_side = int(doc.get("max_side", self.max_side))
         project.next_id = int(doc.get("next_id", 1))
         project.label_counts = {k: int(v) for k, v in doc.get("label_counts", {}).items()}
+        project.mask_sets = {k: tuple(int(i) for i in v) for k, v in doc.get("mask_sets", {}).items()}
         known = set(image_keys)
         for oj in doc.get("objects", []):
             oid = int(oj["id"])
@@ -292,6 +294,7 @@ class ExportOptions:
     invert: bool = False  # True: object = black, background = white (keep-mask convention)
     include_empty: bool = False  # also write masks for images with no object
     backup: bool = False  # files about to be overwritten are moved to <folder>_backup_<time>/ first (a scene)
+    object_ids: Optional[List[int]] = None  # a mask set's Objects; None = the Final Mask (the checked ones)
 
 
 def backup_existing(out_dir: Path, names: List[str]) -> Optional[Path]:
@@ -317,7 +320,7 @@ def backup_existing(out_dir: Path, names: List[str]) -> Optional[Path]:
 def export_names(project: Project, options: "ExportOptions", keys: Optional[List[str]] = None) -> List[str]:
     """The file names an export writes, in order."""
     if keys is None:
-        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks()
+        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
     return [options.name_pattern.format(stem=Path(k).stem, name=k) for k in keys]
 
 
@@ -341,13 +344,14 @@ class ExportCheck:
     keys: List[str] = field(default_factory=list, repr=False)  # every image, in sequence order
 
 
-def check_export(project: Project, name_pattern: str = "{stem}.png") -> ExportCheck:
-    """Count the images with / without a Final Mask, empty masks, ⚠ / ✕ frames and file name clashes."""
+def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Optional[List[int]] = None) -> ExportCheck:
+    """Count the images with / without a Final Mask (*ids*: a mask set's), empty masks, ⚠ / ✕ frames
+    and file name clashes."""
     keys = list(project.image_keys)
     c = ExportCheck(images=len(keys), keys=keys)
     bad_status = (FrameStatus.WARNING, FrameStatus.FAILED)
     for key in keys:
-        m = project.final_mask(key)
+        m = project.final_mask(key, ids)
         if m is None:
             c.without_mask.append(key)
         elif not m.any():
@@ -355,7 +359,7 @@ def check_export(project: Project, name_pattern: str = "{stem}.png") -> ExportCh
         else:
             c.with_mask.append(key)
         if any(
-            o.included and (fs := o.frames.get(key)) is not None and fs.mask is not None and fs.status in bad_status
+            (o.included if ids is None else o.id in ids) and (fs := o.frames.get(key)) is not None and fs.mask is not None and fs.status in bad_status
             for o in project.objects
         ):
             c.warning.append(key)
@@ -376,13 +380,13 @@ def export_final_masks(
 ) -> List[Path]:
     """Write each image's Final Mask at its original resolution. Returns written paths."""
     if keys is None:
-        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks()
+        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
     if options.backup:
         backup_existing(options.out_dir, export_names(project, options, keys))
     written = []
     for i, key in enumerate(keys):
         h0, w0 = original_size(key)
-        m = project.final_mask(key)
+        m = project.final_mask(key, options.object_ids)
         if m is None:
             if not options.include_empty:
                 continue
