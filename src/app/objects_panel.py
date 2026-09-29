@@ -117,6 +117,9 @@ class ObjectsPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # the Objects selected last, kept when picking other frames takes their rows out of the list
+        # (many-frame work: Copy Mask / Clear Masks on Picked Frames)
+        self.last_selected: List[int] = []
         self._objects: List[MaskObject] = []
         self._editing: Optional[int] = None
         self._updating = False
@@ -406,7 +409,12 @@ class ObjectsPanel(QWidget):
         ]
         return list(self._order)
 
+    def _remember(self, ids: Sequence[int]) -> None:
+        if ids:  # an empty selection (the rows left the list) does not forget it
+            self.last_selected = list(ids)
+
     def select_ids(self, ids: Sequence[int]) -> None:
+        self._remember(ids)
         wanted = set(ids)
         self._order = list(dict.fromkeys(ids))
         self.tree.blockSignals(True)
@@ -454,6 +462,7 @@ class ObjectsPanel(QWidget):
             later(self, self.renamed, oid, item.text(0))
 
     def _on_selection(self) -> None:
+        self._remember(self.selected_ids())
         self._update_buttons()
         later(self, self.selection_changed, self.selected_ids())
 

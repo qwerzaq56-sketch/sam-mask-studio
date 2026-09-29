@@ -345,6 +345,20 @@ class MainWindow(QMainWindow):
             "Move / Copy (Options)…", lambda: self.transfer_options(self.objects_panel._pair()),
             tip="Move or Copy · Add / Replace · this image / every image",
         )
+        # many frames at once: the selected Objects on the frames picked in the Frame List (no key: ux-principles 7)
+        self.act_clear_frames = self._action(
+            "Clear Masks on Picked Frames", self.clear_picked_frames,
+            tip="Empty the selected Objects' masks on the frames picked in the Frame List (Shift/Ctrl-click)",
+        )
+        self.act_stamp = self._action(
+            "Copy Mask to Picked Frames", lambda: self.stamp_picked_frames(),
+            tip="The selected Objects' mask on the reference ◎ (else this image), added to their masks "
+                "on the frames picked in the Frame List",
+        )
+        self.act_stamp_options = self._action(
+            "Copy Mask to Picked Frames (Options)…", self.stamp_options,
+            tip="Add to the masks there, or Replace them",
+        )
         self.act_merge = self._action(
             "Merge", lambda: self.merge(self.objects_panel.selected_ids()),
             tip="Fuse the selected Objects into one (the union)",
@@ -459,7 +473,7 @@ class MainWindow(QMainWindow):
         objects = m.addMenu("Objects")
         for a in (self.act_duplicate, self.act_duplicate_all, None, self.act_move, self.act_transfer_options,
                   self.act_merge, self.act_merge_options, None, self.act_lock, self.act_lock_all,
-                  self.act_unlock_all):
+                  self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames):
             objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
         for a in (self.act_final, self.act_preview_mode):
@@ -586,6 +600,10 @@ class MainWindow(QMainWindow):
         pp.cancel_requested.connect(lambda: self.stop_job(discard=True))
         pp.navigate_requested.connect(self.go_to)
         self.images_panel.navigate_requested.connect(self.go_to)
+        # right-click on the picked frames: what works on many frames at once
+        for view in (self.images_panel.list, self.images_panel.frame_list):
+            view.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+            view.addActions([self.act_stamp, self.act_stamp_options, self.act_clear_frames, self.act_exclude])
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1683,6 +1701,73 @@ class MainWindow(QMainWindow):
         )
         if picked is not None:
             self.transfer([a.id, b.id], move=picked[0] == 0, replace=picked[1] == 1, all_frames=picked[2] == 1)
+
+    # ------------------------------------------------------------------
+    # Many frames at once (the frames picked in the Frame List)
+    # ------------------------------------------------------------------
+
+    def _picked_rows(self) -> List[int]:
+        return self.images_panel.selected_rows() or ([self.session.index] if self.session.key else [])
+
+    def _many_frames_ready(self, what: str) -> Optional[List[int]]:
+        """The selected Object ids, or None (logged) when the work cannot start."""
+        s = self.session
+        if s.key is None or self._busy:
+            return None
+        if s.mode == Mode.EDIT:
+            self.log(f"Finish editing (Esc) before {what}")
+            return None
+        ids = self.objects_panel.selected_ids()
+        if not ids:  # the rows went out of the list as frames were picked: the Objects selected last
+            ids = [i for i in self.objects_panel.last_selected if s.project.get(i) is not None]
+        if not ids:
+            self.log(f"Select the Objects first, then {what}")
+            return None
+        return ids
+
+    def clear_picked_frames(self) -> None:
+        """Empty the selected Objects' masks on the picked frames (one undo step), to redo them."""
+        ids = self._many_frames_ready("clearing masks on the picked frames")
+        if ids is None:
+            return
+        rows = self._picked_rows()
+        gone = self.session.clear_frames(ids, rows)
+        self.log(f"Cleared {gone} mask(s) of {len(ids)} Object(s) on {len(rows)} frame(s) (Ctrl+Z undoes it)"
+                 if gone else "Nothing to clear: the selected Objects have no mask on the picked frames")
+        self.refresh()
+
+    def stamp_picked_frames(self, replace: bool = False) -> None:
+        """The selected Objects' mask on the reference ◎ (else this image), copied onto the other picked
+        frames (Add, or Replace). The reference, as in propagation: picking frames moves the open one."""
+        ids = self._many_frames_ready("copying a mask to the picked frames")
+        if ids is None:
+            return
+        s = self.session
+        src = self._reference if self._reference is not None else s.index
+        rows = [i for i in self._picked_rows() if i != src]
+        if not rows:
+            self.log(f"Pick the frames to copy to in the Frame List (Shift/Ctrl-click); "
+                     f"the mask comes from {s.keys[src]} (the reference ◎, else the open image)")
+            return
+        changed = s.stamp_frames(ids, src, rows, replace)
+        if changed:
+            n = len({k for ks in changed.values() for k in ks})
+            self.log(f"Copied the mask of {len(changed)} Object(s) on {s.keys[src]} to {n} frame(s) "
+                     f"({'Replace' if replace else 'Add'}; Ctrl+Z undoes it)")
+        else:
+            self.log(f"Nothing copied: the selected Objects have no mask on {s.keys[src]}")
+        self.refresh()
+
+    def stamp_options(self) -> None:
+        picked = self.choose(
+            "Copy Mask to Picked Frames",
+            "The selected Objects' mask on the reference ◎ (else the open image) goes to the frames "
+            "picked in the Frame List.",
+            [("Their masks there", ["Add: this mask is added (union)", "Replace: they become this mask"], 0)],
+            "Copy",
+        )
+        if picked is not None:
+            self.stamp_picked_frames(replace=picked[0] == 1)
 
     def undo(self) -> None:
         if not self._busy:

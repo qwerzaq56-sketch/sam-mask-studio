@@ -236,6 +236,16 @@
 - COLMAP 장면을 열며 마스크 폴더를 Object로 불러오면, 그 상태가 Undo의 시작점. 전에는 Ctrl+Z 한 번에 불러온 Object가 통째로 사라졌음.
 - File → Import Masks로 나중에 불러온 것은 전처럼 Undo 한 단계. 코드: `Project.forget_history`, `offer_masks(undoable=)`.
 
+### 34단계 · 여러 프레임에 걸친 Object 작업 (`v0.4-p34`, 피드백)
+- Frame List에서 고른 프레임(Shift / Ctrl-클릭)에 대해, 선택한 Object들로:
+  - **Copy Mask to Picked Frames**: 기준 ◎(없으면 열린 이미지)의 마스크를 고른 프레임에 복사. 기본은 **Add**(있던 마스크와 합침),
+    `(Options)…`에서 **Replace**. 복사된 프레임은 전파 결과와 같은 상태(★ 아님, 원래 ★였으면 Add에선 유지). 크기가 다른 이미지는 맞춰 늘림.
+  - **Clear Masks on Picked Frames**: 고른 프레임에서 그 Object들의 마스크를 비움(다시 작업하기 위해).
+- 둘 다 Undo 한 단계, 키 없음(메뉴 Edit → Objects, Frame List 우클릭). Edit 중에는 안 됨.
+- 프레임을 고르다 열린 이미지가 바뀌어 Object가 목록에서 빠져도, 마지막으로 선택한 Object가 대상(로그에 이름·개수 표시).
+- 잠금은 결정대로 삭제만 막으므로, 잠긴 Object의 마스크도 비워짐.
+- 코드: `Project.clear_frames`, `Session.stamp_frames / clear_frames`, `ObjectsPanel.last_selected`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
