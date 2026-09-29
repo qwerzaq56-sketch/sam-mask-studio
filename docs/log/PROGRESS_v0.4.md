@@ -182,6 +182,11 @@
 - 학습기는 `masks/`만 읽으므로, 세트로 학습하려면 폴더 이름을 `masks/`로 바꾸거나 그 Object만 체크해 Final로 내보내기(창에 안내).
 - 코드: `Project.mask_sets` / `set_mask_set`, `final_mask(key, ids)`, `ExportOptions.object_ids`, `ExportDialog.jobs()`.
 
+### 26단계 · Spirula, Postshot 프리셋 (`v0.4-p26`)
+- **Spirula Studio**: `images/` 옆 `masks/`를 그대로 씀(0 = 무시) → Brush·LichtFeld와 같은 파일. 있으면 Spirula가 AI 마스킹을 하지 않음.
+- **Postshot**: Remove Occluders가 **흰색 = 무시**(반대)라 `masks_postshot/`에 대상 = 흰색, `a.png`로 따로 씀. Postshot에서 Image Masks에
+  끌어다 놓고 Mask Mode = Remove Occluders. 파일 짝 규칙은 문서에 없어 실제로 확인 필요.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

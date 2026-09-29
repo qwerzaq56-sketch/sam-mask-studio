@@ -1,10 +1,10 @@
 """Export presets per 3DGS trainer (docs/specs/07-export-presets.md).
 
 The Objects in a Final Mask are what training should ignore (people, cars, the
-tripod), so every preset writes them black on white. COLMAP, Brush and
-LichtFeld Studio all read ``masks/<image name>.png`` (``a.jpg.png``) with black
-= ignored, so one layout serves them; the presets differ in the notes shown
-and the checks run. Rules verified against each project's source / README.
+tripod). COLMAP, Brush, LichtFeld Studio and Spirula all read
+``masks/<image name>.png`` (``a.jpg.png``) with black = ignored, so one layout
+serves them; those presets differ only in the notes shown and the checks run.
+Postshot ignores the white parts instead, so it gets its own folder. Rules verified against each project's source / README.
 """
 
 from __future__ import annotations
@@ -37,6 +37,22 @@ PRESETS: Tuple[Preset, ...] = (
         "lichtfeld", "LichtFeld Studio",
         note="In LichtFeld set Training > Mask Mode to Ignore (its default is None, which leaves masks unused).",
         verified="LichtFeld source: masks/ (also mask, segmentation), a.png or a.jpg.png; Ignore mode: black is ignored",
+    ),
+    Preset(
+        "spirula", "Spirula Studio",
+        note="Spirula uses the masks/ beside images/ as they are (0 = ignored, nonzero = trained); "
+             "it will not AI-mask over them.",
+        verified="Spirula source: DatasetParser mask_dir = masks, sfm/core/Mask.h (a.png or a.jpg.png, 0 = ignore)",
+    ),
+    Preset(
+        "postshot", "Postshot",
+        folder="masks_postshot",
+        pattern="{stem}.png",
+        object_black=False,
+        note="Postshot's Remove Occluders ignores the WHITE parts, the other way round from the rest, so these go "
+             "to their own folder: drop the files on the Image Set's Image Masks and set Mask Mode = Remove Occluders.",
+        verified="Postshot User Guide (Image Set > Mask Mode); how files pair with images is not documented — "
+                 "named like the images (a.png), check that they pair",
     ),
     Preset(
         "colmap", "COLMAP (feature extraction)",

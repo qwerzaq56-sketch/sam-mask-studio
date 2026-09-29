@@ -40,12 +40,13 @@
 | **COLMAP** (특징점 추출) | — | `--ImageReader.mask_path` | 검정 = 무시 | `a.jpg.png` | — | 확인됨(COLMAP 문서) |
 | **Brush** | COLMAP, nerfstudio | `masks/` 폴더(어느 깊이든), 또는 알파 채널(투명도를 결과에 맞춤) | **검정 = 무시, 흰색 = 학습**, `--invert-masks`로 반대 | `img.png`, `img.jpg.png`, `img.mask.*` | README에 없음 | **확인됨**(README, `brush-dataset` 소스, CHANGELOG) |
 | **LichtFeld Studio** | COLMAP(SPHERICAL = 360 지원) | `masks/`, `mask/`, `segmentation/`, `dynamic_masks/` 또는 RGBA 알파(`use_alpha_as_mask`) | Ignore 모드: **검정 = 무시**. Ignore+Segment: 128 미만 무시 / 128~250 segment / 250 초과 유지. `--invert-masks` | `img.png`·`.jpg`·`.mask.png` 또는 `img.jpg.png` | 360(SPHERICAL), 3DGUT로 왜곡 모델 | **확인됨**(소스 `filesystem_utils.hpp`, `parameters.hpp`, 테스트). **Mask Mode 기본값이 None**이라 학습 설정에서 Ignore를 켜야 함 |
-| **Spirula** | 자체 SfM, 360 / fisheye 직접 | 자체 AI 마스킹 | **확인 필요** | **확인 필요** | 직접 지원 | README에 규칙 없음 |
-| **Postshot** | COLMAP 등 | **확인 필요** | **확인 필요** | **확인 필요** | ? | 미확인 |
+| **Spirula Studio** | 자체 SfM 또는 COLMAP, 360 / fisheye 직접(내부에서 나눔) | `images/` 옆 `masks/`(이미지 폴더 구조를 따라감). 있으면 AI 마스킹을 하지 않고 그대로 씀 | **0 = 무시, 0 아님 = 학습**(에디터의 Flip으로 반대) | `a.png`, `a.jpg.png` 등 여러 규칙을 찾아봄 | 직접 지원 | **확인됨**(소스 `DatasetParser.h`, `sfm/core/Mask.h`, `docs/notes/mask-editor.md`) |
+| **Postshot** | COLMAP 등 | Image Set의 **Image Masks** 목록에 파일을 끌어다 놓음 | Remove Occluders: **흰색 = 무시**(반대!) / Remove Background: 검정 = 배경 | **문서에 없음** → 이미지와 같은 이름(`a.png`)으로 쓰고 짝이 맞는지 확인 필요 | ? | 모드·흑백은 확인(User Guide), 파일 짝 규칙은 미확인 |
 | gsplat | COLMAP | 예제 파서에 마스크 없음(확인 필요) | — | — | fisheye 일부 | 나중 |
 
-- **결론: `masks/<이미지 이름>.png`(예: `a.jpg.png`)에 대상 = 검정, 나머지 = 흰색으로 쓰면 COLMAP, Brush, LichtFeld가 모두 그대로 읽는다.**
-  세 프리셋은 파일이 같고, 안내 문구(LichtFeld: Mask Mode = Ignore)와 검사만 다르다.
+- **결론: `masks/<이미지 이름>.png`(예: `a.jpg.png`)에 대상 = 검정, 나머지 = 흰색으로 쓰면 COLMAP, Brush, LichtFeld, Spirula가 모두 그대로 읽는다.**
+  이 네 프리셋은 파일이 같고, 안내 문구(LichtFeld: Mask Mode = Ignore)와 검사만 다르다.
+- **Postshot만 흑백이 반대**(Remove Occluders = 흰색 무시)라 `masks_postshot/`에 대상 = 흰색, `a.png`로 따로 쓴다(`masks/`를 덮어쓰지 않게).
 - "확인 필요"는 **작은 테스트 장면으로 직접 넣어 보고** 채운다. 추측으로 기본값을 정하지 않는다.
 - 규칙이 확인 안 된 학습기는 프리셋에 "미확인" 표시를 하고, 흑백·이름을 사용자가 고르게 둔다.
 
@@ -154,8 +155,10 @@ PRESETS = {
 
 ## 12. 구현 기록
 
+- `v0.4-p26`: Spirula Studio(`masks/`, 다른 학습기와 같은 파일), Postshot(`masks_postshot/`, 대상 흰색, `a.png`) 프리셋.
+
 - `v0.4-p24`: Export 창의 **For**(Brush / LichtFeld Studio / COLMAP / Custom, 장면일 때만). 프리셋은 폴더(장면의 `masks/`)·이름(`{name}.png`)·
   색(대상 검정)·모든 이미지 쓰기를 정하고(회색으로 표시), 덮어쓸 파일은 `masks_backup_<시각>/`으로 먼저 옮김. 검사에 카메라 모델 줄,
   백업될 파일 수. 마지막으로 고른 학습기를 기억. 코드: `src/core/presets.py`, `storage.backup_existing`.
 
-출처: [Brush README](https://github.com/ArthurBrussee/brush) · LichtFeld 소스(`src/io/include/io/filesystem_utils.hpp`, `src/core/include/core/parameters.hpp`, `tests/test_mask_loss.cpp`) · [LichtFeld Studio v0.5.3](https://lichtfeld.io/blog/release-lichtfeld-studio-v0-5-3/) · [LichtFeld 360 plugin](https://github.com/alexmgee/lichtfeld-360-plugin) · [Spirula Studio](https://github.com/harry7557558/spirula-studio) · [COLMAP cameras](https://github.com/colmap/colmap/blob/main/doc/cameras.rst)
+출처: [Brush README](https://github.com/ArthurBrussee/brush) · LichtFeld 소스(`src/io/include/io/filesystem_utils.hpp`, `src/core/include/core/parameters.hpp`, `tests/test_mask_loss.cpp`) · [LichtFeld Studio v0.5.3](https://lichtfeld.io/blog/release-lichtfeld-studio-v0-5-3/) · [LichtFeld 360 plugin](https://github.com/alexmgee/lichtfeld-360-plugin) · [Spirula Studio](https://github.com/harry7557558/spirula-studio)(소스 `src/data/DatasetParser.h`, `src/sfm/core/Mask.h`) · [Postshot User Guide: Image Set](https://www.jawset.com/docs/d/Postshot+User+Guide/Interface/Scene+Tree/Image+Set) · [COLMAP cameras](https://github.com/colmap/colmap/blob/main/doc/cameras.rst)
