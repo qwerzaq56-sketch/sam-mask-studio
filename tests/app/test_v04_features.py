@@ -940,3 +940,23 @@ def test_mask_sets_are_saved_undone_and_exported_to_their_folders(qapp, win, tmp
     dlg.mask.setCurrentIndex(dlg.mask.findData("people"))
     dlg._remove_set()
     assert p.mask_sets == {} and dlg.mask.count() == 1
+
+
+# --- p26: Spirula and Postshot presets ------------------------------------------------------
+
+
+def test_spirula_shares_masks_postshot_gets_its_own_white_folder(qapp, win, tmp_path):
+    from src.app.dialogs import ExportDialog
+    from src.core.presets import preset
+    from tests.unit.test_colmap import make_scene
+
+    sp, ps, br = preset("spirula"), preset("postshot"), preset("brush")
+    assert (sp.folder, sp.pattern, sp.object_black) == (br.folder, br.pattern, br.object_black)
+    assert ps.folder == "masks_postshot" and not ps.object_black and ps.pattern == "{stem}.png"
+    root = make_scene(tmp_path / "scene", n=2)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="postshot")
+    o = dlg.options()
+    assert o.out_dir == root / "masks_postshot" and not o.invert and o.name_pattern == "{stem}.png"
+    assert "Remove Occluders" in dlg.note.text()
