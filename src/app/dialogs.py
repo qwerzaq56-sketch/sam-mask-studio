@@ -231,12 +231,14 @@ SHORTCUTS = (
         ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
         ("N", "New Object from points"),
         ("E", "Points: edit the selected Object with SAM2 points / finish editing"),
-        ("Delete", "Delete the selected point, else the selected Objects"),
+        ("Delete", "Delete the selected point, else the selected Objects (no question: Ctrl+Z; 🔒 locked ones stay)"),
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
         ("Enter", "Auto tool: Apply & Continue (Fill: all, Paint: the picks)"),
         ("The active auto tool again", "Leave it, dropping its result (like Esc)"),
-        ("Objects buttons / Edit > Objects", "Duplicate: this image's mask · Duplicate All: every linked mask · "
-                                             "Copy A → B: Replace / Add · Merge: Add / Override with A / B"),
+        ("Ctrl+D, mouse over Objects", "Duplicate the selected Objects (this image's mask)"),
+        ("Ctrl+Shift+D, mouse over Objects", "Duplicate All (every linked mask)"),
+        ("Objects buttons / Edit > Objects", "Copy A → B: the first selected added into the last, this image · "
+                                             "Merge: Add · ⚙ next to them: the options · 🔒: cannot be deleted"),
     )),
     ("Images", (
         ("Right / PgDown", "Next image (not while editing)"),

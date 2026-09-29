@@ -635,9 +635,16 @@ class Session:
     # Object operations
     # ------------------------------------------------------------------
 
-    def delete_objects(self, ids: Iterable[int]) -> None:
-        self.project.remove_objects(ids)
+    def delete_objects(self, ids: Iterable[int]) -> List[int]:
+        """Delete the Objects that are not locked; returns the ids deleted."""
+        gone = self.project.remove_objects(list(ids))
         self.sync()
+        return gone
+
+    def set_locked(self, ids: Iterable[int], locked: bool) -> List[int]:
+        changed = self.project.set_locked(ids, locked)
+        self.sync()
+        return changed
 
     def merge(self, ids: Sequence[int], how: str = "add") -> Optional[int]:
         """``add``: union per image · ``override``: the first id's mask wins where both have one."""

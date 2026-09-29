@@ -172,6 +172,7 @@ class ProjectStore:
                     "source": o.source.value,
                     "color": list(o.color),
                     "included": o.included,
+                    "locked": o.locked,
                     "frames": frames_json,
                 }
             )
@@ -257,6 +258,7 @@ class ProjectStore:
                     color=tuple(oj.get("color", (230, 25, 75))),
                     included=bool(oj.get("included", True)),
                     frames=frames,
+                    locked=bool(oj.get("locked", False)),
                 )
             )
         self._saved_revision = project.revision

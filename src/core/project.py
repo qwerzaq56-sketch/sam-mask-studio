@@ -176,6 +176,7 @@ class MaskObject:
     color: Tuple[int, int, int]
     included: bool = True  # part of the Final Mask
     frames: Dict[str, FrameState] = field(default_factory=dict)
+    locked: bool = False  # 🔒: never deleted (Delete, Merge skip / refuse it)
 
     def frame(self, key: str) -> Optional[FrameState]:
         return self.frames.get(key)
@@ -364,12 +365,25 @@ class Project:
             ids.append(obj.id)
         return ids
 
-    def remove_objects(self, obj_ids: Iterable[int]) -> None:
-        ids = set(obj_ids)
+    def remove_objects(self, obj_ids: Iterable[int]) -> List[int]:
+        """Remove the Objects (locked ones stay); returns the ids removed."""
+        obj_ids = list(obj_ids)
+        ids = {o.id for o in self.objects if o.id in set(obj_ids) and not o.locked}
         if not ids:
-            return
+            return []
         self._checkpoint()
         self.objects = [o for o in self.objects if o.id not in ids]
+        return [i for i in obj_ids if i in ids]
+
+    def set_locked(self, obj_ids: Iterable[int], locked: bool) -> List[int]:
+        """Lock / unlock Objects (one undo step); returns the ids that changed."""
+        change = [o for o in self.objects if o.id in set(obj_ids) and o.locked != locked]
+        if not change:
+            return []
+        self._checkpoint()
+        for o in change:
+            self._replace(dataclasses.replace(o, locked=locked))
+        return [o.id for o in change]
 
     def rename(self, obj_id: int, name: str) -> None:
         obj = self.get(obj_id)
@@ -447,6 +461,13 @@ class Project:
 
     MERGE_ADD = "add"  # every image: the union of the masks there
     MERGE_OVERRIDE = "override"  # every image: the mask of the first id in the order that has one
+    MERGE_INTO = "into"  # the first id gets the union; the others stay, emptied (not removed)
+
+    def merge_blocked(self, obj_ids: Sequence[int], how: str = MERGE_ADD) -> List[MaskObject]:
+        """The locked Objects a merge would remove or empty (all but the first for ``into``)."""
+        order = [o for o in (self.get(i) for i in dict.fromkeys(obj_ids)) if o is not None]
+        gone = order[1:] if how == self.MERGE_INTO else order
+        return [o for o in gone if o.locked]
 
     def merge(self, obj_ids: Sequence[int], name: Optional[str] = None, how: str = MERGE_ADD) -> Optional[int]:
         """Fuse two or more Objects frame by frame into one new Object.
@@ -457,9 +478,12 @@ class Project:
         its prompts), so the earlier Objects win where they overlap. The
         originals are removed. It is named after the first id in *obj_ids*
         (the first one the user picked, or the winner of an override).
+        ``into``: the union goes into the first Object itself (its id, name
+        and lock stay); the others are kept with no masks. Nothing happens
+        when a locked Object would be removed or emptied.
         """
         chosen = [o for o in self.objects if o.id in set(obj_ids)]
-        if len(chosen) < 2:
+        if len(chosen) < 2 or self.merge_blocked(obj_ids, how):
             return None
         order = [o for o in (self.get(i) for i in dict.fromkeys(obj_ids)) if o is not None]
         self._checkpoint()
@@ -473,6 +497,11 @@ class Project:
             if fs is not None:
                 frames[k] = fs
         first = order[0]
+        if how == self.MERGE_INTO:
+            self._replace(dataclasses.replace(first, frames=frames))
+            for o in order[1:]:
+                self._replace(dataclasses.replace(o, frames={}))
+            return first.id
         merged = self._alloc(name or first.name, Source.MERGED, frames)
         merged = dataclasses.replace(merged, included=any(o.included for o in chosen))
         at = min(self._index(o.id) for o in chosen)

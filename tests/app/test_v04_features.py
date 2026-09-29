@@ -381,8 +381,8 @@ def test_copy_a_into_b_add_or_replace(qapp, win):
     assert B.frame(k[2]).status.value == "propagated"  # the frame is copied as it is
     assert k[3] in B.frames  # where A has no mask, B keeps its own
     win.undo()
-    win.choose = lambda title, text, groups, ok="OK": [1, 1, 0]  # B -> A, Replace, this image
-    win.copy_into([a, b])
+    win.choose = lambda title, text, groups, ok="OK": [1, 0]  # ⚙ (p17): Replace, this image
+    win.copy_options([b, a])  # b selected first: b -> a
     assert np.array_equal(p.get(a).mask(k[0]), B0)
 
 
@@ -403,13 +403,16 @@ def test_merge_add_or_override(qapp, win):
     m = p.objects[0]
     assert m.name == "B #1" and np.array_equal(m.mask(k[0]), B0)
     win.undo()
-    win.choose = lambda title, text, groups, ok="OK": [0]  # the dialog: Add
-    win.merge([a, b])
+    win.merge([a, b])  # the button (p17): Add at once
     m = p.objects[0]
     assert m.name == "A #1" and np.array_equal(m.mask(k[0]), A0 | B0) and len(p.objects) == 1
     win.undo()
+    win.choose = lambda title, text, groups, ok="OK": [2]  # ⚙: Override with B
+    win.merge_options([a, b])
+    assert p.objects[0].name == "B #1" and len(p.objects) == 1
+    win.undo()
     win.choose = lambda *a, **kw: None  # cancelled: nothing happens
-    win.merge([a, b])
+    win.merge_options([a, b])
     assert len(p.objects) == 2
 
 
@@ -591,3 +594,97 @@ def test_edit_starts_with_the_brush(qapp, win):
     assert win.act_brush.isChecked() and win.canvas.brush_mode
     win.edit_key()  # E again: done
     assert win.session.editing is None and not win.act_brush.isChecked()
+
+
+# --- p17: Objects panel (lock, no delete question, Copy / Merge at once, Ctrl+D) --------
+
+
+def test_delete_asks_nothing_and_locked_objects_stay(qapp, win):
+    ids = make_objects(win, 3)
+    s = win.session
+    p = s.project
+    win.ask = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("no question"))
+    win.set_locked([ids[0]], True)
+    assert p.get(ids[0]).locked
+    op = win.objects_panel
+    settle(qapp)
+    assert not op.tree.findChild(type(op.merge_btn), f"delete_{ids[0]}").isEnabled()
+    win.delete_objects(ids[:2])
+    assert [o.id for o in p.objects] == [ids[0], ids[2]]  # the locked one stays
+    win.undo()
+    assert len(p.objects) == 3
+    win.undo()  # the lock is one undo step too
+    assert not p.get(ids[0]).locked
+    win.set_locked(ids, True)
+    assert op.unlock_all_btn.isEnabled() and not op.lock_all_btn.isEnabled()
+    win.toggle_lock(ids)  # all locked: unlock
+    assert not any(o.locked for o in p.objects)
+
+
+def test_lock_is_saved(qapp, win):
+    from src.core.storage import ProjectStore
+
+    ids = make_objects(win, 2)
+    win.set_locked([ids[1]], True)
+    win.save(force=True)
+    s = win.session
+    again = ProjectStore(s.image_dir, s.max_side).load(list(s.keys))
+    assert [o.locked for o in again.objects] == [False, True]
+
+
+def test_merge_into_first_keeps_the_others_empty_and_respects_locks(qapp, win):
+    import numpy as np
+
+    a, b = _two_linked(win)
+    p = win.session.project
+    k = win.session.keys
+    A0, B0 = p.get(a).mask(k[0]).copy(), p.get(b).mask(k[0]).copy()
+    win.merge([a, b], "into")
+    assert [o.id for o in p.objects] == [a, b]  # nothing removed, no new Object
+    assert np.array_equal(p.get(a).mask(k[0]), A0 | B0) and not p.get(b).frames
+    win.undo()
+    win.set_locked([b], True)
+    win.merge([a, b])  # Add would remove the locked B: refused
+    assert [o.id for o in p.objects] == [a, b] and p.get(b).frames
+    win.merge([b, a], "into")  # B locked but first: it only gains
+    assert np.array_equal(p.get(b).mask(k[0]), A0 | B0) and not p.get(a).frames
+
+
+def test_copy_is_first_into_last_add_this_image(qapp, win):
+    import numpy as np
+
+    a, b = _two_linked(win)
+    p = win.session.project
+    k = win.session.keys
+    c = make_objects(win, 1)[0]
+    A0 = p.get(a).mask(k[0]).copy()
+    op = win.objects_panel
+    op.select_ids([a, c, b])
+    assert op._pair() == [a, b] and op.copy_btn.isEnabled()
+    op.copy_btn.click()
+    settle(qapp)
+    assert (p.get(b).mask(k[0]) >= A0).all() and k[2] not in p.get(b).frames  # Add, this image only
+
+
+def test_ctrl_d_over_the_objects_panel(qapp, win):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    ids = make_objects(win, 1)
+    p = win.session.project
+    win.activateWindow()
+    qapp.processEvents()
+    win.objects_panel.select_ids(ids)
+
+    def ctrl_d(over, shift=False):
+        win._over_objects_panel = lambda: over
+        mods = Qt.KeyboardModifier.ControlModifier | (Qt.KeyboardModifier.ShiftModifier if shift else
+                                                     Qt.KeyboardModifier.NoModifier)
+        o = QKeyEvent(QEvent.Type.ShortcutOverride, Qt.Key.Key_D, mods)
+        k = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_D, mods)
+        return win.eventFilter(win.canvas, o) and win.eventFilter(win.canvas, k)
+
+    assert not ctrl_d(False) and len(p.objects) == 1  # elsewhere: nothing
+    assert ctrl_d(True) and len(p.objects) == 2
+    win.objects_panel.select_ids(ids)
+    assert ctrl_d(True, shift=True) and len(p.objects) == 3

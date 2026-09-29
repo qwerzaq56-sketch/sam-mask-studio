@@ -310,22 +310,41 @@ class MainWindow(QMainWindow):
                                        "Leave the tool (drops an auto tool's result), then finish editing")
         self.act_pick_all = self._action("Auto Tool: Pick All / None", self.a_key, ["A"],
                                          "Fill mode -> Paint mode with everything picked; Paint mode: all / none")
+        # Ctrl+D / Ctrl+Shift+D only with the mouse over the Objects panel (eventFilter): shown, not bound
         self.act_duplicate = self._action(
-            "Duplicate (this image)", lambda: self.duplicate(self.objects_panel.selected_ids()),
-            tip="Copy the selected Objects' mask on this image only",
+            "Duplicate (this image)\tCtrl+D", lambda: self.duplicate(self.objects_panel.selected_ids()),
+            tip="Copy the selected Objects' mask on this image only (Ctrl+D with the mouse over Objects)",
         )
         self.act_duplicate_all = self._action(
-            "Duplicate All (every linked mask)",
+            "Duplicate All (every linked mask)\tCtrl+Shift+D",
             lambda: self.duplicate(self.objects_panel.selected_ids(), all_frames=True),
-            tip="Copy the selected Objects with their masks on every image",
+            tip="Copy the selected Objects with their masks on every image (Ctrl+Shift+D with the mouse over Objects)",
         )
         self.act_copy_into = self._action(
-            "Copy A → B…", lambda: self.copy_into(self.objects_panel.selected_ids()),
-            tip="Copy the first selected Object into the second: Replace or Add",
+            "Copy A → B", lambda: self.copy_into(self.objects_panel._pair()),
+            tip="Add the first selected Object's mask on this image to the last selected",
+        )
+        self.act_copy_options = self._action(
+            "Copy A → B (Options)…", lambda: self.copy_options(self.objects_panel._pair()),
+            tip="Add / Replace, this image / every image",
         )
         self.act_merge = self._action(
-            "Merge…", lambda: self.merge(self.objects_panel.selected_ids()),
-            tip="Fuse the selected Objects: Add (union) or Override with one of them",
+            "Merge", lambda: self.merge(self.objects_panel.selected_ids()),
+            tip="Fuse the selected Objects into one (the union)",
+        )
+        self.act_merge_options = self._action(
+            "Merge (Options)…", lambda: self.merge_options(self.objects_panel.selected_ids()),
+            tip="Add, Override with A / B, or into A keeping the others (emptied)",
+        )
+        self.act_lock = self._action(
+            "Lock / Unlock", lambda: self.toggle_lock(self.objects_panel.selected_ids()),
+            tip="Locked Objects cannot be deleted",
+        )
+        self.act_lock_all = self._action(
+            "Lock All", lambda: self.set_locked([o.id for o in self.session.project.objects], True)
+        )
+        self.act_unlock_all = self._action(
+            "Unlock All", lambda: self.set_locked([o.id for o in self.session.project.objects], False)
         )
 
         # --- View / tool toggles: used all the time, also on the toolbar ------------------
@@ -403,8 +422,10 @@ class MainWindow(QMainWindow):
         self._hint(tools, "Auto Tool: Apply && Continue", "Enter", self.reapply_tool)
         self._hint(tools, "Leave the Active Auto Tool", "its button again")
         objects = m.addMenu("Objects")
-        for a in (self.act_duplicate, self.act_duplicate_all, self.act_copy_into, self.act_merge):
-            objects.addAction(a)
+        for a in (self.act_duplicate, self.act_duplicate_all, None, self.act_copy_into, self.act_copy_options,
+                  self.act_merge, self.act_merge_options, None, self.act_lock, self.act_lock_all,
+                  self.act_unlock_all):
+            objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
         for a in (self.act_final, self.act_preview_mode):
             m.addAction(a)
@@ -473,9 +494,12 @@ class MainWindow(QMainWindow):
         o.edit_requested.connect(self.toggle_edit)
         o.new_requested.connect(self.new_object)
         o.merge_requested.connect(self.merge)
+        o.merge_options_requested.connect(self.merge_options)
         o.duplicate_requested.connect(self.duplicate)
         o.duplicate_all_requested.connect(lambda ids: self.duplicate(ids, all_frames=True))
         o.copy_requested.connect(self.copy_into)
+        o.copy_options_requested.connect(self.copy_options)
+        o.lock_requested.connect(self.set_locked)
         o.delete_requested.connect(self.delete_objects)
         o.remove_frame_requested.connect(lambda oid: self._do(lambda: self.session.remove_frame(oid)))
         o.variant_selected.connect(lambda oid, i: self._do(lambda: self.session.select_variant(i, oid)))
@@ -865,6 +889,20 @@ class MainWindow(QMainWindow):
                 return True
         if (
             t in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
+            and event.key() == Qt.Key.Key_D
+            and event.modifiers() in (Qt.KeyboardModifier.ControlModifier,
+                                      Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            and self.isActiveWindow()
+            and self._over_objects_panel()
+        ):
+            if t == QEvent.Type.KeyPress and not event.isAutoRepeat():
+                every = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                self.duplicate(self.objects_panel.selected_ids(), all_frames=every)  # Ctrl+D / Ctrl+Shift+D
+            event.accept()
+            return True
+        if (
+            t in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
             and event.key() == Qt.Key.Key_Space
             and event.modifiers() == Qt.KeyboardModifier.NoModifier
             and self.session.key is not None
@@ -923,6 +961,15 @@ class MainWindow(QMainWindow):
     def _hover_zone(self) -> Optional[str]:
         """The list under the mouse: ``frames`` (Frame List, Frames strip), ``objects`` or None."""
         return self._zone_of(QApplication.widgetAt(QCursor.pos()))
+
+    def _over_objects_panel(self) -> bool:
+        """The mouse is over the Objects panel (its list or its buttons)."""
+        w = QApplication.widgetAt(QCursor.pos())
+        while w is not None:
+            if w is self.objects_panel:
+                return True
+            w = w.parentWidget()
+        return False
 
     def _zone_of(self, w) -> Optional[str]:
         ip = self.images_panel
@@ -1367,54 +1414,74 @@ class MainWindow(QMainWindow):
             self.delete_objects(self.objects_panel.selected_ids())
 
     def delete_objects(self, ids: List[int]) -> None:
+        """Delete at once (Ctrl+Z undoes it); locked Objects stay (docs/ux-principles.md 1)."""
         objs = [o for o in self.session.project.objects if o.id in set(ids)]
-        if not objs:
+        if not objs or self._busy:
             return
-        text = (
-            f'Delete "{objs[0].name}"?'
-            if len(objs) == 1
-            else f"Delete {len(objs)} Objects?\n\n" + "\n".join(o.name for o in objs)
-        )
-        text += (
-            "\n\nIts masks on every image are removed too."
-            if len(objs) == 1
-            else "\n\nTheir masks on every image are removed too."
-        )
-        if self.ask("Delete Object", text, "Delete"):
-            self._do(lambda: self.session.delete_objects(ids))
+        locked = [o.name for o in objs if o.locked]
+        gone = self.session.delete_objects(ids)
+        self.refresh()
+        if gone:
+            self.log(f"Deleted {len(gone)} Object(s) (Ctrl+Z undoes it)"
+                     + (f" · locked, kept: {', '.join(locked)}" if locked else ""))
+        elif locked:
+            self.log(f"Locked, not deleted: {', '.join(locked)} (🔓 to unlock)")
 
-    def merge(self, ids: List[int], how: Optional[str] = None) -> None:
-        """Fuse the selected Objects. *how*: ``add`` (union), ``override_a`` (the first selected wins
-        where both have a mask, and names it), ``override_b`` (the second / last selected wins); None asks."""
+    def set_locked(self, ids: List[int], locked: bool) -> None:
+        changed = self.session.set_locked(ids, locked)
+        self.refresh()
+        if changed:
+            self.log(f"{'Locked' if locked else 'Unlocked'} {len(changed)} Object(s)")
+
+    def toggle_lock(self, ids: List[int]) -> None:
+        """Lock the selected Objects, or unlock them when all of them are locked."""
+        objs = [o for o in (self.session.project.get(i) for i in ids) if o is not None]
+        if objs:
+            self.set_locked(ids, not all(o.locked for o in objs))
+
+    def merge(self, ids: List[int], how: str = "add") -> None:
+        """Fuse the selected Objects. *how*: ``add`` (union, the first selected's name), ``override_a``
+        (the first selected wins where both have a mask, and names it), ``override_b`` (the last
+        selected wins), ``into`` (the union goes into the first; the others stay, emptied)."""
         ids = list(dict.fromkeys(ids))
         objs = [o for o in (self.session.project.get(i) for i in ids) if o is not None]
+        if len(objs) < 2 or self._busy:
+            self.log("Select two or more Object rows to merge (Ctrl/Shift-click)")
+            return
+        order = [o.id for o in (reversed(objs) if how == "override_b" else objs)]
+        core = {"add": "add", "into": "into"}.get(how, "override")
+        blocked = self.session.project.merge_blocked(order, core)
+        if blocked:
+            self.log(f"Locked, not merged: {', '.join(o.name for o in blocked)} (🔓 to unlock)")
+            return
+        new = self.session.merge(order, core)
+        if new is not None:
+            self._select_new([new])
+            what = {"add": "", "into": " (the others kept, emptied)"}.get(how, " (override)")
+            self.log(f"Merged into {self.session.project.get(new).name}{what}")
+        self.refresh()
+
+    def merge_options(self, ids: List[int]) -> None:
+        """⚙ next to Merge: how to merge."""
+        objs = [o for o in (self.session.project.get(i) for i in dict.fromkeys(ids)) if o is not None]
         if len(objs) < 2:
             self.log("Select two or more Object rows to merge (Ctrl/Shift-click)")
             return
         a, b = objs[0], objs[-1]
-        hows = ("add", "override_a", "override_b")
-        if how is None:
-            two = len(objs) == 2
-            picked = self.choose(
-                "Merge Objects",
-                f"Merge {len(objs)} Objects into one. The originals are removed (Ctrl+Z undoes it).",
-                [("Where more than one has a mask", [
-                    f"Add: the union of the masks, named “{a.name}”",
-                    f"Override with A: “{a.name}” wins" + ("" if two else " (then the next selected)"),
-                    f"Override with B: “{b.name}” wins" + ("" if two else " (then the one before)"),
-                ], 0)],
-                "Merge",
-            )
-            if picked is None:
-                return
-            how = hows[picked[0]]
-        order = [o.id for o in (reversed(objs) if how == "override_b" else objs)]
-        new = self.session.merge(order, "add" if how == "add" else "override")
-        if new is not None:
-            self._select_new([new])
-            self.log(f"Merged into {self.session.project.get(new).name}"
-                     + ("" if how == "add" else " (override)"))
-        self.refresh()
+        two = len(objs) == 2
+        picked = self.choose(
+            "Merge Objects",
+            f"Merge {len(objs)} Objects. A = “{a.name}” (selected first), B = “{b.name}”. Ctrl+Z undoes it.",
+            [("How", [
+                f"Add: one new Object, the union of the masks, named “{a.name}” (the originals are removed)",
+                f"Override with A: “{a.name}” wins where both have a mask" + ("" if two else " (then the next selected)"),
+                f"Override with B: “{b.name}” wins where both have a mask" + ("" if two else " (then the one before)"),
+                f"Into A: “{a.name}” gets the union; the others stay as empty Objects",
+            ], 0)],
+            "Merge",
+        )
+        if picked is not None:
+            self.merge([o.id for o in objs], ("add", "override_a", "override_b", "into")[picked[0]])
 
     def duplicate(self, ids: List[int], all_frames: bool = False) -> None:
         """Duplicate: the selected Objects' mask on this image only; *all_frames*: every linked mask."""
@@ -1429,30 +1496,15 @@ class MainWindow(QMainWindow):
             self.log("Nothing duplicated: no mask on this image (Duplicate All copies every image)")
         self.refresh()
 
-    def copy_into(self, ids: List[int], replace: Optional[bool] = None, all_frames: Optional[bool] = None) -> None:
-        """Copy Object A (the first id) into B (the second): *replace* B's mask or add to it,
-        on this image or (*all_frames*) on every image where A has a mask. None asks."""
-        objs = [o for o in (self.session.project.get(i) for i in list(dict.fromkeys(ids))[:2]) if o is not None]
-        if len(objs) < 2 or self._busy:
-            self.log("Select two Objects: the first (A) is copied into the second (B)")
+    def copy_into(self, ids: List[int], replace: bool = False, all_frames: bool = False) -> None:
+        """Copy Object A (the first id) into B (the last): add to B's mask (*replace*: B's becomes A's),
+        on this image or (*all_frames*) on every image where A has a mask."""
+        ids = list(dict.fromkeys(ids))
+        objs = [o for o in (self.session.project.get(i) for i in (ids[:1] + ids[-1:])) if o is not None]
+        if len(ids) < 2 or len(objs) < 2 or self._busy:
+            self.log("Select two Objects: the first selected is copied into the last selected")
             return
         a, b = objs
-        if replace is None or all_frames is None:
-            picked = self.choose(
-                "Copy Object into Another",
-                f"Copy one Object's mask into the other. A = “{a.name}”, B = “{b.name}”.",
-                [
-                    ("Direction", [f"A → B: into “{b.name}”", f"B → A: into “{a.name}”"], 0),
-                    ("Mask", ["Add: A's mask is added to B's (union)", "Replace: B's mask becomes A's"], 0),
-                    ("Images", ["This image only", "Every image where A has a mask"], 0),
-                ],
-                "Copy",
-            )
-            if picked is None:
-                return
-            if picked[0] == 1:
-                a, b = b, a
-            replace, all_frames = picked[1] == 1, picked[2] == 1
         changed = self.session.copy_into(a.id, b.id, replace, all_frames)
         if changed:
             self.objects_panel.select_ids([b.id])
@@ -1460,6 +1512,26 @@ class MainWindow(QMainWindow):
         else:
             self.log(f"Nothing copied: “{a.name}” has no mask" + ("" if all_frames else " on this image"))
         self.refresh()
+
+    def copy_options(self, ids: List[int]) -> None:
+        """⚙ next to Copy: Add / Replace, this image / every image (the direction stays first → last)."""
+        ids = list(dict.fromkeys(ids))
+        objs = [o for o in (self.session.project.get(i) for i in (ids[:1] + ids[-1:])) if o is not None]
+        if len(ids) < 2 or len(objs) < 2:
+            self.log("Select two Objects: the first selected is copied into the last selected")
+            return
+        a, b = objs
+        picked = self.choose(
+            "Copy Object into Another",
+            f"Copy “{a.name}” (selected first) into “{b.name}” (selected last).",
+            [
+                ("Mask", ["Add: A's mask is added to B's (union)", "Replace: B's mask becomes A's"], 0),
+                ("Images", ["This image only", "Every image where A has a mask"], 0),
+            ],
+            "Copy",
+        )
+        if picked is not None:
+            self.copy_into([a.id, b.id], replace=picked[0] == 1, all_frames=picked[1] == 1)
 
     def undo(self) -> None:
         if not self._busy:
