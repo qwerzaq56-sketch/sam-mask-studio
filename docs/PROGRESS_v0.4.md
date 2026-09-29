@@ -116,6 +116,13 @@
 - 패널 켜기/끄기: View → Panels. 종료는 File → Quit(키 없음: `Ctrl+Q`는 Ctrl+Z / Ctrl+A 옆이라 실수로 꺼져서 뺌).
 - 테스트: `tests/app/test_v04_features.py` p11~p14 (126 → 133개).
 
+### 15단계 · 키와 메뉴 손보기 (`v0.4-p15`, [`ux-principles.md`](ux-principles.md))
+- `S`(Scroll to Current Frame) 뺌: `F`와 겹치고 목록 위에서는 "다음". 스크롤은 ⌖ 버튼.
+- `X` ↔ `V`: `Z` 누르고 있기 · `X` Final ↔ Object(메뉴 이름 `Toggle Final / Object Mask`) · `V` Mask Preview 켜기/끄기.
+  토글 키는 누르고 있어도 한 번만(`setAutoRepeat(False)`), 이동 키는 반복.
+- 프레임 목록 위 `Space` = `Enter`(기준 ◎ 지정). Paint 버튼 = `A`(전체 선택으로 시작). `E` 편집은 브러쉬 켜진 채로 시작.
+- 문서: [`ux-principles.md`](ux-principles.md) — 피드백에서 뽑은 UX 원칙.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 

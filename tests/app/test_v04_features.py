@@ -13,6 +13,8 @@ def test_work_bar_shows_frame_object_and_mode(qapp, win):
     text = win.work_bar.text()
     assert f"Frame 1 / {len(s.keys)}" in text and "Object: —" in text and "Mode: View" in text
     win.toggle_edit(ids[0])
+    assert "Mode: Paint" in win.work_bar.text()  # Edit starts with the brush (v0.4-p15)
+    win.act_brush.trigger()  # D: back to points
     text = win.work_bar.text()
     assert s.project.get(ids[0]).name in text and "(SAM2)" in text and "Mode: Points" in text
     win.set_brush_tool("fill_holes")
@@ -254,13 +256,14 @@ def test_mask_preview_final_or_object(qapp, win):
     ids = make_objects(win, 2)
     s = win.session
     assert win.act_final.text() == "Mask Preview"
-    assert win.act_preview_mode.shortcut().toString() == "V"
+    assert win.act_preview_mode.shortcut().toString() == "X"  # V until v0.4-p15 (V is now Mask Preview)
+    assert win.act_preview_mode.text() == "Toggle Final / Object Mask"  # the menu name
     final = s.project.final_mask(s.key)
     assert np.array_equal(win.canvas._final, final) and win.canvas._final_label == "FINAL MASK"
     win.objects_panel.select_ids([ids[0]])
     win.refresh()
     win.act_preview_mode.trigger()
-    assert win.settings.preview_object and win.act_preview_mode.text() == "Preview: Object"
+    assert win.settings.preview_object and win.act_preview_mode.iconText() == "Preview: Object"  # the toolbar
     one = s.project.get(ids[0])
     assert win.canvas._final is one.mask(s.key) and win.canvas._final_label == one.name
     assert not np.array_equal(win.canvas._final, final)  # the other Object is left out
@@ -515,7 +518,7 @@ def test_menus_hold_every_command(qapp, win):
                 win.act_new, win.act_edit, win.act_delete, win.act_escape, win.act_brush, win.act_pick_all,
                 win.act_final, win.act_preview_mode, win.act_outline, win.act_changes, win.act_prev_frame,
                 win.act_next_frame, win.act_prev_object, win.act_next_object, win.act_prev_problem,
-                win.act_next_problem, win.act_prev_key, win.act_next_key, win.act_go_reference, win.act_focus,
+                win.act_next_problem, win.act_prev_key, win.act_next_key, win.act_go_reference,
                 win.act_shortcuts, win.act_duplicate, win.act_duplicate_all, win.act_copy_into, win.act_merge):
         assert act in entries, act.text()
     hints = " ".join(a.text() for a in entries)
@@ -526,5 +529,54 @@ def test_menus_hold_every_command(qapp, win):
     # every key in the F1 list is a menu entry's key (or a note in a menu)
     shown = {a.shortcut().toString() for a in entries} | {a.text().split("\t")[1] for a in entries if "\t" in a.text()}
     for key in ("Ctrl+O", "Ctrl+S", "Ctrl+E", "Ctrl+Z", "N", "E", "Del", "Esc", "D", "A", "X", "V", "O", "R",
-                "Left", "Right", "Up", "Down", "[", "]", ",", ".", "F", "S", "F1", "Enter"):
+                "Left", "Right", "Up", "Down", "[", "]", ",", ".", "F", "F1", "Enter", "Space"):
         assert key in shown, key
+
+
+# --- p15: keys and menu fixes (docs/ideas.md feedback) ------------------------
+
+
+def test_preview_keys_swapped_and_toggles_do_not_repeat(qapp, win):
+    assert win.act_final.shortcut().toString() == "V" and win.act_preview_mode.shortcut().toString() == "X"
+    for a in (win.act_final, win.act_preview_mode, win.act_brush, win.act_outline, win.act_changes):
+        assert not a.autoRepeat(), a.text()  # held: one toggle
+    assert win.act_next_frame.autoRepeat()  # moving still repeats
+    assert not hasattr(win, "act_focus")  # no S: F goes to ◎, ⌖ scrolls
+
+
+def test_space_over_a_frame_list_sets_the_reference(qapp, win):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    win.activateWindow()
+    qapp.processEvents()
+    win.go_to(2)
+
+    def space(zone):
+        win._hover_zone = lambda: zone
+        over = QKeyEvent(QEvent.Type.ShortcutOverride, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+        press = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+        return win.eventFilter(win.canvas, over) and win.eventFilter(win.canvas, press)
+
+    assert not space(None) and win._reference is None  # the canvas keeps Space (pan)
+    assert space("frames") and win._reference == 2
+
+
+def test_paint_button_starts_with_everything_picked(qapp, win):
+    from tests.app.test_v03_features import holes_object
+
+    s = holes_object(win)
+    p = win.properties_panel
+    p.fill_area.setValue(5)
+    p.tool_btns["fill_holes"].click()
+    added = s.auto_changes()[0]
+    p.mode_paint_btn.click()
+    assert s.auto_mode == "paint" and added.any() and (s.auto_taken() == added).all()
+
+
+def test_edit_starts_with_the_brush(qapp, win):
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    assert win.act_brush.isChecked() and win.canvas.brush_mode
+    win.edit_key()  # E again: done
+    assert win.session.editing is None and not win.act_brush.isChecked()
