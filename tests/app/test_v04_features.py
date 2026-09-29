@@ -419,9 +419,9 @@ def test_merge_add_or_override(qapp, win):
 # --- p12: the open frame is a filled row / tile ------------------------------------
 
 
-def test_reference_row_and_tile_are_filled_open_frame_outlined(qapp, win):
-    """p12 filled the open frame; p16: the fill is for the reference ◎, the open frame gets a frame."""
-    from src.app.images_panel import CURRENT_OUTLINE, REFERENCE_FILL
+def test_open_frame_filled_reference_outlined(qapp, win):
+    """p12 filled the open frame, p16 the reference; p19: open = filled, reference ◎ = orange frame."""
+    from src.app.images_panel import CURRENT_FILL, REFERENCE_OUTLINE
 
     ip = win.images_panel
     win.names_btn.setChecked(False)  # IDs only: the row's right side is empty
@@ -430,21 +430,20 @@ def test_reference_row_and_tile_are_filled_open_frame_outlined(qapp, win):
     settle(qapp)
     fl = ip.frame_list
     img = fl.viewport().grab().toImage()
-    x = img.width() - 6  # the row's right side, inside the outline (the list may still be narrowing)
-    y = lambda row: fl.visualRect(fl.model().index(row, 0)).center().y()  # noqa: E731
-    assert img.pixelColor(x, y(1)) == REFERENCE_FILL  # ◎: filled
-    assert img.pixelColor(x, y(2)) != REFERENCE_FILL  # open: not filled...
-    r2 = fl.visualRect(fl.model().index(2, 0))
-    assert img.pixelColor(r2.center().x(), r2.top() + 1) == CURRENT_OUTLINE  # ...outlined
-    assert img.pixelColor(x, y(0)) != REFERENCE_FILL
+    x = img.width() - 8  # the row's right side, inside the outline (the list may still be narrowing)
+    rect = lambda row: fl.visualRect(fl.model().index(row, 0))  # noqa: E731
+    assert img.pixelColor(x, rect(2).center().y()) == CURRENT_FILL  # open: filled
+    assert img.pixelColor(x, rect(1).center().y()) != CURRENT_FILL  # ◎: not filled...
+    assert img.pixelColor(rect(1).center().x(), rect(1).top() + 1) == REFERENCE_OUTLINE  # ...outlined
+    assert img.pixelColor(x, rect(0).center().y()) != CURRENT_FILL
     strip = ip.list.viewport().grab().toImage()
     t1, t2 = ip.list.visualItemRect(ip.list.item(1)), ip.list.visualItemRect(ip.list.item(2))
-    assert strip.pixelColor(t1.right() - 4, t1.top() + 4) == REFERENCE_FILL  # its right side: the strip scrolls
-    assert strip.pixelColor(t2.center().x(), t2.top() + 1) == CURRENT_OUTLINE
-    win.set_reference(1)  # again: no reference, no fill
+    assert strip.pixelColor(t2.left() + 2, t2.top() + 2) == CURRENT_FILL
+    assert strip.pixelColor(t1.right() - 20, t1.top() + 1) == REFERENCE_OUTLINE  # its right side: the strip scrolls
+    win.set_reference(1)  # again: no reference, no frame
     settle(qapp)
     img = fl.viewport().grab().toImage()
-    assert img.pixelColor(x, y(1)) != REFERENCE_FILL
+    assert img.pixelColor(rect(1).center().x(), rect(1).top() + 1) != REFERENCE_OUTLINE
 
 
 # --- p13: hover keys (W A S D / arrows move in the list under the mouse) --------------
@@ -475,7 +474,7 @@ def test_hover_keys_move_in_the_list_under_the_mouse(qapp, win):
     assert win._zone_of(win.images_panel.frame_list.viewport()) == "frames"
     assert win._zone_of(win.images_panel.list.viewport()) == "frames"
     assert win._zone_of(win.objects_panel.tree.viewport()) == "objects"
-    assert win._zone_of(win.canvas) is None and win._zone_of(win._goto_fields[0]) is None
+    assert win._zone_of(win.canvas) == "canvas" and win._zone_of(win._goto_fields[0]) is None
     for key, want in ((Qt.Key.Key_D, 1), (Qt.Key.Key_S, 2), (Qt.Key.Key_Right, 3), (Qt.Key.Key_W, 2),
                       (Qt.Key.Key_A, 1), (Qt.Key.Key_Up, 0)):
         assert _key(win, key, "frames")
@@ -714,3 +713,39 @@ def test_solo_and_hide_masks(qapp, win):
     assert len(colors()) == 3
     tb = win.findChild(QToolBar, "main_toolbar").actions()
     assert win.act_solo in tb and win.act_hide_masks in tb
+
+
+# --- p19: feedback on p16-p18 (lock look, frame colors, W / S over the canvas) ----------
+
+
+def test_lock_cell_is_empty_until_locked(qapp, win):
+    from src.app.objects_panel import LockButton
+
+    ids = make_objects(win, 1)
+    op = win.objects_panel
+    settle(qapp)
+    b = op.tree.findChild(LockButton, f"lock_{ids[0]}")
+    assert b.text() == "" and op.lock_all_btn.text() == "Lock All" and op.unlock_all_btn.text() == "Unlock All"
+    win.set_locked(ids, True)
+    settle(qapp)
+    assert b.isChecked() and b.text() == "🔒"
+    win.set_locked(ids, False)
+    settle(qapp)
+    assert not b.isChecked() and b.text() == ""
+
+
+def test_w_s_over_the_canvas_step_objects_and_wrap(qapp, win):
+    from PyQt6.QtCore import Qt
+
+    ids = make_objects(win, 3)
+    win.activateWindow()
+    qapp.processEvents()
+    assert win._zone_of(win.canvas) == "canvas"
+    op = win.objects_panel
+    op.select_ids([ids[0]])
+    assert _key(win, Qt.Key.Key_W, "canvas") and op.selected_ids() == [ids[2]]  # the top's previous: the bottom
+    assert _key(win, Qt.Key.Key_S, "canvas") and op.selected_ids() == [ids[0]]  # the bottom's next: the top
+    assert _key(win, Qt.Key.Key_S, "canvas") and op.selected_ids() == [ids[1]]
+    # A, D and the arrows keep their meaning over the canvas
+    for key in (Qt.Key.Key_A, Qt.Key.Key_D, Qt.Key.Key_Up, Qt.Key.Key_Right):
+        assert not _key(win, key, "canvas")

@@ -76,14 +76,14 @@ def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
 
 
 PIN_COLOR = QColor(255, 225, 140)  # pinned tiles
-REFERENCE_FILL = QColor(40, 110, 220)  # the propagation reference ◎: the whole row / tile filled (white text)
-CURRENT_OUTLINE = QColor(40, 110, 220)  # the open frame: a frame around the row / tile
+CURRENT_FILL = QColor(40, 110, 220)  # the open frame: the whole row / tile filled (white text)
 PICKED_FILL = QColor(40, 110, 220, 70)  # the other picked frames (Shift / Ctrl-click): a light tint
+REFERENCE_OUTLINE = QColor(255, 130, 0)  # the propagation reference ◎: an orange frame (stands out from blue / 📌)
 
 
 def selection_fill(option, index, reference: Optional[int]) -> tuple:
-    """(fill, outlined) for a row / tile: the reference ◎ is filled, a picked one tinted,
-    the open frame outlined.
+    """(fill, outlined) for a row / tile: the open frame filled, a picked one tinted,
+    the reference ◎ outlined.
 
     Clears the selected state in *option*, so the style draws neither its
     highlight nor a tinted (selected-mode) icon: the fill alone shows it.
@@ -92,23 +92,23 @@ def selection_fill(option, index, reference: Optional[int]) -> tuple:
     current = view is not None and view.currentIndex() == index
     picked = bool(option.state & QStyle.StateFlag.State_Selected) and not current
     option.state &= ~QStyle.StateFlag.State_Selected
-    fill = REFERENCE_FILL if index.row() == reference else PICKED_FILL if picked else None
-    return fill, current
+    fill = CURRENT_FILL if current else PICKED_FILL if picked else None
+    return fill, index.row() == reference
 
 
 def draw_outline(painter, rect: QRect) -> None:
-    """The open frame's frame, inside *rect*."""
+    """The reference's frame, inside *rect*."""
     painter.save()
-    pen = QPen(CURRENT_OUTLINE, 2)
+    pen = QPen(REFERENCE_OUTLINE, 3)
     pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
     painter.setPen(pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRect(rect.adjusted(1, 1, -1, -1))
+    painter.drawRect(rect.adjusted(1, 1, -2, -2))
     painter.restore()
 
 
 class TileDelegate(QStyledItemDelegate):
-    """The strip's tiles: the reference's tile filled with color, picked ones tinted, the open one outlined."""
+    """The strip's tiles: the open frame's tile filled, picked ones tinted, the reference outlined."""
 
     reference: Optional[int] = None  # the ◎ row (set by the panel)
 
@@ -121,7 +121,7 @@ class TileDelegate(QStyledItemDelegate):
                 painter.fillRect(opt.rect, opt.backgroundBrush)  # 📌 shade under a picked tile's tint
             painter.fillRect(opt.rect, fill)
             opt.backgroundBrush = QBrush()
-            if fill is REFERENCE_FILL:
+            if fill is CURRENT_FILL:
                 opt.palette.setBrush(QPalette.ColorRole.Text, QBrush(QColor(255, 255, 255)))
         style = opt.widget.style() if opt.widget is not None else QApplication.style()
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
@@ -192,7 +192,7 @@ class OneLineDelegate(QStyledItemDelegate):
         raw = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         first, _, name = raw.replace(" ", "\n").partition("\n")  # "12  ★ ◎" / file name
         opt.text = ""
-        fill, outlined = selection_fill(opt, index, self.reference)  # ◎: filled · picked: tinted · open: outlined
+        fill, outlined = selection_fill(opt, index, self.reference)  # open: filled · picked: tinted · ◎: outlined
         style = opt.widget.style() if opt.widget is not None else QApplication.style()
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)  # background (📌)
         if fill is not None:
@@ -206,7 +206,7 @@ class OneLineDelegate(QStyledItemDelegate):
         group = (QPalette.ColorGroup.Active if opt.state & QStyle.StateFlag.State_Active
                  else QPalette.ColorGroup.Inactive)
         fg = index.data(Qt.ItemDataRole.ForegroundRole)
-        if fill is REFERENCE_FILL:
+        if fill is CURRENT_FILL:
             color = QColor(255, 255, 255)
         elif isinstance(fg, QBrush) and fg.style() != Qt.BrushStyle.NoBrush:
             color = fg.color()
@@ -394,7 +394,7 @@ class ImagesPanel(QWidget):
         return None
 
     def set_reference(self, index: Optional[int]) -> None:
-        """Mark the propagation reference: its row / tile filled at once, ◎ on the next update_marks."""
+        """Mark the propagation reference: its row / tile outlined at once, ◎ on the next update_marks."""
         self._reference = index
         if self._tiles.reference != index:
             self._tiles.reference = self._delegate.reference = index

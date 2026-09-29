@@ -456,6 +456,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         self._hint(m, "Mouse over a frame list: frames", "W A S D / arrows")
         self._hint(m, "Mouse over the Objects list: Objects", "W A S D / arrows")
+        self._hint(m, "Mouse over the image: Objects", "W / S")
         m = mb.addMenu("&Help")
         m.addAction(self.act_shortcuts)
 
@@ -905,7 +906,7 @@ class MainWindow(QMainWindow):
                 zone, delta = hover
                 if zone == "frames":
                     self.step(delta)
-                else:
+                else:  # the Objects list or the canvas: the list's rows
                     self.step_object(delta, self.objects_panel.listed_ids())
                 return True
         if (
@@ -999,11 +1000,14 @@ class MainWindow(QMainWindow):
                 return "frames"
             if w is self.objects_panel.tree:
                 return "objects"
+            if w is self.canvas:
+                return "canvas"
             w = w.parentWidget()
         return None
 
     def _hover_step(self, event) -> Optional[tuple]:
         """With the mouse over a list, W A S D and the arrows move in it: (zone, -1 | +1); else None.
+        Over the canvas W / S step through the Objects list.
 
         Only plain keys (Shift / Ctrl+arrows keep extending the list selection),
         never while typing, and elsewhere A, D, S and the arrows keep their usual meaning.
@@ -1016,6 +1020,8 @@ class MainWindow(QMainWindow):
         if not self.isActiveWindow():
             return None
         zone = self._hover_zone()
+        if zone == "canvas" and event.key() not in (Qt.Key.Key_W, Qt.Key.Key_S):
+            return None  # over the canvas only W / S (A, D and the arrows keep their meaning there)
         return (zone, delta) if zone is not None else None
 
     def show_shortcuts(self) -> None:

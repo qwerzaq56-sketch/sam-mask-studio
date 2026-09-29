@@ -142,6 +142,11 @@
   편집 중인 Object는 그대로(브러쉬로 칠하는 것이 보여야 하므로). 둘 다 켜면 Hide가 우선. 저장하지 않음(앱을 다시 열면 꺼짐).
 - 코드: `MainWindow._colored_ids`, `act_solo`, `act_hide_masks`.
 
+### 19단계 · p16~p18 수정 피드백 (`v0.4-p19`)
+- 잠금 칸: 안 잠긴 행은 빈 칸(마우스를 올리면 흐린 🔒), 잠긴 행만 🔒. `Lock All` / `Unlock All` 글자 버튼. (`LockButton`)
+- 프레임 색 (16단계를 뒤집음): 열린 프레임 = 파랑 칠(`CURRENT_FILL`), 기준 ◎ = 주황 테두리(`REFERENCE_OUTLINE`), Shift/Ctrl 선택 = 옅은 파랑.
+- 캔버스 위 `W` / `S` = Objects 목록의 이전 / 다음. Object 이동은 끝에서 반대쪽으로 순환(목록 위 키, `↑` `↓` 포함).
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

@@ -19,6 +19,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -50,6 +51,38 @@ def later(owner: QObject, signal, *args) -> None:
     t.timeout.connect(lambda: signal.emit(*args))
     t.timeout.connect(t.deleteLater)
     t.start(0)
+
+
+class LockButton(QPushButton):
+    """🔒 when locked; unlocked it is an empty cell that shows a faint lock under the mouse."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setFlat(True)
+        self.setFixedWidth(26)
+        self._fade = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._fade)
+        self._hover = False
+        self.toggled.connect(lambda _on: self.update_look())
+        self.update_look()
+
+    def update_look(self) -> None:
+        locked = self.isChecked()
+        self.setText("🔒" if locked or self._hover else "")
+        self._fade.setOpacity(1.0 if locked else 0.35)
+        self.setToolTip("Locked: cannot be deleted (click to unlock)" if locked
+                        else "Lock: a locked Object cannot be deleted")
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update_look()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update_look()
+        super().leaveEvent(event)
 
 
 def color_icon(rgb, size: int = 12) -> QIcon:
@@ -156,10 +189,10 @@ class ObjectsPanel(QWidget):
         self.show_all.toggled.connect(lambda _on: self.set_objects(self._objects, self._key, self._editing))
         self.shown_label = QLabel("")
         self.shown_label.setStyleSheet("color: gray;")
-        self.lock_all_btn = QPushButton("🔒 All")
+        self.lock_all_btn = QPushButton("Lock All")
         self.lock_all_btn.setToolTip("Lock every Object (locked ones cannot be deleted)")
         self.lock_all_btn.clicked.connect(lambda: later(self, self.lock_requested, self._all_ids(), True))
-        self.unlock_all_btn = QPushButton("🔓 All")
+        self.unlock_all_btn = QPushButton("Unlock All")
         self.unlock_all_btn.setToolTip("Unlock every Object")
         self.unlock_all_btn.clicked.connect(lambda: later(self, self.lock_requested, self._all_ids(), False))
         head = QHBoxLayout()
@@ -257,9 +290,8 @@ class ObjectsPanel(QWidget):
             item.setToolTip(1, f"Linked: masks on {n} images" if link else "")
         item.setForeground(0, QBrush() if has else QBrush(QColor(140, 140, 140)))
         lock = self.tree.itemWidget(item, 2)
-        if isinstance(lock, QPushButton):
+        if isinstance(lock, LockButton) and lock.isChecked() != o.locked:
             lock.setChecked(o.locked)
-            lock.setText("🔒" if o.locked else "🔓")
         delete = self.tree.itemWidget(item, 4)
         if isinstance(delete, QPushButton):
             delete.setEnabled(not o.locked)
@@ -291,11 +323,7 @@ class ObjectsPanel(QWidget):
         return b
 
     def _lock_button(self, oid: int) -> QPushButton:
-        b = QPushButton("🔓")
-        b.setCheckable(True)
-        b.setFlat(True)
-        b.setFixedWidth(26)
-        b.setToolTip("Lock: a locked Object cannot be deleted")
+        b = LockButton()
         b.setObjectName(f"lock_{oid}")
         b.clicked.connect(lambda on, i=oid: later(self, self.lock_requested, [i], on))
         return b
@@ -396,15 +424,14 @@ class ObjectsPanel(QWidget):
         return super().eventFilter(obj, event)
 
     def move_selection(self, ids: Sequence[int], delta: int) -> Optional[int]:
-        """The id *delta* rows from the current one among *ids* (the Objects that can be stepped to)."""
+        """The id *delta* rows from the current one among *ids*, wrapping (the top's previous is the bottom)."""
         if not ids:
             return None
         sel = self.selected_ids()
         current = self._editing if self._editing is not None else (sel[0] if sel else None)
         if current not in ids:
             return ids[0] if delta > 0 else ids[-1]
-        i = ids.index(current) + delta
-        return ids[i] if 0 <= i < len(ids) else None
+        return ids[(ids.index(current) + delta) % len(ids)]
 
     def _on_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         idx = item.data(0, VARIANT_ROLE)
