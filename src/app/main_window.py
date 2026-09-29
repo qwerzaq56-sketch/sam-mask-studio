@@ -860,7 +860,7 @@ class MainWindow(QMainWindow):
         self.ensure_models()
         self.refresh()
         if self.scene is not None and not loaded and self.scene.mask_dirs:
-            self.offer_masks(self.scene.mask_dirs, "Masks in this COLMAP scene")
+            self.offer_masks(self.scene.mask_dirs, "Masks in this COLMAP scene", undoable=False)
         return True
 
     def _report_scene(self, scene) -> None:
@@ -873,8 +873,9 @@ class MainWindow(QMainWindow):
                 shown = ", ".join(sorted(names)[:5]) + (" …" if len(names) > 5 else "")
                 self.log(f"⚠ {len(names)} image(s) {what}: {shown}")
 
-    def offer_masks(self, folders, title: str) -> List[int]:
-        """Ask which mask folders to load as Objects and which color is the object in each."""
+    def offer_masks(self, folders, title: str, undoable: bool = True) -> List[int]:
+        """Ask which mask folders to load as Objects and which color is the object in each.
+        *undoable* False (a scene's masks, as it opens): they are where Ctrl+Z starts, not a step of it."""
         keys = list(self.session.keys)
         groups, found = [], []
         for d in folders:
@@ -889,7 +890,8 @@ class MainWindow(QMainWindow):
         if not found:
             self.log("No masks matching these images (a.jpg.png or a.png)")
             return []
-        picked = self.choose(title, "Load mask folders as Objects (one Object per folder; Ctrl+Z undoes it).",
+        how = "Ctrl+Z undoes it" if undoable else "they open with the scene, Ctrl+Z does not remove them"
+        picked = self.choose(title, f"Load mask folders as Objects (one Object per folder; {how}).",
                              groups, "Load")
         if picked is None:
             return []
@@ -903,6 +905,8 @@ class MainWindow(QMainWindow):
                 QApplication.processEvents()
 
         ids = self.session.import_masks(chosen, progress)
+        if not undoable:
+            self.session.project.forget_history()
         self._select_new(ids)
         for oid in ids:
             o = self.session.project.get(oid)
