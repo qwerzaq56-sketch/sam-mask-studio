@@ -137,6 +137,11 @@
 - 코드: `MaskObject.locked`(저장), `Project.set_locked`, `remove_objects`(잠긴 것 건너뜀), `merge(how="into")`, `merge_blocked`;
   `MainWindow.copy_options`, `merge_options`, `set_locked`, `_over_objects_panel`.
 
+### 18단계 · 캔버스 Solo / Hide Masks (`v0.4-p18`)
+- 툴바와 View 메뉴에 토글 두 개. **Solo**: 선택한 Object 행(과 편집 중인 Object)만 캔버스에 색. **Hide Masks**: Object 색 모두 끔,
+  편집 중인 Object는 그대로(브러쉬로 칠하는 것이 보여야 하므로). 둘 다 켜면 Hide가 우선. 저장하지 않음(앱을 다시 열면 꺼짐).
+- 코드: `MainWindow._colored_ids`, `act_solo`, `act_hide_masks`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 

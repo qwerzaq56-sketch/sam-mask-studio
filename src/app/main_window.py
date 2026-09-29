@@ -385,8 +385,17 @@ class MainWindow(QMainWindow):
             checkable=True,
         )
         self.act_changes.setChecked(self.settings.show_edit_changes)
+        # which Objects the canvas colors: all, only the selected / edited ones (Solo), or none (Hide)
+        self.act_solo = self._action(
+            "Solo", lambda _on: self._update_overlays(),
+            tip="Color only the selected Objects (and the one in Edit) on the canvas", checkable=True,
+        )
+        self.act_hide_masks = self._action(
+            "Hide Masks", lambda _on: self._update_overlays(),
+            tip="No Object colors on the canvas (the Object in Edit still shows)", checkable=True,
+        )
         for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
-                  self.act_pick_all, self.act_edit, self.act_new):
+                  self.act_pick_all, self.act_edit, self.act_new, self.act_solo, self.act_hide_masks):
             a.setAutoRepeat(False)  # held down: one toggle, not a flicker
 
         # --- Go: moving between frames and Objects ----------------------------------------
@@ -430,8 +439,8 @@ class MainWindow(QMainWindow):
         for a in (self.act_final, self.act_preview_mode):
             m.addAction(a)
         self._hint(m, "Peek at Mask Preview", "Z (hold)")
-        for a in (self.act_outline, self.act_changes):
-            m.addAction(a)
+        for a in (self.act_outline, self.act_changes, None, self.act_solo, self.act_hide_masks):
+            m.addSeparator() if a is None else m.addAction(a)
         m.addSeparator()
         panels = m.addMenu("Panels")
         for d in self._docks:
@@ -462,6 +471,9 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.outline_width)
         tb.addSeparator()
         tb.addAction(self.act_changes)
+        tb.addSeparator()
+        tb.addAction(self.act_solo)
+        tb.addAction(self.act_hide_masks)
         self.addToolBar(tb)
         self.names_btn.setChecked(self.settings.frame_list_names)
         self.images_panel.set_names_visible(self.settings.frame_list_names)
@@ -725,6 +737,14 @@ class MainWindow(QMainWindow):
             mode = "View"
         return f"{frame}{sep}Object: {obj}{sep}Mode: {html.escape(mode)}{sep}{name}"
 
+    def _colored_ids(self) -> Optional[set]:
+        """The Objects the canvas colors besides the one in Edit: None = all (Solo: the selected, Hide: none)."""
+        if self.act_hide_masks.isChecked():
+            return set()
+        if self.act_solo.isChecked():
+            return set(self.objects_panel.selected_ids())
+        return None
+
     def _update_overlays(self) -> None:
         """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""
         s = self.session
@@ -732,13 +752,14 @@ class MainWindow(QMainWindow):
         self._update_preview_mask()
         overlays: List[Overlay] = []
         edit_layer = None
+        shown = self._colored_ids()
         for o in s.project.objects:
             m = o.mask(key) if key else None
             if m is None:
                 continue
             if o.id == s.editing:
                 edit_layer = Overlay(m, o.color, "edit")
-            else:
+            elif shown is None or o.id in shown:
                 overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
         if edit_layer is not None:
             overlays.append(edit_layer)
