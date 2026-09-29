@@ -696,8 +696,11 @@ def test_arrows_step_objects_and_points_drag_or_double_click(qapp, win):
     win.objects_panel.select_ids([ids[0]])
     win.step_object(1)
     assert win.objects_panel.selected_ids() == [ids[1]]
-    win.step_object(1)
-    win.step_object(1)  # the 4th has no mask here: skipped, stays on the last one
+    win.step_object(1)  # the 4th has no mask here: skipped
+    assert win.objects_panel.selected_ids() == [ids[2]]
+    win.step_object(1)  # past the last: back to the first (v0.4-p19)
+    assert win.objects_panel.selected_ids() == [ids[0]]
+    win.step_object(-1)
     assert win.objects_panel.selected_ids() == [ids[2]]
     QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, pos=canvas_pos(win, 75, 55))  # empty space
     assert win.objects_panel.selected_ids() == [ids[2]]  # keeps the selection
