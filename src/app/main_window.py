@@ -308,6 +308,15 @@ class MainWindow(QMainWindow):
                                        "The selected point, else the selected Objects")
         self.act_escape = self._action("Leave Tool / Finish Editing", self.escape, ["Esc"],
                                        "Leave the tool (drops an auto tool's result), then finish editing")
+        # whole-mask edits: easy while editing (a key), otherwise not bound at all (docs/design/ux-principles.md 7)
+        self.act_invert = self._action(
+            "Invert Mask", lambda: self.mask_edit("invert"), ["Ctrl+I"],
+            "The edited Object's mask on this image, flipped (inside the region, if any). Only while editing",
+        )
+        self.act_clear_mask = self._action(
+            "Clear Mask", lambda: self.mask_edit("clear"), ["Ctrl+Backspace"],
+            "Empty the edited Object's mask on this image (inside the region, if any). Only while editing",
+        )
         self.act_pick_all = self._action("Auto Tool: Pick All / None", self.a_key, ["A"],
                                          "Fill mode -> Paint mode with everything picked; Paint mode: all / none")
         # Ctrl+D / Ctrl+Shift+D only with the mouse over the Objects panel (eventFilter): shown, not bound
@@ -395,7 +404,8 @@ class MainWindow(QMainWindow):
             tip="No Object colors on the canvas (the Object in Edit still shows)", checkable=True,
         )
         for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
-                  self.act_pick_all, self.act_edit, self.act_new, self.act_solo, self.act_hide_masks):
+                  self.act_pick_all, self.act_edit, self.act_new, self.act_solo, self.act_hide_masks,
+                  self.act_invert, self.act_clear_mask):
             a.setAutoRepeat(False)  # held down: one toggle, not a flicker
 
         # --- Go: moving between frames and Objects ----------------------------------------
@@ -427,6 +437,8 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         tools = m.addMenu("Tools")
         tools.addAction(self.act_brush)
+        tools.addAction(self.act_invert)
+        tools.addAction(self.act_clear_mask)
         tools.addAction(self.act_pick_all)
         self._hint(tools, "Auto Tool: Apply && Continue", "Enter", self.reapply_tool)
         self._hint(tools, "Leave the Active Auto Tool", "its button again")
@@ -1264,6 +1276,24 @@ class MainWindow(QMainWindow):
         if self.session.close_auto(apply):
             self.log(f"{tool.replace('_', ' ').title()} applied")
         self._auto_gen += 1  # drop a computation still running
+
+    def mask_edit(self, what: str) -> None:
+        """Ctrl+I invert / Ctrl+Backspace clear the edited mask on this image (one undo step).
+
+        Only while editing; outside Edit the mask is emptied from the Object's [···] menu
+        (Remove mask on this image), so a stray key never wipes a mask.
+        """
+        s = self.session
+        if s.editing is None or self._busy:
+            self.log("Invert / Clear Mask work while editing an Object (E); "
+                     "outside Edit: [···] > Remove mask on this image")
+            return
+        self.close_tool()  # an auto tool's pending result is dropped first
+        done = s.invert_mask() if what == "invert" else s.clear_mask()
+        if done:
+            where = " inside the region" if s.region is not None else ""
+            self.log(("Mask inverted" if what == "invert" else "Mask cleared") + where + " (Ctrl+Z undoes it)")
+        self.refresh()
 
     def a_key(self) -> None:
         """A: in an auto tool's Paint mode pick all / none of the result (A / D never change image)."""

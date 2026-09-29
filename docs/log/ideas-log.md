@@ -121,6 +121,13 @@
 - 기획서 [`specs/05-merge-copy-move.md`](../specs/05-merge-copy-move.md). 범위 = 이 이미지 / 모든 이미지, Move = Mask 전체, 옵션은 기억 안 함.
 - `Move A → B` 버튼(Move · Add · 이 이미지) + `⚙`(Move / Copy · Add / Replace · 범위). Merge `⚙`에서 Into A 제거. `[···]` ▸ Move into / Copy into.
 
+## `v0.4-p21` · 마스크 인버트 / 비우기 단축키
+
+> 마스크 인버트, 전체 마스크를 지우는 기능. 에딧모드 한정 쉽게, 아닐 때는 좀 더 어렵게. 관례에 따라.
+
+- 편집 중: `Ctrl+I` 인버트(Photoshop / GIMP 관례), `Ctrl+Backspace` 이 이미지 Mask 비우기. Region이 있으면 그 안에서만. Undo 한 단계.
+- 편집 중이 아닐 때: 키는 아무 것도 안 함(로그로 안내). 비우기는 `[···]` → Remove mask on this image.
+
 ## 기타
 
 - 마스크 프리뷰에서 브러쉬로 칠한 것이 잠깐 안 보임 → 재현 조건 모름, [`ui-issues.md`](../backlog/ui-issues.md) 21로 옮김.

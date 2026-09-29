@@ -750,3 +750,34 @@ def test_w_s_over_the_canvas_step_objects_and_wrap(qapp, win):
     # A, D and the arrows keep their meaning over the canvas
     for key in (Qt.Key.Key_A, Qt.Key.Key_D, Qt.Key.Key_Up, Qt.Key.Key_Right):
         assert not _key(win, key, "canvas")
+
+
+# --- p21: Invert / Clear Mask while editing ----------------------------------------------
+
+
+def test_invert_and_clear_only_while_editing(qapp, win):
+    import numpy as np
+
+    ids = make_objects(win, 1)
+    s = win.session
+    k = s.key
+    m0 = s.project.get(ids[0]).mask(k).copy()
+    assert win.act_invert.shortcut().toString() == "Ctrl+I"
+    assert win.act_clear_mask.shortcut().toString() == "Ctrl+Backspace"
+    win.act_invert.trigger()  # not editing: nothing
+    assert np.array_equal(s.project.get(ids[0]).mask(k), m0)
+    win.toggle_edit(ids[0])
+    win.act_invert.trigger()
+    assert np.array_equal(s.project.get(ids[0]).mask(k), ~m0)
+    win.undo()
+    assert np.array_equal(s.project.get(ids[0]).mask(k), m0)
+    region = np.zeros(m0.shape, bool)
+    region[:, : m0.shape[1] // 2] = True
+    s.set_region(region)
+    win.act_clear_mask.trigger()  # only inside the region
+    after = s.project.get(ids[0]).mask(k)
+    assert not (after & region).any() and np.array_equal(after & ~region, m0 & ~region)
+    s.set_region(None)
+    win.act_clear_mask.trigger()
+    assert not s.project.get(ids[0]).mask(k).any()
+    assert s.project.get(ids[0]) is not None  # the Object stays

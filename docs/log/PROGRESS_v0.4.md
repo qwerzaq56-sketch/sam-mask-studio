@@ -153,6 +153,11 @@
 - Merge `⚙`: Add / Override A / Override B(Into A는 Move가 대신함). `[···]` ▸ Move into / Copy into.
 - 코드: `Project.copy_into(move=)`, `MainWindow.transfer` / `transfer_options`, `ObjectsPanel.transfer_requested`.
 
+### 21단계 · 인버트 / 비우기 (`v0.4-p21`)
+- 편집 중인 Object의 이 이미지 Mask: `Ctrl+I` 인버트, `Ctrl+Backspace` 비우기. Region이 있으면 그 안에서만. 편집 레이어로 들어가서
+  Edit Layer 삭제로도 되돌릴 수 있고, Undo 한 단계. 편집 중이 아니면 키는 로그 안내만. 메뉴 Edit → Tools.
+- 코드: `Session.invert_mask` / `clear_mask`, `MainWindow.mask_edit`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
