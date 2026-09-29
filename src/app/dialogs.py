@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.settings import Settings
+from src.core.presets import CUSTOM, PRESETS, preset
 from src.core.storage import ExportCheck, ExportOptions
 
 
@@ -121,19 +122,35 @@ class OptionsDialog(QDialog):
 
 
 class ExportDialog(QDialog):
-    """Final Mask PNG export options."""
+    """Final Mask PNG export options.
+
+    For a COLMAP scene a trainer preset (docs/specs/07-export-presets.md) fixes the
+    folder (the scene's masks/), the names and the colors; "Custom" leaves them free.
+    """
 
     PATTERNS = (
         ("{stem}.png  (frame_001.png)", "{stem}.png"),
         ("{name}.png  (COLMAP: frame_001.jpg.png)", "{name}.png"),
     )
 
-    def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[[str], ExportCheck]] = None):
+    def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[[str], ExportCheck]] = None,
+                 scene=None, target: str = CUSTOM):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
         self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
         self.setMinimumWidth(480)
         self._check = check
+        self._scene = scene
+        self._custom_dir = str(default_dir)
+        self.target = QComboBox()
+        for p in PRESETS if scene is not None else ():
+            self.target.addItem(p.label, p.key)
+        self.target.addItem("Custom (choose below)", CUSTOM)
+        i = self.target.findData(target)
+        self.target.setCurrentIndex(i if i >= 0 else 0)
+        self.note = QLabel()
+        self.note.setWordWrap(True)
+        self.note.setStyleSheet("color: gray;")
         self.out = QLineEdit(str(default_dir))
         self.pattern = QComboBox()
         for label, _ in self.PATTERNS:
@@ -149,6 +166,9 @@ class ExportDialog(QDialog):
         self.problems.setMaximumHeight(130)
         self.problems.setToolTip("Double-click: close this and open the image")
         self.problems.itemDoubleClicked.connect(self._open_problem)
+        if scene is not None:
+            form.addRow("For", self.target)
+            form.addRow(self.note)
         if check is not None:
             form.addRow(self.summary)
             form.addRow(self.problems)
@@ -163,6 +183,30 @@ class ExportDialog(QDialog):
         form.addRow(buttons)
         self.pattern.currentIndexChanged.connect(self._run_check)
         self.empty.toggled.connect(self._run_check)
+        self.target.currentIndexChanged.connect(self._apply_target)
+        self._apply_target()
+
+    def preset(self):
+        return preset(self.target.currentData())
+
+    def _apply_target(self) -> None:
+        """A preset fixes folder, names and colors (shown, grayed); Custom frees them again."""
+        p = self.preset()
+        if self.out.isEnabled():
+            self._custom_dir = self.out.text()  # keep what was typed for Custom
+        for w in (self.out, self.pattern, self.invert, self.empty):
+            w.setEnabled(p is None)
+        if p is None:
+            self.out.setText(self._custom_dir)
+            self.note.setText("")
+        else:
+            if self._scene is not None:
+                self.out.setText(str(self._scene.root / p.folder))
+            self.pattern.setCurrentIndex([v for _, v in self.PATTERNS].index(p.pattern))
+            self.invert.setChecked(p.object_black)
+            self.empty.setChecked(p.every_image)
+            self.note.setText(f"{p.note} Files already there are moved to {p.folder}_backup_<time>/ first. "
+                              f"Checked against: {p.verified}.")
         self._run_check()
 
     def _run_check(self) -> None:
@@ -179,16 +223,18 @@ class ExportDialog(QDialog):
         written = len(c.with_mask) + len(c.empty) + (missing if self.empty.isChecked() else 0)
         rows = [
             f"<b>{written}</b> file(s) will be written for <b>{c.images}</b> image(s)",
-            line(missing == 0, f"Images without a mask: {missing}"
-                 + ("" if missing == 0 or self.empty.isChecked() else " (no file — see “Also write empty masks”)")),
+            line(missing == 0 or self.empty.isChecked(), f"Images without a mask: {missing}"
+                 + ("" if missing == 0 else " (written all white: nothing ignored there)" if self.empty.isChecked()
+                    else " (no file — see “Also write empty masks”)")),
             line(not c.empty, f"Empty masks: {len(c.empty)}"),
             line(not c.warning, f"Suspicious / failed frames (⚠ ✕): {len(c.warning)}"),
             line(not c.clashes, "File names: " + ("OK" if not c.clashes else f"{len(c.clashes)} clash(es)")),
         ]
+        rows += self._scene_rows(line)
         self.summary.setText("<br>".join(rows))
         self.problems.clear()
         reasons = (
-            (set(c.without_mask), "no mask"),
+            (set() if self.empty.isChecked() else set(c.without_mask), "no mask"),
             (set(c.empty), "empty"),
             (set(c.warning), "⚠ / ✕"),
             ({k for ks in c.clashes for k in ks}, "name clash"),
@@ -196,9 +242,30 @@ class ExportDialog(QDialog):
         index = {k: i for i, k in enumerate(c.keys)}
         for k in c.problems:
             why = ", ".join(r for ks, r in reasons if k in ks)
+            if not why:
+                continue  # only "no mask", and those are written all white
             self.problems.addItem(f"{index[k] + 1}  {k}  —  {why}")
             self.problems.item(self.problems.count() - 1).setData(Qt.ItemDataRole.UserRole, k)
         self.problems.setVisible(self.problems.count() > 0)
+
+    def _scene_rows(self, line) -> List[str]:
+        """The scene's side of the check: cameras the trainer may not read, files to be backed up."""
+        p, sc = self.preset(), self._scene
+        if p is None or sc is None:
+            return []
+        rows = []
+        odd = [m for m in sc.camera_models if m in p.unconfirmed_cameras]
+        if sc.camera_models:
+            rows.append(line(not odd, "Cameras: " + ", ".join(sc.camera_models)
+                             + (f" ({', '.join(odd)}: not confirmed for {p.label})" if odd else "")))
+        out = Path(self.out.text().strip())
+        c = getattr(self, "check_result", None)
+        if c is not None and out.is_dir():
+            names = [p.pattern.format(stem=Path(k).stem, name=k) for k in c.keys]
+            n = sum(1 for nm in names if (out / nm).is_file())
+            if n:
+                rows.append(line(False, f"{n} file(s) in {out.name}/ will be moved to {out.name}_backup_…/ first"))
+        return rows
 
     def _open_problem(self, item) -> None:
         self.goto = item.data(Qt.ItemDataRole.UserRole)
@@ -215,6 +282,7 @@ class ExportDialog(QDialog):
             name_pattern=self.PATTERNS[self.pattern.currentIndex()][1],
             invert=self.invert.isChecked(),
             include_empty=self.empty.isChecked(),
+            backup=self.preset() is not None,
         )
 
 

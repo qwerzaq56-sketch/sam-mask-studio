@@ -117,10 +117,11 @@ def test_export_dialog_shows_the_check_and_opens_a_problem(qapp, win):
     text = dlg.summary.text()
     assert "Images without a mask: 4" in text and "for <b>5</b> image(s)" in text
     assert dlg.problems.count() == 4
-    dlg.empty.setChecked(True)
-    assert "<b>5</b> file(s)" in dlg.summary.text()
     dlg._open_problem(dlg.problems.item(1))
     assert dlg.goto == s.keys[2]
+    dlg.empty.setChecked(True)
+    assert "<b>5</b> file(s)" in dlg.summary.text()
+    assert dlg.problems.count() == 0  # written all white: not a problem any more (p24)
 
 
 # --- p4: foldable Settings / Layer sections -------------------------------------
@@ -847,3 +848,51 @@ def test_scene_mismatch_is_logged(qapp, win, tmp_path):
     log = win.log_view.toPlainText()
     assert "1 image(s) in the model but not in images/: gone.png" in log
     assert "2 image(s) in images/ but not in the model" in log
+
+
+# --- p24: export for a trainer, into the scene's masks/ (docs/specs/07-export-presets.md) ---
+
+
+def test_export_preset_writes_the_scene_masks_with_a_backup(qapp, win, tmp_path):
+    import cv2
+    import numpy as np
+
+    from src.app.dialogs import ExportDialog
+    from src.core.storage import check_export
+    from tests.unit.test_colmap import make_scene
+
+    root = make_scene(tmp_path / "scene", n=3)
+    names = sorted(p.name for p in (root / "images").iterdir())
+    (root / "masks").mkdir()
+    old = root / "masks" / f"{names[0]}.png"
+    cv2.imwrite(str(old), np.full((8, 8), 7, np.uint8))  # an older mask that would be overwritten
+    win.choose = lambda *a, **kw: None  # do not load the old masks as an Object
+    assert win.open_folder(root)
+    s = win.session
+    s.start_new_object()
+    s.click(30, 30)
+    s.finish_editing()
+    dlg = ExportDialog(tmp_path / "elsewhere", win, check=lambda pat: check_export(s.project, pat),
+                       scene=win.scene, target="lichtfeld")
+    assert dlg.preset().key == "lichtfeld" and not dlg.out.isEnabled()
+    assert "Mask Mode" in dlg.note.text() and "moved to masks_backup_" in dlg.summary.text()
+    opts = dlg.options()
+    assert opts.out_dir == root / "masks" and opts.name_pattern == "{name}.png"
+    assert opts.invert and opts.include_empty and opts.backup
+    written = s.export(opts)
+    assert sorted(p.name for p in written) == sorted(f"{n}.png" for n in names)  # every image
+    [backup] = [d for d in root.iterdir() if d.name.startswith("masks_backup_")]
+    assert (backup / old.name).is_file()  # the old file was moved, not lost
+    m = cv2.imread(str(root / "masks" / f"{names[0]}.png"), cv2.IMREAD_GRAYSCALE)
+    assert m.min() == 0 and m.max() == 255 and (m == 255).mean() > 0.5  # the Object black on white
+    blank = cv2.imread(str(root / "masks" / f"{names[1]}.png"), cv2.IMREAD_GRAYSCALE)
+    assert blank.min() == 255  # nothing to ignore there: all white
+    dlg.target.setCurrentIndex(dlg.target.findData("custom"))
+    assert dlg.out.isEnabled() and dlg.out.text() == str(tmp_path / "elsewhere") and not dlg.options().backup
+
+
+def test_export_outside_a_scene_has_no_trainer_choice(qapp, win, tmp_path):
+    from src.app.dialogs import ExportDialog
+
+    dlg = ExportDialog(tmp_path / "out", win)
+    assert dlg.target.count() == 1 and dlg.preset() is None and dlg.out.isEnabled()

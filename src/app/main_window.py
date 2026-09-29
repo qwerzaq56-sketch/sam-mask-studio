@@ -2064,12 +2064,19 @@ class MainWindow(QMainWindow):
         if not s.project.keys_with_masks():
             self.warn("Nothing to export: no checked Object has a mask yet.")
             return
-        dlg = ExportDialog(default_export_dir(s.image_dir), self, check=lambda pattern: check_export(s.project, pattern))
+        dlg = ExportDialog(default_export_dir(s.image_dir), self, check=lambda pattern: check_export(s.project, pattern),
+                           scene=self.scene, target=self.settings.export_target if self.scene else "custom")
         if dlg.exec() != ExportDialog.DialogCode.Accepted:
             if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
                 self.go_to(s.keys.index(dlg.goto))
                 self.focus_frame()
             return
+        if self.scene is not None:
+            self.settings.export_target = dlg.target.currentData()
+            self.settings.save(self.settings_path)
+        p = dlg.preset()
+        if p is not None:
+            self.log(f"Export for {p.label}: {p.note}")
         self.run_export(dlg.options())
 
     def run_export(self, options) -> None:

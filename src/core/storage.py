@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -290,6 +291,34 @@ class ExportOptions:
     name_pattern: str = "{stem}.png"  # or "{name}.png" (COLMAP style: image.jpg.png)
     invert: bool = False  # True: object = black, background = white (keep-mask convention)
     include_empty: bool = False  # also write masks for images with no object
+    backup: bool = False  # files about to be overwritten are moved to <folder>_backup_<time>/ first (a scene)
+
+
+def backup_existing(out_dir: Path, names: List[str]) -> Optional[Path]:
+    """Move the files in *out_dir* that *names* would overwrite into ``<out_dir>_backup_<time>/``.
+
+    Returns the backup folder, or None when nothing would be overwritten.
+    """
+    existing = [out_dir / n for n in names if (out_dir / n).is_file()]
+    if not existing:
+        return None
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = out_dir.parent / f"{out_dir.name}_backup_{stamp}"
+    n = 1
+    while backup.exists():
+        n += 1
+        backup = out_dir.parent / f"{out_dir.name}_backup_{stamp}-{n}"
+    backup.mkdir(parents=True)
+    for p in existing:
+        shutil.move(str(p), str(backup / p.name))
+    return backup
+
+
+def export_names(project: Project, options: "ExportOptions", keys: Optional[List[str]] = None) -> List[str]:
+    """The file names an export writes, in order."""
+    if keys is None:
+        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks()
+    return [options.name_pattern.format(stem=Path(k).stem, name=k) for k in keys]
 
 
 @dataclass
@@ -348,6 +377,8 @@ def export_final_masks(
     """Write each image's Final Mask at its original resolution. Returns written paths."""
     if keys is None:
         keys = list(project.image_keys) if options.include_empty else project.keys_with_masks()
+    if options.backup:
+        backup_existing(options.out_dir, export_names(project, options, keys))
     written = []
     for i, key in enumerate(keys):
         h0, w0 = original_size(key)
