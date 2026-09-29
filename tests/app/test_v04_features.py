@@ -688,3 +688,29 @@ def test_ctrl_d_over_the_objects_panel(qapp, win):
     assert ctrl_d(True) and len(p.objects) == 2
     win.objects_panel.select_ids(ids)
     assert ctrl_d(True, shift=True) and len(p.objects) == 3
+
+
+# --- p18: Solo / Hide Masks on the canvas ---------------------------------------------
+
+
+def test_solo_and_hide_masks(qapp, win):
+    from PyQt6.QtWidgets import QToolBar
+
+    ids = make_objects(win, 3)
+    colors = lambda: [o.color for o in win.canvas._overlays if o.style in ("normal", "faint", "edit")]  # noqa: E731
+    p = win.session.project
+    assert len(colors()) == 3
+    win.objects_panel.select_ids([ids[1]])
+    win.act_solo.trigger()
+    assert colors() == [p.get(ids[1]).color]  # only the selected one
+    win.toggle_edit(ids[2])
+    assert sorted(colors()) == sorted([p.get(ids[1]).color, p.get(ids[2]).color])  # and the one in Edit
+    win.act_hide_masks.trigger()
+    assert colors() == [p.get(ids[2]).color]  # Hide: only the one in Edit
+    win.finish_editing()
+    assert colors() == []
+    win.act_hide_masks.trigger()
+    win.act_solo.trigger()
+    assert len(colors()) == 3
+    tb = win.findChild(QToolBar, "main_toolbar").actions()
+    assert win.act_solo in tb and win.act_hide_masks in tb
