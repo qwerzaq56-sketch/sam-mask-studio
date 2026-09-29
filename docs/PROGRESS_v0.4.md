@@ -123,6 +123,11 @@
 - 프레임 목록 위 `Space` = `Enter`(기준 ◎ 지정). Paint 버튼 = `A`(전체 선택으로 시작). `E` 편집은 브러쉬 켜진 채로 시작.
 - 문서: [`ux-principles.md`](ux-principles.md) — 피드백에서 뽑은 UX 원칙.
 
+### 16단계 · 기준 프레임을 칸 색으로 (`v0.4-p16`, 12단계 고침)
+- 12단계는 "열린 프레임"을 칠했는데, 요청은 **더블클릭한 기준(◎)**이었음. 이제 ◎ = 칸 전체 파랑(`REFERENCE_FILL`, 글자 흰색),
+  열린 프레임 = 파란 테두리(`CURRENT_OUTLINE`), Shift/Ctrl로 고른 프레임 = 옅은 파랑(`PICKED_FILL`). 기준이 없으면 칠 없음.
+- 코드: `images_panel.py` `selection_fill(option, index, reference)`, `draw_outline`, 두 delegate의 `reference`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](ideas.md) 참고.
 

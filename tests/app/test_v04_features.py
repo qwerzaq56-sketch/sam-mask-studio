@@ -416,21 +416,32 @@ def test_merge_add_or_override(qapp, win):
 # --- p12: the open frame is a filled row / tile ------------------------------------
 
 
-def test_open_frame_row_and_tile_are_filled(qapp, win):
-    from src.app.images_panel import CURRENT_FILL
+def test_reference_row_and_tile_are_filled_open_frame_outlined(qapp, win):
+    """p12 filled the open frame; p16: the fill is for the reference ◎, the open frame gets a frame."""
+    from src.app.images_panel import CURRENT_OUTLINE, REFERENCE_FILL
 
     ip = win.images_panel
     win.names_btn.setChecked(False)  # IDs only: the row's right side is empty
     win.go_to(2)
+    win.set_reference(1)
     settle(qapp)
     fl = ip.frame_list
     img = fl.viewport().grab().toImage()
-    x = img.width() - 4  # the row's right end (the list may still be narrowing after the fold)
-    assert img.pixelColor(x, fl.visualRect(fl.model().index(2, 0)).center().y()) == CURRENT_FILL
-    assert img.pixelColor(x, fl.visualRect(fl.model().index(1, 0)).center().y()) != CURRENT_FILL
+    x = img.width() - 6  # the row's right side, inside the outline (the list may still be narrowing)
+    y = lambda row: fl.visualRect(fl.model().index(row, 0)).center().y()  # noqa: E731
+    assert img.pixelColor(x, y(1)) == REFERENCE_FILL  # ◎: filled
+    assert img.pixelColor(x, y(2)) != REFERENCE_FILL  # open: not filled...
+    r2 = fl.visualRect(fl.model().index(2, 0))
+    assert img.pixelColor(r2.center().x(), r2.top() + 1) == CURRENT_OUTLINE  # ...outlined
+    assert img.pixelColor(x, y(0)) != REFERENCE_FILL
     strip = ip.list.viewport().grab().toImage()
-    t = ip.list.visualItemRect(ip.list.item(2))
-    assert strip.pixelColor(t.left() + 2, t.top() + 2) == CURRENT_FILL
+    t1, t2 = ip.list.visualItemRect(ip.list.item(1)), ip.list.visualItemRect(ip.list.item(2))
+    assert strip.pixelColor(t1.right() - 4, t1.top() + 4) == REFERENCE_FILL  # its right side: the strip scrolls
+    assert strip.pixelColor(t2.center().x(), t2.top() + 1) == CURRENT_OUTLINE
+    win.set_reference(1)  # again: no reference, no fill
+    settle(qapp)
+    img = fl.viewport().grab().toImage()
+    assert img.pixelColor(x, y(1)) != REFERENCE_FILL
 
 
 # --- p13: hover keys (W A S D / arrows move in the list under the mouse) --------------
