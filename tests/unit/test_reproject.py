@@ -126,3 +126,90 @@ def test_convert_a_scene_to_pinhole_views(tmp_path):
     p2 = pts[pts["id"] == 2]
     assert len(p2) == 1 and abs(p2["x"][0] - 32) < 1e-6
     assert r.points_kept == 5  # every point is seen by both images' views
+
+
+# --- p30: fisheye sources, a 360 target -------------------------------------------------------
+
+
+def test_fisheye_projection_follows_colmap():
+    from src.core.reproject import source_projection
+
+    f, c = 100.0, 200.0
+    plain = Camera(1, "OPENCV_FISHEYE", 400, 400, (f, f, c, c, 0, 0, 0, 0))
+    a = 0.6  # 0.6 rad off the axis, to the right
+    x, y, ok = source_projection(plain)(plain, np.array([[np.tan(a), 0, 1.0]]))
+    assert np.isclose(x[0], f * a + c) and np.isclose(y[0], c) and ok[0]  # equidistant: r = f * theta
+    k1 = 0.1
+    dist = Camera(1, "OPENCV_FISHEYE", 400, 400, (f, f, c, c, k1, 0, 0, 0))
+    x, _, _ = source_projection(dist)(dist, np.array([[np.tan(a), 0, 1.0]]))
+    assert np.isclose(x[0], f * a * (1 + k1 * a * a) + c)
+    side = Camera(1, "SIMPLE_RADIAL_FISHEYE", 400, 400, (f, c, c, k1))
+    assert np.isclose(source_projection(side)(side, np.array([[np.tan(a), 0, 1.0]]))[0][0], x[0])
+    x, _, ok = source_projection(plain)(plain, np.array([[1.0, 0, -0.2]]))  # past 90°: a fisheye still sees it
+    assert ok[0] and x[0] > f * np.pi / 2 + c - 1e-9
+
+
+def make_fisheye_scene(root: Path, f: float = 40.0, size: int = 160):
+    """Two OPENCV_FISHEYE images (one lens, looking along +Z) 1 m apart; points ahead."""
+    (root / "images").mkdir(parents=True)
+    names = ["f0.jpg", "f1.jpg"]
+    yy, xx = np.mgrid[0:size, 0:size]
+    for n in names:
+        img = np.zeros((size, size, 3), np.uint8)
+        img[(xx - size / 2) ** 2 + (yy - size / 2) ** 2 < (size / 2 - 2) ** 2] = (0, 200, 0)  # the image circle
+        ok, buf = cv2.imencode(".jpg", img)
+        buf.tofile(str(root / "images" / n))
+    model = root / "sparse" / "0"
+    model.mkdir(parents=True)
+    with open(model / "cameras.bin", "wb") as fh:
+        fh.write(struct.pack("<QiiQQ8d", 1, 1, 5, size, size, f, f, size / 2, size / 2, 0, 0, 0, 0))
+    world = np.array([[0, 0, 5], [2, 0, 4], [-2, 1, 4]], float)
+    with open(model / "images.bin", "wb") as fh:
+        fh.write(struct.pack("<Q", 2))
+        for iid, n in enumerate(names, 1):
+            obs = np.zeros(len(world), POINT2D)
+            obs["id"] = np.arange(1, len(world) + 1)
+            fh.write(struct.pack("<i4d3di", iid, 1, 0, 0, 0, -(iid - 1.0), 0, 0, 1) + n.encode() + b"\0")
+            fh.write(struct.pack("<Q", len(obs)) + obs.tobytes())
+    with open(model / "points3D.bin", "wb") as fh:
+        fh.write(struct.pack("<Q", len(world)))
+        for pid, p in enumerate(world, 1):
+            fh.write(struct.pack("<Q3d3BdQ", pid, *p, 1, 2, 3, 0.1, 2) + np.array([(1, pid - 1), (2, pid - 1)], TRACK).tobytes())
+    return names
+
+
+def test_fisheye_to_360_marks_what_the_lens_never_saw(tmp_path):
+    from src.core.reproject import Erp, convert
+
+    src = tmp_path / "fish"
+    names = make_fisheye_scene(src)
+    out = tmp_path / "erp"
+    job = MaskJob(out / "masks", "{name}.png", invert=True, include_empty=True, get=lambda k: None)
+    r = convert(src / "images", src / "sparse" / "0", out, names, Erp(), [job])
+    w = int(round(2 * np.pi * 40)) // 2 * 2
+    assert r.views_out == 2 and r.side == w and r.points_kept == 3
+    [cam] = read_cameras_full(out / "sparse" / "0").values()
+    assert cam.model == "EQUIRECTANGULAR" and (cam.width, cam.height) == (w, w // 2)
+    img = cv2.imread(str(out / "images" / "f0.jpg"))
+    m = cv2.imread(str(out / "masks" / "f0.jpg.png"), cv2.IMREAD_GRAYSCALE)
+    h = w // 2
+    assert img[h // 2, w // 2][1] > 150  # straight ahead: the lens's green circle
+    assert m[h // 2, w // 2] == 255 and m[h // 2, 2] == 0  # ahead: trained · behind: ignored (black)
+    imgs = {name: pts for _, _, _, name, pts in _read_images_bin(out / "sparse" / "0" / "images.bin")}
+    p1 = imgs["f0.jpg"][imgs["f0.jpg"]["id"] == 1]
+    assert np.allclose([p1["x"][0], p1["y"][0]], [w / 2, h / 2])  # the point ahead: the 360 image's center
+
+
+def test_fisheye_to_pinhole_views(tmp_path):
+    from src.core.reproject import convert
+
+    src = tmp_path / "fish"
+    names = make_fisheye_scene(src)
+    out = tmp_path / "pin"
+    job = MaskJob(out / "masks", "{name}.png", invert=True, include_empty=True, get=lambda k: None)
+    r = convert(src / "images", src / "sparse" / "0", out, names, Views(yaws=(-45, 0, 45), pitches=(0,)), [job])
+    assert r.views_out == 6
+    front = cv2.imread(str(out / "images" / "f0_y000_p00.jpg"))
+    s = front.shape[0]
+    assert front[s // 2, s // 2][1] > 150
+    assert cv2.imread(str(out / "masks" / "f0_y000_p00.jpg.png"), cv2.IMREAD_GRAYSCALE).min() == 255  # all seen

@@ -1073,9 +1073,10 @@ def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
     dlg.to_new.setChecked(True)
     new = tmp_path / "pin"
     dlg.dataset.setText(str(new))
-    assert dlg.views() is None  # the box is off: the dataset stays 360
-    dlg.pinhole.setChecked(True)
-    dlg.yaws.setValue(6)
+    assert dlg.views() is None  # Keep the cameras: the dataset stays 360
+    assert dlg.convert.findData("erp") < 0  # a 360 scene is not converted to 360
+    dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    dlg.yaws.setText("0, 60, 120, 180, 240, 300")
     dlg.pitches.setText("0")
     dlg.side.setValue(64)
     v = dlg.views()
@@ -1084,4 +1085,31 @@ def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
     wait_until(qapp, lambda: not win._busy)
     assert len(list((new / "images").iterdir())) == 12 and len(list((new / "masks").iterdir())) == 12
     assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["PINHOLE"]
-    assert "Pinhole dataset" in win.log_view.toPlainText()
+    assert "Converted dataset" in win.log_view.toPlainText()
+
+
+# --- p30: a fisheye scene to 360 or pinhole views --------------------------------------------------
+
+
+def test_fisheye_scene_to_a_360_dataset(qapp, win, tmp_path):
+    from src.app.dialogs import ExportDialog
+    from src.core.colmap import read_cameras_full
+    from src.core.reproject import Erp
+    from tests.app.conftest import wait_until
+    from tests.unit.test_reproject import make_fisheye_scene
+
+    root = tmp_path / "fish"
+    make_fisheye_scene(root)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="brush")
+    dlg.to_new.setChecked(True)
+    new = tmp_path / "erp"
+    dlg.dataset.setText(str(new))
+    assert dlg.yaws.text() == "-45, 0, 45"  # a fisheye's default views
+    dlg.convert.setCurrentIndex(dlg.convert.findData("erp"))
+    assert isinstance(dlg.views(), Erp) and not dlg.yaws.isVisibleTo(dlg)
+    win.run_export(dlg.jobs(), dataset=new, views=dlg.views())
+    wait_until(qapp, lambda: not win._busy)
+    assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["EQUIRECTANGULAR"]
+    assert len(list((new / "masks").iterdir())) == 2

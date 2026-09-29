@@ -209,6 +209,15 @@
 - 카메라 표에 COLMAP id 12~17 추가(전에는 ERP 카메라를 만나면 읽기를 멈췄음).
 - 코드: `src/core/reproject.py`(원본 모델의 투영식을 표로 두어 Fisheye 등을 더하기 쉬운 틀), `storage.full_mask`.
 
+### 30단계 · Fisheye → Pinhole / 360 (`v0.4-p30`, [`specs/08`](../specs/08-erp-to-pinhole.md) P2)
+- 변환 원본: ERP, Pinhole 계열(SIMPLE_PINHOLE, PINHOLE, SIMPLE_RADIAL, RADIAL, OPENCV — 왜곡 포함), Fisheye 계열(OPENCV_FISHEYE, SIMPLE/RADIAL_FISHEYE,
+  SIMPLE_FISHEYE, FISHEYE). 투영식은 COLMAP 소스와 같음(테스트로 대조).
+- 목표: **Pinhole views**(yaw 목록 × pitch 목록, FOV, 크기) 또는 **360 (ERP)**(원본마다 한 장, 폭 auto = 2π × 초점거리). Export 창 New dataset 아래
+  목록에서 고름(Keep the cameras / Pinhole views / 360). 기본 뷰: 360 원본 = 0, 90, 180, 270 × −35, 0, 35 · Fisheye = −45, 0, 45 × −35, 0, 35.
+- 원본 렌즈가 못 본 부분(피시아이 → 360의 뒤쪽, 뷰의 바깥)은 **모든 마스크에서 무시**로 써서 검은 채움을 학습하지 않게 함.
+- **Fisheye → ERP → Pinhole**: 피시아이 장면을 360으로 내보낸 뒤, 그 데이터셋을 열어(마스크는 Object로 불러와짐) 다시 Pinhole로 내보내면 됨.
+- 코드: `reproject.convert(target = Views | Erp)`, `source_projection`.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
