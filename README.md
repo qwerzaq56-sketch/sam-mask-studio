@@ -12,6 +12,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 | 폴더 | 내용 |
 |---|---|
+| [`docs/manual/`](docs/manual/README.md) | **사용 설명서**: 시작하기 · 추천 워크플로 · 레시피 · 기능 참고 · 부록 |
 | [`docs/design/`](docs/design) | 지키는 기준: [UX 원칙](docs/design/ux-principles.md) · [메뉴 설계](docs/design/menu-design.md) · [키맵](docs/design/keymap.md) |
 | [`docs/specs/`](docs/specs) | 기능 기획서(번호순)와 요청 원문 |
 | [`docs/backlog/`](docs/backlog) | 할 일: [아이디어](docs/backlog/ideas.md) · [UI 문제](docs/backlog/ui-issues.md) |
@@ -28,137 +29,23 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 | **Edit Layer** | 브러쉬·자동 도구로 한 손질. 포인트로 만든 Mask 위에 따로 쌓여서 언제든 지우거나 확정 가능 |
 | **Final Mask** | 체크된 Object들의 Mask를 합친 결과. 이것이 Export됨 |
 
-작업 흐름: **찾기 → 고르기 → 다듬기 → 전파 → 내보내기**
-
-## 화면 구성
-
-```text
-┌─ File  Edit  View  Go  Help                        (메뉴: 모든 명령과 단축키)                          ┐
-├─ Mask Preview  Preview: Final  Brush │ Outline ▢px │ Show Changes            (툴바: 자주 쓰는 토글) ─┤
-├───────────┬─────────────────────┬───────────────────────────────────────────┬──────────────────────┤
-│Frame List │ Objects             │                                           │ Properties           │
-│ 1 ★ ◎ a.jpg│ ☑ person #1  🔗 12  │ Frame 1/12 · Object: ■ person #1 · Mode   │  [Mask] [Edit Layer] │
-│ 2 ✓   b.jpg│ ☑ car #1            │                Canvas                     │  Variants / Points   │
-│ 3 ✓📌 c.jpg│ [+ New Object]       │                                           │  Brush · Auto tools  │
-│ …         ├─────────────────────┤                                           │  Settings · Layer    │
-│           │ Prompt/Detection    │                                           │                      │
-│           │ Batch · Propagation │                                           │                      │
-│[Go to][⌖] │ Logs                ├───────────────────────────────────────────┤                      │
-│           │                     │ Frames: ▢▢▢▢▢ 썸네일 줄   [Go to][⌖]      │ [Finish Editing]     │
-└───────────┴─────────────────────┴───────────────────────────────────────────┴──────────────────────┘
-```
-
-- **Frame List**(왼쪽 끝)와 **Frames** 썸네일 줄(아래)은 같은 목록입니다. 현재 이미지, 선택, ◎(전파 기준), 📌(고정)가 항상 똑같이 보입니다.
-- 캔버스 위 **작업 상태 바**: 지금 프레임 · 대상 Object(출처) · 모드(Points / Paint / Auto · 도구 (Fill/Paint) / Select on Image / 작업 중 진행)를 한 줄로 보여줍니다.
-- **메뉴 바**(File / Edit / View / Go / Help)에 모든 명령이 단축키와 함께 있습니다. Open / Save / Export / Undo / Redo / Settings는 메뉴에만,
-  작업 중 계속 켜고 끄는 보기·도구 토글만 아래 툴바에 둡니다. 설계: [`docs/design/menu-design.md`](docs/design/menu-design.md)
-- 모든 패널은 옮기거나 띄우거나 닫을 수 있고, **View → Panels**에서 다시 켭니다. 단축키 전체는 **Help → Keyboard Shortcuts (F1)**.
+작업 흐름: **찾기 → 고르기 → 다듬기 → 전파 → 내보내기**. 포인트 레이어, 마스크 세트, 특수 Object는 [설명서 A1](docs/manual/01-getting-started.md#핵심-개념).
 
 ## 사용법
 
-### Object 만들기
+**사용 설명서: [`docs/manual/`](docs/manual/README.md)** (기준 `v0.4-p57`)
 
-1. **SAM3 텍스트 프롬프트** — *Prompt / Detection* 탭에 `person, car, tripod`처럼 쉼표로 여러 개를 입력하고 **Detect**.
-   - 후보가 라벨별로 묶여 나오고, **Select on Image**가 켜집니다. 캔버스에서 클릭/드래그 = 추가, Shift = 토글, Ctrl = 해제.
-     (드래그 박스에 조금이라도 걸리면 대상. 해제된 후보도 외곽선은 보입니다.)
-   - **Add Each**(후보마다 Object) · **Add as One**(전부 머지해서 하나) · **Add per Prompt**(라벨마다 하나).
-   - **Preview**로 후보 표시를 켜고 끕니다. Select on Image가 켜져 있는 동안에는 Edit에 들어갈 수 없습니다.
-2. **+ New Object from Points** (`N`) — 누른 뒤 캔버스를 클릭하거나 박스를 드래그합니다.
-3. **Batch** 탭 — 여러 이미지(전체 / 범위 / 선택한 이미지)에 프롬프트를 한꺼번에 돌려 라벨마다 Object 하나를 만듭니다.
-   **Stop**은 여기까지 결과를 남기고, **Cancel**은 전부 버립니다.
-
-그냥 캔버스를 클릭해서는 Object가 생기지 않습니다.
-
-### Object 편집 (포인트)
-
-- 목록의 **[Points]** (`E`)로 Object 하나를 편집 상태로 둡니다. 편집 중에는 이미지를 넘길 수 없습니다(`Esc`로 종료).
-- 좌클릭 = Positive, 우클릭 = Negative, 드래그 = Box. 포인트는 **드래그로 이동**, **더블클릭으로 삭제**(또는 선택 후 `Delete`).
-- SAM3로 만든 Object도 포인트로 다듬을 수 있습니다(검출 Mask가 SAM2의 초기값).
-- Variant는 Properties의 **Mask** 탭이나 Objects 목록의 ●/○ 행에서 고릅니다.
-
-### Edit Layer (Properties → Edit Layer 탭)
-
-- **Paint** (`D`): 드래그 = 추가, `Alt`+드래그 = 빼기. **Restore**: 칠한 곳의 손질을 되돌림(Add / Subtract / Both).
-  `Ctrl+휠` = 브러쉬 크기(휠은 줌). `Alt`를 누르면 브러쉬 원이 빨갛게 바뀝니다.
-- **Auto tools**: Object Fill(물체 경계까지 넓히기) · Fill Holes · Remove Specks · Grow · Shrink.
-  - **Fill** 모드: 결과 전체를 마젠타(추가)/보라(제거)로 미리 봄. 도구를 켜면 항상 Fill로 시작.
-  - **Paint** 모드: 회색 후보를 칠해서 고름(`Alt` = 해제, `A` = 전체 선택/해제). Fill 모드에서 `A`를 누르면 전체 선택 상태로 Paint 모드에 들어감.
-  - **Apply & Continue** (`Enter`) = 반영하고 다음 결과 계산 · **Apply & Close** = 반영하고 종료 ·
-    그 외(Esc, 다른 도구, 툴 버튼 다시 누르기)는 반영하지 않고 나감.
-  - **Region Box**: 드래그로 범위를 정하면 그 안에서만 동작(`Alt`+드래그 = 빼기). 모든 조작은 Undo 가능.
-- **Apply Layer**: 손질을 확정해 기본 Mask로 만듦 · **Delete Layer**: 손질을 전부 버림.
-- 도구 **Settings**와 **Layer** 섹션은 제목의 ▾ / ▸로 접을 수 있고, 접힌 상태는 기억됩니다.
-
-### Object 관리
-
-- 목록에는 **현재 이미지에 Mask가 있는 Object만** 보입니다. **Show all Objects**로 전부 보기. 여러 이미지에 걸친 Object는 `🔗 N`.
-- 체크박스 = Final Mask 포함 여부. 이름 더블클릭 = Rename, `[×]` = 삭제, `[···]` = Duplicate / Duplicate All / Copy into ▸ / 이 이미지 Mask만 제거.
-- 선택한 행에 대한 버튼(메뉴 **Edit → Objects**에도 있음):
-  - **Duplicate**: 현재 이미지의 Mask만 복제 · **Duplicate All**: 모든 이미지의 링크된 Mask까지 복제.
-  - **Copy A → B…**: 처음 선택한 Object(A)를 두 번째(B)에 복사. 방향(A → B / B → A), **Add**(합집합, 기본) / **Replace**(B의 Mask를 A로 교체),
-    **이 이미지만**(기본) / **A에 Mask가 있는 모든 이미지**를 고릅니다. A에 Mask가 없는 이미지의 B는 그대로.
-  - **Merge…**: 하나의 Object로 합치고 원본은 지움. **Add**(합집합, 처음 선택한 이름, 기본) /
-    **Override with A**(겹치는 이미지는 A의 Mask, A 이름) / **Override with B**(B의 Mask, B 이름). 한쪽에만 있는 이미지는 그 Mask를 그대로.
-  - **Delete**. 모두 Undo 한 번으로 되돌아갑니다.
-- `↑` / `↓`: 이 이미지에 Mask가 있는 이전/다음 Object로 이동(편집 중이면 편집 대상도 따라감).
-- 마우스를 **Objects 목록 위에** 두면 `W` `A` `↑` `←` = 이전 행, `S` `D` `↓` `→` = 다음 행(Show all로 보이는 행 포함).
-
-### 프레임 이동
-
-- `←` / `→` (PgUp / PgDn): 이전 / 다음 이미지. 목록의 숫자는 이미지 ID(1부터)입니다.
-- 마우스를 **Frame List나 Frames 줄 위에** 두면 `W` `A` `↑` `←` = 이전, `S` `D` `↓` `→` = 다음 이미지.
-  (목록 위에서는 `S`도 "다음"이고, 다른 곳에서는 `A` = 오토 툴 전체 선택, `D` = Paint, `S` = 스크롤 그대로.)
-- 열려 있는 이미지는 Frame List 행과 Frames 타일 **전체가 파란색**으로 칠해집니다. Shift/Ctrl로 고른 다른 이미지는 옅은 파랑.
-- `S` 또는 ⌖: 현재 프레임으로 스크롤 · **Go to ID**: ID 입력 + Enter.
-- Frame List 제목줄의 `Aa`: 파일 이름을 접어서 ID와 표시만 남김(좁은 목록).
-- **프레임 상태 표시**: `★` 여기서 편집 · `✓` 전파됨 · `⚠` 의심(면적 급변) · `✕` 전파 후 빈 Mask. 색으로도 구분됩니다(파랑/기본/주황/빨강).
-  - 목록 아래와 Frames 줄 오른쪽에 개수 요약(`★3 ✓40 ⚠2 ✕0`).
-  - Frame List 제목줄의 `1`: 선택한 Object 기준으로만 표시, 그 Object의 Mask가 없는 이미지는 `–`(회색).
-  - `[` / `]`: 이전 / 다음 문제 이미지(`⚠` `✕`, `1`이 켜져 있으면 `–`도)로 이동.
-- `,` / `.`: 가장 가까운 이전 / 다음 키프레임(★, 직접 편집한 = 전파 소스)으로. `F`: 전파 기준(◎, 더블클릭한 프레임)으로.
-- 썸네일은 `<폴더>.sms/thumbs/`에 캐시됩니다.
-
-### Propagation (이미지 시퀀스)
-
-- **Reference**: 프레임 목록에서 **더블클릭**한 이미지(◎)가 기준입니다. 지정하지 않으면 현재 이미지.
-- **Scope**
-  - **Selection**: 프레임 목록에서 Shift/Ctrl로 고른 이미지(사이의 이미지는 건너뜀). **📌 Pin**으로 선택을 고정.
-  - **Range**: Start ~ End (ID) · **Custom**: `1-4, 35, 23` · **All images**.
-- Direction(Both / Forward / Backward), 체크된 Object만 기준 이미지의 Mask에서 전파합니다.
-- **Stop** = 여기까지 남기기 · **Cancel** = 전부 버리기(Stop 후에도 가능) · **Resume** = 멈춘 지점부터 이어서.
-- 결과 표시: `✓` 성공 · `⚠` 경고(면적 급변) · `✕` 실패(빈 Mask) · `★` 기준/수동. 전파 전체가 Undo 한 번으로 되돌아갑니다.
-
-### 표시
-
-- **Outline** (`O`) + 두께: 편집 중인 Mask의 흰 외곽선 · **Show Changes** (`R`): 손질한 부분을 초록/빨강으로 표시.
-- **Mask Preview**: 흑백 마스크 보기. `X` = 켜고 끄기, `Z`를 누르고 있는 동안 보기(편집은 그대로 가능, 브러쉬 원은 초록).
-  - 옆 버튼 **Preview: Final / Object** (`V`): Final Mask(체크된 Object 전체) ↔ 선택한 Object의 Mask만.
-
-### 저장과 Export
-
-- **자동 저장**: 이미지 폴더 **옆** `<폴더>.sms/`에 저장합니다(백그라운드). COLMAP / 3DGS 로더가 이미지 폴더를 재귀적으로 읽기 때문에 폴더 안에는 두지 않습니다.
-- **Export** (`Ctrl+E`): Final Mask를 흑백 PNG, **원본 해상도**로 `<폴더>_masks/`에 저장.
-  파일 이름 `{stem}.png` 또는 COLMAP 방식 `{name}.png`, 반전, 빈 이미지도 저장 옵션.
-  - Export 창 위쪽에 **검사 결과**: 저장될 파일 수, Mask 없는 이미지, 빈 Mask, ⚠ / ✕ 프레임, 파일 이름 충돌.
-    문제 이미지 목록에서 더블클릭하면 창을 닫고 그 이미지로 이동합니다.
-
-## 주요 단축키
-
-| 키 | 동작 |
+| 장 | 내용 |
 |---|---|
-| Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export |
-| Ctrl+Z / Ctrl+Y | Undo / Redo |
-| N / E / Esc | New Object / Points 편집 시작·종료 / 도구 → 편집 종료 |
-| ← → / ↑ ↓ | 이미지 이동 / Object 이동 |
-| W A S D / 화살표 (목록 위에 마우스) | Frame List·Frames 줄: 이미지 이동 · Objects 목록: Object 이동 |
-| D | Paint 브러쉬 |
-| Enter / A | Auto tool 반영 후 계속 / 전체 선택 |
-| X / Z(누르고 있기) / V | Mask Preview 토글 / 잠깐 보기 / Final ↔ 선택 Object |
-| O / R | Outline / Show Changes |
-| S / [ ] | 현재 프레임으로 스크롤 / 이전·다음 문제 이미지 |
-| , . / F / Enter | 이전·다음 키프레임(★) / 전파 기준(◎)으로 이동 / 현재 프레임을 기준으로 지정 |
-| 휠 / Ctrl+휠 / 가운데·Space 드래그 | 줌 / 브러쉬 크기 / 이동 |
-| F1 | 단축키 전체 목록 |
+| [A. 시작하기](docs/manual/01-getting-started.md) | 핵심 개념, 화면 구성, 준비(체크포인트, Settings) |
+| [B. 추천 워크플로](docs/manual/02-workflow.md) | COLMAP 장면에서 사람 지우기 → Spirula / Brush용 Export, 따라 하기 |
+| [C. 레시피](docs/manual/03-recipes.md) | 하늘, 피시아이 테두리, 마스크 고치기, 프레임 빼기, Postshot, 360 · 피시아이 변환 |
+| [D. 기능 참고](docs/manual/04-reference.md) | 패널과 창의 모든 칸, 학습기별 규칙, [단축키 전체표](docs/manual/04-reference.md#d8-단축키-전체표) |
+| [E. 부록](docs/manual/05-appendix.md) | 파일 위치, 문제 해결, 용어집 |
+
+짧게: File → **Open Folder…** (`Ctrl+O`)로 이미지 폴더나 COLMAP 장면을 열고 → **Prompt / Detection**(SAM3 글자) 또는 **+ New Object from Points** (`N`, SAM2 클릭)로
+Object를 만들고 → **Points** (`E`) · **Brush** (`D`) · 오토 툴로 다듬고 → **Propagation** 탭에서 전파하고 → File → **Export Final Masks…** (`Ctrl+E`)에서
+학습기(**For**)를 골라 내보냅니다. 모든 명령은 메뉴 바에 키와 함께 있고, 앱에서 `F1`을 누르면 단축키 전체가 나옵니다.
 
 ## 설치 (Windows, 개발용)
 

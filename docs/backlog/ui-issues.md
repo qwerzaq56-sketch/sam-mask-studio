@@ -50,3 +50,4 @@
 
 ## 사용자 메모
 <!-- 여기에 한 줄씩: - 무엇이 / 어디서 / (캡처 파일 이름) -->
+- F1 단축키 창의 `D` 줄이 아직 "in an auto tool: Paint <-> Fill"(p49). p55부터는 오토 툴에서 D = Paint(다시 = 전체 선택 / 해제), Fill은 S. 아래 `S / D` 줄과 어긋남 / `src/app/dialogs.py` `SHORTCUTS` (설명서 작업 중 발견, 2026-09-30)
