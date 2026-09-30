@@ -27,6 +27,7 @@ import cv2
 import numpy as np
 
 from src.engine.imageio import key_stem
+from src.core.special import Special
 from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, Source, Variant, freeze
 
 FORMAT_VERSION = 1
@@ -189,6 +190,7 @@ class ProjectStore:
                     "color": list(o.color),
                     "included": o.included,
                     "locked": o.locked,
+                    "special": o.special.to_json() if o.special is not None else None,
                     "frames": frames_json,
                 }
             )
@@ -279,6 +281,7 @@ class ProjectStore:
                     included=bool(oj.get("included", True)),
                     frames=frames,
                     locked=bool(oj.get("locked", False)),
+                    special=Special.from_json(oj.get("special")),
                 )
             )
         self._saved_revision = project.revision

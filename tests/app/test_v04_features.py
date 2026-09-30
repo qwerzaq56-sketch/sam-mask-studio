@@ -1276,3 +1276,77 @@ def test_propagation_warns_only_about_the_selected_objects(qapp, win):
     win.objects_panel.last_selected = []  # none selected: every checked Object, as before
     win.propagate(0, 3, Direction.FORWARD)
     assert k[2] in asked[0] and k[3] in asked[0]
+
+
+# --- p36: special Objects, made from settings (docs/specs/09-special-objects.md) ---------------------
+
+
+def test_lens_edge_object_made_from_settings(qapp, win):
+    from src.core.special import LENS_EDGE
+
+    s = win.session
+    win.add_special(LENS_EDGE)
+    [o] = s.project.objects
+    assert o.special is not None and o.name.startswith("Lens edge")
+    assert o.id in win.objects_panel.listed_ids()  # listed although it has no mask yet
+    sp = win.properties_panel.special
+    assert sp.obj_id == o.id and win.properties_panel.tabs.currentIndex() == win.properties_panel.special_tab
+    win.special_generate("all", 0, -1)
+    o = s.project.get(o.id)
+    assert len(o.frames) == len(s.keys) and len(o.special.keys) == len(s.keys)
+    h, w = o.mask(s.keys[0]).shape
+    assert o.mask(s.keys[0])[0, 0] and not o.mask(s.keys[0])[h // 2, w // 2]
+    before = int(o.mask(s.keys[0]).sum())
+    win.special_params(o.id, {"radius": 60})  # every frame follows the setting
+    o = s.project.get(o.id)
+    assert o.special.get("radius") == 60 and int(o.mask(s.keys[3]).sum()) > before
+    win.toggle_edit(o.id)  # made from settings: not edited by hand
+    assert s.editing is None and "Apply it" in win.log_view.toPlainText()
+    win.special_apply()
+    assert s.project.get(o.id).special is None
+    win.undo()  # special again
+    assert s.project.get(o.id).special is not None
+    assert s.seeds(s.index, ids=[o.id]) == {}  # a special Object is not propagated
+
+
+def test_sky_object_with_a_model_and_its_saved_settings(qapp, win, tmp_path):
+    import numpy as np
+
+    from src.core.special import SKY
+
+    class TopHalf:  # stands in for the network: the upper half is sky
+        runs = 0
+
+        def probability(self, rgb):
+            TopHalf.runs += 1
+            p = np.zeros(rgb.shape[:2], np.uint8)
+            p[: rgb.shape[0] // 2] = 230
+            return p
+
+    s = win.session
+    win.add_special(SKY)
+    [o] = s.project.objects
+    model = win.settings.sky_checkpoint = str(tmp_path / "sky.onnx")
+    win.special_generate("all", 0, -1)
+    assert "sky model is not there" in win.log_view.toPlainText()  # warn -> log in tests
+    keys = s.keys[:3]
+    assert s.sky_missing(keys) == keys
+    assert s.compute_sky(keys, TopHalf()) == 3 and not s.sky_missing(keys)
+    win.images_panel.list.clearSelection()
+    for r in range(3):
+        win.images_panel.list.item(r).setSelected(True)
+    open(model, "wb").close()  # a model file exists (not used: every picked frame is already cached)
+    win.special_generate("selected", 0, -1)
+    o = s.project.get(o.id)
+    assert sorted(o.frames) == sorted(keys) and TopHalf.runs == 3
+    m = o.mask(keys[0])
+    assert m[1, 1] and not m[-2, 1]
+    win.special_params(o.id, {"threshold": 95})  # above the map everywhere: no sky
+    assert not s.project.get(o.id).frames and s.project.get(o.id).special.keys == tuple(keys)
+    win.special_params(o.id, {"threshold": 40, "grow": 4})
+    win.save(force=True)
+    from src.core.storage import ProjectStore
+
+    back = ProjectStore(s.image_dir, s.max_side).load(list(s.keys))
+    ob = back.get(o.id)
+    assert ob.special is not None and ob.special.get("grow") == 4 and ob.special.keys == tuple(keys)

@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMenu,
+    QToolButton,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -32,6 +33,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.core.special import LENS_EDGE, SKY
 from src.core.project import MaskObject
 
 ID_ROLE = Qt.ItemDataRole.UserRole
@@ -103,6 +105,7 @@ class ObjectsPanel(QWidget):
     renamed = pyqtSignal(int, str)
     edit_requested = pyqtSignal(int)  # obj id; the Object already in Edit means "finish"
     new_requested = pyqtSignal()
+    special_requested = pyqtSignal(str)  # a special Object's kind (sky, lens_edge)
     merge_requested = pyqtSignal(list)  # Add, at once
     merge_options_requested = pyqtSignal(list)  # ⚙: Add / Override with A / B
     duplicate_requested = pyqtSignal(list)  # the current image's mask only
@@ -149,6 +152,14 @@ class ObjectsPanel(QWidget):
         self.new_btn = QPushButton("+ New Object from Points")
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
         self.new_btn.clicked.connect(lambda: later(self, self.new_requested))
+        self.special_btn = QToolButton()
+        self.special_btn.setText("+ Special")
+        self.special_btn.setToolTip("An Object made from settings, not points: the sky, a fisheye's black edge")
+        self.special_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(self.special_btn)
+        for kind, text in ((SKY, "Sky Mask"), (LENS_EDGE, "Fisheye Lens Edge")):
+            menu.addAction(text, lambda k=kind: later(self, self.special_requested, k))
+        self.special_btn.setMenu(menu)
         self.merge_btn = QPushButton("Merge")
         self.merge_btn.setToolTip(
             "Fuse the selected rows into one Object (the union, named after the first selected)."
@@ -210,7 +221,10 @@ class ObjectsPanel(QWidget):
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(head)
         lay.addWidget(self.tree, 1)
-        lay.addWidget(self.new_btn)
+        new_row = QHBoxLayout()
+        new_row.addWidget(self.new_btn, 1)
+        new_row.addWidget(self.special_btn)
+        lay.addLayout(new_row)
         lay.addWidget(QLabel("Selected Objects"))
         lay.addLayout(ops)
         lay.addLayout(ops2)
@@ -248,7 +262,8 @@ class ObjectsPanel(QWidget):
 
     def _listed(self, o: MaskObject, key: Optional[str], editing: Optional[int]) -> bool:
         """Listed: it has a mask on this image, it is being edited, or Show all is on."""
-        return self.show_all.isChecked() or o.id == editing or (key is not None and o.mask(key) is not None)
+        return (self.show_all.isChecked() or o.id == editing or o.special is not None
+                or (key is not None and o.mask(key) is not None))
 
     @staticmethod
     def _variant_count(o: MaskObject, key: Optional[str]) -> int:

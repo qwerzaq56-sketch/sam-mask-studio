@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional
 
+import numpy as np
+
 from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QAction, QCursor, QKeySequence
 from PyQt6.QtWidgets import (
@@ -53,6 +55,8 @@ from src.app.images_panel import ImagesPanel
 from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, PropertiesPanel
+from src.core.special import LABELS as SPECIAL_LABELS
+from src.core.special import LENS_EDGE, SKY, SkyModel, detect_lens_circle
 from src.app.session import Mode, Session
 from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
@@ -600,6 +604,12 @@ class MainWindow(QMainWindow):
         pp.cancel_requested.connect(lambda: self.stop_job(discard=True))
         pp.navigate_requested.connect(self.go_to)
         self.images_panel.navigate_requested.connect(self.go_to)
+        sp = self.properties_panel.special
+        sp.params_changed.connect(self.special_params)
+        sp.generate_requested.connect(self.special_generate)
+        sp.detect_requested.connect(self.special_detect)
+        sp.apply_requested.connect(self.special_apply)
+        self.objects_panel.special_requested.connect(self.add_special)
         # right-click on the picked frames: what works on many frames at once
         for view in (self.images_panel.list, self.images_panel.frame_list):
             view.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
@@ -687,6 +697,12 @@ class MainWindow(QMainWindow):
             new_mode=s.mode == Mode.NEW_OBJECT,
             editing=shown is not None and shown is editing_obj,
         )
+        note = ""
+        if shown is not None and shown.special is not None and shown.special.kind == SKY:
+            ok = Path(self.settings.sky_checkpoint).is_file()
+            note = "Model: ✓ " + Path(self.settings.sky_checkpoint).name if ok else \
+                "Model missing: skyseg.onnx (Settings)"
+        self.properties_panel.special.show_object(shown, len(s.keys), note)
         self.detection_panel.set_detections(s.detections, s.detection_checked)
         if not s.detections and self.detection_panel.select_btn.isChecked():
             self.detection_panel.select_btn.blockSignals(True)  # nothing left to pick (added / discarded)
@@ -1542,6 +1558,11 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def toggle_edit(self, oid: int) -> None:
+        o = self.session.project.get(oid)
+        if o is not None and o.special is not None and self.session.editing != oid:
+            self.log(f"“{o.name}” is made from its settings: Apply it (Properties → Special) to edit it by hand")
+            self.refresh()
+            return
         if self.session.editing != oid and self._no_edit_while_picking():
             self.refresh()  # the row's Points button springs back
             return
@@ -1705,6 +1726,107 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Many frames at once (the frames picked in the Frame List)
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Special Objects (docs/specs/09-special-objects.md)
+    # ------------------------------------------------------------------
+
+    def add_special(self, kind: str) -> None:
+        s = self.session
+        if s.key is None or self._busy:
+            return
+        if s.editing is not None:
+            self.finish_editing()
+        oid = s.add_special(kind)
+        self._select_new([oid])
+        self.refresh()  # its settings show in Properties → Special
+        self.log(f"New {SPECIAL_LABELS[kind]} Object: choose its frames in Properties → Special, then Make Masks")
+
+    def _special_obj(self):
+        oid = self.properties_panel.special.obj_id
+        o = self.session.project.get(oid) if oid is not None else None
+        return o if o is not None and o.special is not None else None
+
+    def special_params(self, oid: int, params: dict) -> None:
+        if not self._busy and self.session.update_special(oid, params=params):
+            self.refresh()
+
+    def special_generate(self, scope: str, start: int, end: int) -> None:
+        s = self.session
+        o = self._special_obj()
+        if o is None or self._busy:
+            return
+        rows = s.batch_indices(scope, start, end, self.images_panel.selected_rows())
+        if not rows:
+            self.log("No frames: pick them in the Frame List (Shift/Ctrl-click) first")
+            return
+        keys = [s.keys[i] for i in rows]
+        todo = s.sky_missing(keys) if o.special.kind == SKY else []
+        if not todo:
+            s.update_special(o.id, keys=keys)
+            self.log(f"{o.name}: masks made on {len(keys)} frame(s) (Ctrl+Z undoes it)")
+            self.refresh()
+            return
+        path = Path(self.settings.sky_checkpoint)
+        if not path.is_file():
+            self.warn(f"The sky model is not there:\n{path}\n\nDownload skyseg.onnx (about 170 MB) from "
+                      "https://huggingface.co/JianyuanWang/skyseg into checkpoints/sky/, or set its path in Settings.")
+            return
+        oid, total = o.id, len(todo)
+        state = {"n": 0}
+        self._busy = f"Sky: 0 / {total}…"
+
+        def work():
+            if getattr(self, "_sky_model", None) is None or self._sky_model_path != path:
+                self._sky_model, self._sky_model_path = SkyModel(path), path
+            return s.compute_sky(todo, self._sky_model, progress=lambda n, t: state.update(n=n))
+
+        timer = QTimer(self)
+        timer.setInterval(300)
+        timer.timeout.connect(lambda: self.mode_label.setText(f"Sky: {state['n']} / {total}…"))
+        timer.start()
+
+        def done(n):
+            timer.stop()
+            self._busy = None
+            s.update_special(oid, keys=keys)
+            self.log(f"Sky model run on {n} frame(s); masks on {len(keys)} frame(s) (Ctrl+Z undoes them)")
+            self.refresh()
+
+        def failed(msg):
+            timer.stop()
+            self._busy = None
+            self.refresh()
+            self.warn(f"Sky masks failed: {msg}")
+
+        self._start(Task(work), done, failed)
+        self.refresh()
+
+    def special_detect(self) -> None:
+        """Lens edge: the image circle found in (up to 8 of) the covered frames, else the open one."""
+        s = self.session
+        o = self._special_obj()
+        if o is None or self._busy or o.special.kind != LENS_EDGE:
+            return
+        keys = list(o.special.keys) or [s.key]
+        pick = [keys[i] for i in np.linspace(0, len(keys) - 1, min(8, len(keys))).astype(int)]
+        found = detect_lens_circle([s.working_image(k) for k in pick])
+        if found is None:
+            self.log("No image circle found: the images have no black edge to see")
+            return
+        s.update_special(o.id, params=found)
+        self.log(f"Image circle: radius {found['radius']} %, center {found['cx']:+} / {found['cy']:+} % "
+                 f"(from {len(pick)} frame(s))")
+        self.refresh()
+
+    def special_apply(self) -> None:
+        o = self._special_obj()
+        if o is None or self._busy:
+            return
+        self.properties_panel.special.flush()
+        if self.session.apply_special(o.id):
+            self.log(f"“{o.name}” is an ordinary Object now: its masks can be edited (Ctrl+Z makes it special again)")
+        self.refresh()
 
     def _picked_rows(self) -> List[int]:
         return self.images_panel.selected_rows() or ([self.session.index] if self.session.key else [])

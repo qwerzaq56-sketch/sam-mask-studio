@@ -16,13 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PATH = ROOT / "config.local.json"
 
 
-PATH_FIELDS = ("sam2_checkpoint", "sam3_checkpoint")
+PATH_FIELDS = ("sam2_checkpoint", "sam3_checkpoint", "sky_checkpoint")
 
 
 @dataclass
 class Settings:
     sam2_checkpoint: str = str(ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt")
     sam3_checkpoint: str = str(ROOT / "checkpoints" / "sam3" / "sam3.pt")
+    sky_checkpoint: str = str(ROOT / "checkpoints" / "sky" / "skyseg.onnx")  # the Sky special Object's model
     max_side: int = DEFAULT_MAX_SIDE
     last_dir: Optional[str] = None
     autosave_ms: int = 1500

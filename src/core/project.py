@@ -16,6 +16,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from src.core.special import Special
+
 Box = Tuple[float, float, float, float]  # x0, y0, x1, y1 in working-resolution pixels
 
 PALETTE: Tuple[Tuple[int, int, int], ...] = (
@@ -44,6 +46,7 @@ class Source(str, Enum):
     MERGED = "MERGED"
     DUPLICATE = "DUPLICATE"
     IMPORTED = "IMPORTED"  # read from a mask folder (a COLMAP scene's masks/)
+    SPECIAL = "SPECIAL"  # made from settings (sky, lens edge: src/core/special.py)
 
 
 class FrameStatus(str, Enum):
@@ -178,6 +181,7 @@ class MaskObject:
     included: bool = True  # part of the Final Mask
     frames: Dict[str, FrameState] = field(default_factory=dict)
     locked: bool = False  # 🔒: never deleted (Delete, Merge skip / refuse it)
+    special: Optional[Special] = None  # masks made from settings; None once applied (an ordinary Object)
 
     def frame(self, key: str) -> Optional[FrameState]:
         return self.frames.get(key)
@@ -576,6 +580,31 @@ class Project:
             gone += len(wanted & set(o.frames))
             self._replace(dataclasses.replace(o, frames={k: f for k, f in o.frames.items() if k not in wanted}))
         return gone
+
+    def add_special(self, special: Special, label: str) -> int:
+        """A special Object (no masks yet); returns its id."""
+        self._checkpoint()
+        obj = dataclasses.replace(self._alloc(self._new_name(label), Source.SPECIAL, {}), special=special)
+        self.objects.append(obj)
+        return obj.id
+
+    def set_special(self, obj_id: int, special: Optional[Special],
+                    frames: Optional[Dict[str, Optional[FrameState]]] = None) -> bool:
+        """A special Object's settings and the masks they make, as one undo step (*frames*: key -> frame,
+        None removes it). *special* None: Apply, an ordinary Object from now on."""
+        obj = self.get(obj_id)
+        if obj is None:
+            return False
+        self._checkpoint()
+        new = dict(obj.frames)
+        for k, fs in (frames or {}).items():
+            if fs is None:
+                new.pop(k, None)
+            else:
+                new[k] = fs
+        ordered = {k: new[k] for k in self.image_keys if k in new}
+        self._replace(dataclasses.replace(obj, special=special, frames=ordered))
+        return True
 
     def set_frames(self, updates: Dict[int, Dict[str, FrameState]]) -> None:
         """Apply many frame updates across Objects as one undo step (propagation)."""

@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 
 from src.app.objects_panel import later
 from src.app.ui_util import CollapsibleBox, shrinkable
+from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.project import FrameState, MaskObject
 
 THUMB = 56
@@ -374,6 +375,10 @@ class PropertiesPanel(QWidget):
         self.tabs = QTabWidget()
         self.mask_tab = self.tabs.addTab(_scrolled(mask_page), "Mask")
         self.layer_tab = self.tabs.addTab(_scrolled(layer_page), "Edit Layer")
+        from src.app.special_panel import SpecialPanel
+
+        self.special = SpecialPanel()  # a special Object's frames and settings (instead of the two above)
+        self.special_tab = self.tabs.addTab(_scrolled(self.special), "Special")
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
@@ -412,7 +417,15 @@ class PropertiesPanel(QWidget):
             )
         else:
             state = "Editing" if editing else "Selected"
-            self.title.setText(f"{state}: <b>{obj.name}</b> · {obj.source.value}")
+            what = f"Special: {SPECIAL_LABELS[obj.special.kind]}" if obj.special is not None else obj.source.value
+            self.title.setText(f"{state}: <b>{obj.name}</b> · {what}")
+        special = obj is not None and obj.special is not None
+        for tab, on in ((self.mask_tab, not special), (self.layer_tab, not special), (self.special_tab, special)):
+            self.tabs.setTabVisible(tab, on)
+        if special:
+            self.tabs.setCurrentIndex(self.special_tab)
+        elif self.tabs.currentIndex() == self.special_tab:
+            self.tabs.setCurrentIndex(self.mask_tab)
         if frame is not None and obj is not None:
             for i, v in enumerate(frame.variants):
                 sel = i == min(frame.selected, len(frame.variants) - 1)
