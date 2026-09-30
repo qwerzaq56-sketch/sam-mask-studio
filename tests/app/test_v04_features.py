@@ -1485,3 +1485,25 @@ def test_moving_frames_while_editing(qapp, win):
     win.step(1)
     assert s.index == 1 and s.editing == ids[0] and s.auto_tool is None
 
+
+# --- p42: Alt+right-drag left / right sets the brush size ------------------------------------------------
+
+
+def test_alt_right_drag_sets_the_brush_size(qapp, win):
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    c = win.canvas
+    c.set_brush_size(30)
+    alt = Qt.KeyboardModifier.AltModifier
+    start = QPoint(200, 200)
+    QTest.mousePress(c, Qt.MouseButton.RightButton, alt, start)
+    QTest.mouseMove(c, start + QPoint(20, 0))
+    assert c.brush_size == 70 and c._mouse == start  # bigger to the right; the circle stays put
+    QTest.mouseMove(c, start + QPoint(-10, 0))
+    assert c.brush_size == 10
+    QTest.mouseRelease(c, Qt.MouseButton.RightButton, alt, start + QPoint(-10, 0))
+    assert c._size_drag is None and not win.session.editing_frame().points[1:]  # no negative point added
+
