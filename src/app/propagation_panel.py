@@ -67,7 +67,7 @@ class PropagationPanel(QWidget):
     pin_toggled = pyqtSignal(bool)  # fix the Frame List selection as the Selection scope
     resume_requested = pyqtSignal()  # continue a stopped propagation
     stop_requested = pyqtSignal()  # stop, keep the frames done
-    cancel_requested = pyqtSignal()  # stop and discard the run
+    cancel_requested = pyqtSignal()  # end the run: keep the frames done, back to the open frame
     navigate_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -144,21 +144,22 @@ class PropagationPanel(QWidget):
                                 "(none selected: every checked Object)")
         self.run_btn.clicked.connect(self._run)
         self.stop_btn = QPushButton("Stop")
-        self.stop_btn.setToolTip("Stop and keep the frames propagated so far")
+        self.stop_btn.setToolTip("Pause: keep the frames so far and stay on the last one; Resume continues")
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_requested)
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setToolTip("Stop and discard the whole propagation (nothing changes)")
+        self.cancel_btn.setToolTip("End: keep the frames so far and go back to the frame you were on "
+                                   "(Ctrl+Z undoes the propagation)")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.cancel_requested)
-        brow = QHBoxLayout()  # Stop / Cancel / Resume under the full-width run button
+        brow = QHBoxLayout()  # Stop / Resume / Cancel under the full-width run button
         brow.addWidget(self.stop_btn)
-        brow.addWidget(self.cancel_btn)
         self.resume_btn = QPushButton("Resume")
         self.resume_btn.setToolTip("Continue a stopped propagation from the last frame it reached")
         self.resume_btn.setEnabled(False)
         self.resume_btn.clicked.connect(self.resume_requested)
         brow.addWidget(self.resume_btn)
+        brow.addWidget(self.cancel_btn)
 
         self.phase = QLabel("")
         self.bars: Dict[str, Tuple[QLabel, QProgressBar]] = {}
@@ -317,9 +318,9 @@ class PropagationPanel(QWidget):
             it.setText(f"{name}    {text}")
 
     def stopping(self) -> None:
-        """Stop was pressed: Cancel stays available (it turns the stop into a discard)."""
+        """Stop was pressed: Cancel stays available (it ends the run and goes back instead)."""
         self.stop_btn.setEnabled(False)
-        self.phase.setText("Stopping after the current frame… (Cancel discards instead)")
+        self.phase.setText("Stopping after the current frame…")
 
     def mark(self, index: int, status: Optional[object]) -> None:
         it = self._rows.get(index)

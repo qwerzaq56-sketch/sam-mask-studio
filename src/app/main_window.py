@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
         self._auto_shown = 0  # the computation whose result is on screen
         self._goto_fields: List[QLineEdit] = []  # Frame List, frame strip
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
+        self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
         self._loading_models = False
 
         self.setWindowTitle("SAM Mask Studio")
@@ -808,6 +809,11 @@ class MainWindow(QMainWindow):
     def _update_overlays(self) -> None:
         """Hand the canvas the mask layers of the current image (Objects, edit layer, candidates)."""
         s = self.session
+        if self._live is not None:  # propagating: the frame just done, with its new masks
+            colors = {o.id: o.color for o in s.project.objects}
+            self.canvas.set_overlays([Overlay(mk, colors.get(oid, (255, 255, 0)))
+                                      for oid, mk in self._live[1].items() if mk is not None])
+            return
         key = s.key
         self._update_preview_mask()
         overlays: List[Overlay] = []
@@ -2211,6 +2217,7 @@ class MainWindow(QMainWindow):
         w.progress.connect(self.propagation_panel.on_progress)
         w.frame_done.connect(lambda idx, masks: self.propagation_panel.on_frame(idx, list(masks)))
         w.frame_done.connect(lambda idx, _masks: self._last_prop[2].add(idx))
+        w.frame_done.connect(self._show_live)
         w.finished_ok.connect(
             lambda results, stopped: self._propagation_done(results, seeds, "Stopped" if stopped else "Done")
         )
@@ -2221,15 +2228,46 @@ class MainWindow(QMainWindow):
         w.start()
         self.refresh()
 
+    def _show_live(self, idx: int, masks) -> None:
+        """The frame just propagated, with its new masks, on the canvas (they are stored at the end)."""
+        s = self.session
+        if not (0 <= idx < len(s.keys)):
+            return
+        try:
+            img = s.working_image(s.keys[idx])
+        except (OSError, ValueError):
+            return
+        self._live = (idx, dict(masks))
+        self.canvas.set_image(img, reset_view=False)
+        self._update_overlays()
+        self.mode_label.setText(f"Propagating… {s.keys[idx]}")
+
+    def _leave_live(self, to: Optional[int] = None) -> None:
+        """Back from the live view: to frame *to* (Stop: the last one done), else the frame that was open."""
+        live, self._live = self._live, None
+        if live is None:
+            return
+        if to is not None and to != self.session.index:
+            self.go_to(to)
+        else:
+            self.canvas.set_image(self.session.image, reset_view=False)
+
     def _propagation_done(self, results, seeds, outcome: str) -> None:
         self._busy = None
         self._prop_worker = None
-        if self._discard:
+        last = self._live[0] if self._live is not None else None
+        if self._discard:  # Cancel: the frames done are kept; back where the run started, nothing to resume
             self._discard = False
-            self.propagation_panel.finish({}, f"Cancelled: nothing changed ({len(results)} frame(s) discarded)")
-            self.log("Propagation cancelled — results discarded")
+            self._prop_queue = []
+            statuses = self.session.apply_propagation(results, seeds) if results else {}
+            msg = f"Cancelled: {len(statuses)} image(s) kept" + (" — Ctrl+Z undoes them" if statuses else "")
+            self.propagation_panel.finish(statuses, msg)
+            self.propagation_panel.set_resumable(False)
+            self._leave_live()
+            self.log(msg)
             self.refresh()
             return
+        self._leave_live(last if outcome == "Stopped" else None)  # Stop: stay on the last frame done
         statuses = self.session.apply_propagation(results, seeds) if results else {}
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
@@ -2284,7 +2322,9 @@ class MainWindow(QMainWindow):
     def stop_job(self, discard: bool) -> None:
         """Stop the running batch / propagation after its current step.
 
-        Stop keeps what is done (one undo step); Cancel (*discard*) drops it all.
+        Batch: Stop keeps what is done (one undo step); Cancel (*discard*) drops it all.
+        Propagation: both keep the frames done; Stop stays on the last one (Resume continues),
+        Cancel goes back to the frame that was open and ends the run.
         """
         w = self._prop_worker
         if w is None or not w.isRunning():
@@ -2295,7 +2335,11 @@ class MainWindow(QMainWindow):
             self.batch_panel.batch_stopping()
         else:
             self.propagation_panel.stopping()
-        self.log("Cancelling — results will be discarded…" if discard else "Stopping — keeping the results so far…")
+        if self._job == "batch":
+            self.log("Cancelling — results will be discarded…" if discard else "Stopping — keeping the results so far…")
+        else:
+            self.log("Cancelling — keeping the frames so far, back to the open frame…" if discard
+                     else "Stopping — keeping the frames so far…")
 
     def cancel_propagation(self) -> None:
         self.stop_job(discard=True)

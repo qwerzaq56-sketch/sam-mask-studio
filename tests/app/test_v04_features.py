@@ -1350,3 +1350,47 @@ def test_sky_object_with_a_model_and_its_saved_settings(qapp, win, tmp_path):
     back = ProjectStore(s.image_dir, s.max_side).load(list(s.keys))
     ob = back.get(o.id)
     assert ob.special is not None and ob.special.get("grow") == 4 and ob.special.keys == tuple(keys)
+
+
+# --- p38: propagation shows each frame as it is done; Stop stays there, Cancel goes back ----------------
+
+
+def test_propagation_live_view_stop_and_cancel(qapp, win):
+    import threading
+
+    from tests.app.conftest import wait_until
+    from tests.app.test_v03_features import gated_propagate
+
+    s = win.session
+    pp = win.propagation_panel
+    win.new_object()
+    s.click(30, 30)  # on image 0
+    win.finish_editing()
+    oid = s.project.objects[0].id
+    release, entered = threading.Event(), threading.Event()
+    win.propagate_fn = gated_propagate(release, entered, after=2)
+    pp.scope.setCurrentIndex(pp.scope.findData("all"))
+    pp.run_btn.click()
+    wait_until(qapp, entered.is_set)
+    wait_until(qapp, lambda: win._live is not None and win._live[0] == 2)
+    assert win.canvas._overlays and s.index == 0  # frame 2's new mask on the canvas; the open frame is unchanged
+    pp.stop_btn.click()
+    release.set()
+    wait_until(qapp, lambda: win._busy is None)
+    assert s.index == 2 and win._live is None  # Stop: stays on the last frame done
+    assert len(s.project.get(oid).frames) == 3 and pp.resume_btn.isEnabled()
+
+    release2, entered2 = threading.Event(), threading.Event()
+    win.propagate_fn = gated_propagate(release2, entered2, after=1)
+    pp.resume_btn.click()  # from frame 2 over 3, 4
+    wait_until(qapp, entered2.is_set)
+    pp.cancel_btn.click()
+    release2.set()
+    wait_until(qapp, lambda: win._busy is None)
+    assert s.index == 2 and win._live is None  # Cancel: back to the frame that was open
+    assert len(s.project.get(oid).frames) == 4 and not pp.resume_btn.isEnabled()  # frame 3 kept
+    assert "Ctrl+Z" in pp.phase.text()
+    win.undo()
+    assert len(s.project.get(oid).frames) == 3
+    order = [pp.stop_btn, pp.resume_btn, pp.cancel_btn]
+    assert sorted(order, key=lambda b: b.x()) == order  # Stop / Resume / Cancel
