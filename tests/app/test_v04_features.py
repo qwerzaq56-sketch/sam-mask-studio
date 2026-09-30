@@ -1582,15 +1582,26 @@ def test_auto_tool_keys_a_d_f_and_view_keys(qapp, win):
     p.amount.setValue(2)
     p.tool_btns["grow"].click()
     assert s.auto_mode == "fill"
-    win.act_brush.trigger()  # D: Paint mode
+    win.act_brush.trigger()  # D: Paint mode, everything picked the first time
     assert s.auto_mode == "paint" and p.mode_paint_btn.isChecked() and win.canvas.brush_mode
-    win.act_brush.trigger()  # D: back to Fill
+    assert s.auto_taken().any()
+    win.act_brush.trigger()  # D again in Paint: pick none (p55)
+    assert s.auto_mode == "paint" and not s.auto_taken().any()
+    win.act_auto_fill.trigger()  # S: Fill
     assert s.auto_mode == "fill" and s.auto_tool == "grow" and not win.canvas.brush_mode
-    win.act_go_reference.trigger()  # F (mouse off the frame lists): apply and go on
+    win.act_brush.trigger()  # D: Paint again, the picks as they were (none), not everything again
+    assert s.auto_mode == "paint" and not s.auto_taken().any()
+    win.act_brush.trigger()  # pick all
+    win.act_apply_continue.trigger()  # G: apply and go on
     assert s.editing_frame().mask.sum() > area0 and s.auto_tool == "grow"
     area1 = s.editing_frame().mask.sum()
-    win.act_leave_auto.trigger()  # A: leave, the next result dropped
-    assert s.auto_tool is None and s.editing_frame().mask.sum() == area1 and s.editing == ids[0]
+    win.act_auto_fill.trigger()  # S: Fill (the next result, all of it)
+    win.act_go_reference.trigger()  # F (mouse off the frame lists): apply and close
+    assert s.auto_tool is None and s.editing_frame().mask.sum() > area1 and s.editing == ids[0]
+    area2 = s.editing_frame().mask.sum()
+    p.tool_btns["grow"].click()
+    win.act_leave_auto.trigger()  # A: leave, the result dropped
+    assert s.auto_tool is None and s.editing_frame().mask.sum() == area2
     assert [a.toString() for a in win.act_solo.shortcuts()] == ["Q", "`"]
     assert win.act_hide_masks.shortcut().toString() == "H" and win.act_pick_all.shortcut().toString() == "Shift+A"
 

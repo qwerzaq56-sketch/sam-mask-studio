@@ -701,6 +701,11 @@ class Session:
         self._picked = picked & ~area if unpick else picked | area
         return True
 
+    @property
+    def has_picks(self) -> bool:
+        """Paint mode has picks of its own (kept while going to Fill and back)."""
+        return self._picked is not None
+
     def pick_everything(self) -> bool:
         """Pick the whole result (entering Paint mode from Fill with A keeps what Fill showed)."""
         if self._result is None:
