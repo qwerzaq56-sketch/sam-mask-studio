@@ -1300,6 +1300,7 @@ def test_lens_edge_object_made_from_settings(qapp, win):
     win.special_params(o.id, {"radius": 60})  # every frame follows the setting
     o = s.project.get(o.id)
     assert o.special.get("radius") == 60 and int(o.mask(s.keys[3]).sum()) > before
+    assert o.mask(s.keys[3]) is o.mask(s.keys[0])  # p43: one mask per image size, shared
     win.toggle_edit(o.id)  # made from settings: not edited by hand
     assert s.editing is None and "Apply it" in win.log_view.toPlainText()
     win.special_apply()

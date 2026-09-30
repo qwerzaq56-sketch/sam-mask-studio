@@ -834,11 +834,18 @@ class Session:
         if keys is not None:
             sp = sp.with_keys(set(sp.keys) | set(keys), self.keys)
         frames: Dict[str, Optional[FrameState]] = {}
+        same: Dict[tuple, Optional[FrameState]] = {}  # lens edge: one mask per image size, shared by its frames
         for k in sp.keys:
+            size = tuple(working_size(*self.original_size(k), self.max_side)) if sp.kind == LENS_EDGE else None
+            if size is not None and size in same:
+                frames[k] = same[size]
+                continue
             m = self.special_mask(k, sp)
             if m is None:
                 continue  # its sky map is missing: the frame stays as it was
             frames[k] = FrameState.from_mask(m, status=FrameStatus.PROPAGATED) if m.any() else None
+            if size is not None:
+                same[size] = frames[k]
         self.project.set_special(obj_id, sp, frames)
         self.sync()
         return True
