@@ -20,8 +20,8 @@ depends on the mode the main window sets:
               With ``region_mode`` on, a drag reports ``region_box`` instead
               (Alt or Ctrl: subtract); the region is shown in cyan.
 
-Middle-drag or Space+drag pans and the wheel zooms at the cursor. Ctrl+wheel (or
-Shift+wheel) sets the brush size while an Object is in Edit. The Final Mask
+Middle-drag or Space+drag pans and the wheel zooms at the cursor. Alt+right-drag left / right
+(as in Photoshop), Ctrl+wheel or Shift+wheel set the brush size while an Object is in Edit. The Final Mask
 preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
 editing keeps working in it.
 """
@@ -214,6 +214,7 @@ class Canvas(QWidget):
         self._mouse: Optional[QPointF] = None
 
         self.brush_size = 30  # screen px diameter
+        self._size_drag = None  # Alt+right-drag: (start x, size then, where the circle stays)
         self.brush_mode = False  # Brush editing turned on (only acts in EDIT)
         self._brush = BrushEngine()
 
@@ -598,6 +599,10 @@ class Canvas(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         mods = event.modifiers()
+        if (self.mode == Mode.EDIT and btn == Qt.MouseButton.RightButton
+                and mods & Qt.KeyboardModifier.AltModifier):
+            self._size_drag = (pos.x(), self.brush_size, QPointF(pos))  # left / right: smaller / bigger
+            return
         shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         if self.mode == Mode.EDIT and self.region_mode:
             if btn == Qt.MouseButton.LeftButton:
@@ -650,7 +655,11 @@ class Canvas(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.position()
         self._mouse = pos
-        if self._pan_from is not None:
+        if self._size_drag is not None:
+            x0, size0, anchor = self._size_drag
+            self.set_brush_size(size0 + 2 * (pos.x() - x0))  # the diameter follows the drag, twice as fast
+            self._mouse = anchor  # the circle stays where the drag began
+        elif self._pan_from is not None:
             start, pan = self._pan_from
             self._pan = pan + (pos - start)
         elif self._point_drag is not None:
@@ -680,6 +689,10 @@ class Canvas(QWidget):
 
     def mouseReleaseEvent(self, event):
         pos = event.position()
+        if self._size_drag is not None:
+            self._size_drag = None
+            self.update()
+            return
         if self._pan_from is not None:
             self._pan_from = None
             self._update_cursor()

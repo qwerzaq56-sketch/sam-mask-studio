@@ -87,6 +87,7 @@
 | A | 오토 툴: Fill → 전체 선택된 Paint 모드(Paint 버튼도 같음), Paint 모드에서 전체 선택 / 해제 |
 | Alt+드래그 | Paint 빼기 · 오토 툴 선택 해제 · Region Box 빼기 |
 | Shift+드래그 | 브러쉬를 켜지 않고 칠하기 |
+| Alt+우클릭 드래그 좌우 | 브러쉬 크기 (Photoshop과 같음, 원은 누른 자리에 고정) |
 | Ctrl+휠 / Shift+휠 | 브러쉬 크기 |
 
 ### Select on Image (디텍션 후보 고르기)
