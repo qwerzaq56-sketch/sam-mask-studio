@@ -30,6 +30,8 @@ from src.core.project import (
     union,
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
+from src.core.special import LABELS as SPECIAL_LABELS
+from src.core.special import LENS_EDGE, Special, lens_edge_mask, refine_sky, sky_mask
 from src.core.refine import fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
@@ -761,6 +763,95 @@ class Session:
         self.sync()
         return {oid: list(per) for oid, per in updates.items()}
 
+    # ------------------------------------------------------------------
+    # Special Objects: masks made from settings (docs/specs/09-special-objects.md)
+    # ------------------------------------------------------------------
+
+    def add_special(self, kind: str) -> int:
+        oid = self.project.add_special(Special.new(kind), SPECIAL_LABELS[kind])
+        self.sync()
+        return oid
+
+    def sky_cache(self, key: str, refined: bool) -> Path:
+        """The sky map of image *key* (working size), kept beside the project so settings move freely."""
+        return self.store.root / "special" / ("sky_refined" if refined else "sky") / f"{key}.png"
+
+    def sky_missing(self, keys: Iterable[str]) -> List[str]:
+        return [k for k in keys if not (self.sky_cache(k, False).is_file() and self.sky_cache(k, True).is_file())]
+
+    def working_image(self, key: str) -> np.ndarray:
+        return to_working(read_rgb(self.paths[self.keys.index(key)]), self.max_side)
+
+    def compute_sky(self, keys: Sequence[str], model, progress=None, cancelled=None) -> int:
+        """Run the sky model on *keys* and cache its map, raw and refined (safe off the UI thread:
+        it reads images and writes cache files only). Returns how many were done."""
+        import cv2
+
+        done = 0
+        for n, key in enumerate(keys):
+            if cancelled is not None and cancelled():
+                break
+            rgb = self.working_image(key)
+            prob = model.probability(rgb)
+            for refined, m in ((False, prob), (True, refine_sky(prob, rgb))):
+                path = self.sky_cache(key, refined)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                ok, buf = cv2.imencode(".png", m)
+                buf.tofile(str(path))
+            done += 1
+            if progress:
+                progress(n + 1, len(keys))
+        return done
+
+    def _sky_map(self, key: str, refined: bool) -> Optional[np.ndarray]:
+        import cv2
+
+        path = self.sky_cache(key, refined)
+        if not path.is_file():
+            return None
+        data = np.fromfile(str(path), dtype=np.uint8)
+        return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE) if data.size else None
+
+    def special_mask(self, key: str, sp: Special) -> Optional[np.ndarray]:
+        """*sp*'s mask on image *key* at the working size (None: the sky map is not made yet)."""
+        size = working_size(*self.original_size(key), self.max_side)
+        if sp.kind == LENS_EDGE:
+            return lens_edge_mask(size[0], size[1], sp)
+        prob = self._sky_map(key, bool(sp.get("refine")))
+        if prob is None:
+            return None
+        m = sky_mask(prob, sp)
+        return m if m.shape == tuple(size) else resize_mask(m, size)
+
+    def update_special(self, obj_id: int, params: Optional[dict] = None,
+                       keys: Optional[Iterable[str]] = None) -> bool:
+        """New settings (*params*) and / or more images (*keys*) for a special Object; its masks are
+        made again on every image it covers, as one undo step."""
+        o = self.project.get(obj_id)
+        if o is None or o.special is None:
+            return False
+        sp = o.special.with_params(**params) if params else o.special
+        if keys is not None:
+            sp = sp.with_keys(set(sp.keys) | set(keys), self.keys)
+        frames: Dict[str, Optional[FrameState]] = {}
+        for k in sp.keys:
+            m = self.special_mask(k, sp)
+            if m is None:
+                continue  # its sky map is missing: the frame stays as it was
+            frames[k] = FrameState.from_mask(m, status=FrameStatus.PROPAGATED) if m.any() else None
+        self.project.set_special(obj_id, sp, frames)
+        self.sync()
+        return True
+
+    def apply_special(self, obj_id: int) -> bool:
+        """Apply: an ordinary Object with the masks it has now (Ctrl+Z makes it special again)."""
+        o = self.project.get(obj_id)
+        if o is None or o.special is None:
+            return False
+        self.project.set_special(obj_id, None)
+        self.sync()
+        return True
+
     def remove_frame(self, obj_id: int) -> None:
         """Remove an Object's mask on the current image only."""
         if self.key is not None:
@@ -964,7 +1055,7 @@ class Session:
         out = {}
         for o in self.project.objects:
             use = o.id in wanted if wanted is not None else o.included
-            m = o.mask(key) if (use and key) else None
+            m = o.mask(key) if (use and key and o.special is None) else None  # special: made, not propagated
             if m is not None and m.any():
                 out[o.id] = m
         return out

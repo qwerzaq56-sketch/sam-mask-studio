@@ -252,6 +252,14 @@
 - 이제 **선택한 Object**(기준 ◎에 마스크가 있는 것)만 전파하고, 덮어쓰기 경고도 그 Object들만 봄. 아무것도 선택 안 했으면 전처럼 체크된 전체.
 - 다른 프레임으로 가서 선택 줄이 목록에서 빠져도 마지막 선택이 유지됨(34단계와 같음). 빈 곳을 클릭해 선택을 풀면 잊음.
 
+### 36단계 · 특수 Object: Sky, 피시아이 외곽 (`v0.4-p36`, [`specs/09`](../specs/09-special-objects.md))
+- Objects 패널 **+ Special ▾** → Sky Mask / Fisheye Lens Edge. 설정값으로 만드는 Object: 프레임 범위(전체 / Range / 고른 프레임)에 만들고,
+  설정을 움직이면 덮는 프레임 전체가 다시 만들어짐. Properties의 **Special** 탭. **Apply**하면 보통 Object(손으로 편집 가능).
+- Sky: skyseg.onnx(U2Net) + 저장소의 가장자리 보정(신뢰도 가중 가이디드 필터)을 옮김. 모델 결과는 캐시하고, 설정(Threshold, Grow,
+  Refine, 위쪽에 닿은 하늘만)은 즉시 반영. onnxruntime이 없으면 OpenCV DNN으로 실행.
+- Lens edge: 이미지 원 바깥. Radius / Center, **Detect from Images**로 원 자동 검출.
+- 특수인 동안 Edit / 전파 대상에서 빠짐. 설정은 프로젝트에 저장.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

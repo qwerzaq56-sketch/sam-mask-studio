@@ -55,6 +55,7 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(640)  # room for the checkpoint paths
         self.sam2 = QLineEdit(settings.sam2_checkpoint)
         self.sam3 = QLineEdit(settings.sam3_checkpoint)
+        self.sky = QLineEdit(settings.sky_checkpoint)
         self.max_side = QSpinBox()
         self.max_side.setRange(0, 8192)
         self.max_side.setSingleStep(128)
@@ -63,6 +64,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout(self)
         form.addRow("SAM2 checkpoint", _path_row(self.sam2, lambda: self._pick(self.sam2)))
         form.addRow("SAM3 checkpoint", _path_row(self.sam3, lambda: self._pick(self.sam3)))
+        form.addRow("Sky model (ONNX)", _path_row(self.sky, lambda: self._pick(self.sky)))
         form.addRow("Working max side (px)", self.max_side)
         note = QLabel(
             "Masks are edited at the working resolution and upsampled on export.\nApplies to folders without a saved project."
@@ -76,7 +78,7 @@ class SettingsDialog(QDialog):
 
     def _pick(self, edit: QLineEdit) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Checkpoint", edit.text(), "Checkpoints (*.pt *.pth);;All files (*)"
+            self, "Checkpoint", edit.text(), "Checkpoints (*.pt *.pth *.onnx);;All files (*)"
         )
         if path:
             edit.setText(path)
@@ -84,6 +86,7 @@ class SettingsDialog(QDialog):
     def apply(self, settings: Settings) -> None:
         settings.sam2_checkpoint = self.sam2.text().strip()
         settings.sam3_checkpoint = self.sam3.text().strip()
+        settings.sky_checkpoint = self.sky.text().strip()
         settings.max_side = self.max_side.value()
 
 
