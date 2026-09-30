@@ -260,6 +260,11 @@
 - Lens edge: 이미지 원 바깥. Radius / Center, **Detect from Images**로 원 자동 검출.
 - 특수인 동안 Edit / 전파 대상에서 빠짐. 설정은 프로젝트에 저장.
 
+### 37단계 · Edit 중 Hide Masks, Frame List 우클릭 메뉴 제거 (`v0.4-p37`, 피드백)
+- **Hide Masks**가 Edit 중인 Object도 숨김: 원본 이미지를 보면서 작업. 브러시 커서와 오토 툴 미리보기는 그대로 보임.
+- 34단계에서 넣은 Frame List / Frames 우클릭 메뉴를 뺌: 여러 프레임을 고른 상태에서 프레임을 옮기는 조작을 방해했음.
+  Copy Mask / Clear Masks on Picked Frames는 Edit → Objects 메뉴에 그대로 있음.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
