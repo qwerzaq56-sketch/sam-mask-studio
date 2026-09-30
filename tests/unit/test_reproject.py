@@ -384,3 +384,15 @@ def test_thin_prism_fisheye_matches_colmap():
         assert math.isclose(gx, fx * (u + du) + cx, abs_tol=1e-6) and math.isclose(gy, fy * (v + dv) + cy, abs_tol=1e-6)
     assert ok.all()
 
+
+def test_view_layouts():
+    from src.core.reproject import VIEW_LAYOUTS, Views, view_name
+
+    counts = {k: len(Views(layout=pairs).pairs()) for k, (_label, pairs) in VIEW_LAYOUTS.items()}
+    assert counts == {"colmap12": 12, "cube6": 6, "horizon4": 4, "rings16": 16}
+    colmap = VIEW_LAYOUTS["colmap12"][1]
+    assert (45.0, 35.0) in colmap and (0.0, -35.0) in colmap and (0.0, 35.0) not in colmap  # upper ring turned
+    for _k, (_label, pairs) in VIEW_LAYOUTS.items():
+        names = [view_name("f", y, p) for y, p in pairs]
+        assert len(set(names)) == len(names)  # every view its own file
+

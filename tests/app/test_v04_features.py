@@ -1092,6 +1092,10 @@ def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
     assert dlg.views() is None  # Keep the cameras: the dataset stays 360
     assert dlg.convert.findData("erp") < 0  # a 360 scene is not converted to 360
     dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    assert dlg.layout.currentData() == "colmap12" and len(dlg.views().pairs()) == 12  # p57: COLMAP's layout
+    assert not dlg.yaws.isVisibleTo(dlg)
+    dlg.layout.setCurrentIndex(dlg.layout.findData(None))  # Custom: the yaw x pitch grid
+    assert dlg.yaws.isVisibleTo(dlg)
     dlg.yaws.setText("0, 60, 120, 180, 240, 300")
     dlg.pitches.setText("0")
     dlg.side.setValue(64)

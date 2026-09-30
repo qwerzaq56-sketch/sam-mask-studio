@@ -172,16 +172,36 @@ def _focal(cam: Camera) -> float:
 # --- targets --------------------------------------------------------------------------------------
 
 
+def _ring(yaws, pitch, offset=0.0):
+    return tuple(((y + offset) % 360, float(pitch)) for y in yaws)
+
+
+# the (yaw, pitch) layouts 360 tools use, all 90° views (docs/specs/08 P4, sources there)
+VIEW_LAYOUTS = {
+    # COLMAP panorama_sfm "PERSPECTIVE_OVERLAPPING": 4 yaws at -35 / 0 / 35, the upper ring turned by half a step
+    "colmap12": ("COLMAP overlapping · 12", _ring((0, 90, 180, 270), -35) + _ring((0, 90, 180, 270), 0)
+                 + _ring((0, 90, 180, 270), 35, 45.0)),
+    "cube6": ("Cubemap · 6 (4 sides, up, down)", _ring((0, 90, 180, 270), 0) + ((0.0, 90.0), (0.0, -90.0))),
+    # COLMAP "PERSPECTIVE_NON_OVERLAPPING": a cubemap without up and down (sky / the operator below)
+    "horizon4": ("Horizon · 4 (no up / down)", _ring((0, 90, 180, 270), 0)),
+    # LichtFeld 360 plugin "Medium": two rings of 8 at +-35, the upper one staggered
+    "rings16": ("Two rings · 16 (8 at ±35°)", _ring(range(0, 360, 45), -35) + _ring(range(0, 360, 45), 35, 22.5)),
+}
+
+
 @dataclass(frozen=True)
 class Views:
-    """Pinhole views: every yaw at every pitch, square, *fov* wide."""
+    """Pinhole views: every yaw at every pitch (or the (yaw, pitch) list of a layout), square, *fov* wide."""
 
     yaws: Tuple[float, ...] = DEFAULT_YAWS
     pitches: Tuple[float, ...] = DEFAULT_PITCHES
     fov: float = DEFAULT_FOV
     size: int = 0  # 0 = auto: the source's resolution at that field of view
+    layout: Tuple[Tuple[float, float], ...] = ()  # a named layout's views (VIEW_LAYOUTS), instead of the grid
 
     def pairs(self) -> List[Tuple[float, float]]:
+        if self.layout:
+            return list(self.layout)
         return [(y, p) for p in self.pitches for y in self.yaws]
 
     def side(self, source_width: int) -> int:  # kept for callers of v0.4-p29

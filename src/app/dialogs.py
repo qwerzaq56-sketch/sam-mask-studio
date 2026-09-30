@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
-from src.core.reproject import CONVERTIBLE, FISHEYES, Erp, Stitch, Views
+from src.core.reproject import CONVERTIBLE, FISHEYES, VIEW_LAYOUTS, Erp, Stitch, Views
 from src.core.storage import ExportCheck, ExportOptions, existing_style, mask_files
 
 
@@ -209,6 +209,14 @@ class ExportDialog(QDialog):
         self.yaws.setToolTip("Left / right angles in degrees (right is positive), one view each per pitch")
         self.pitches = QLineEdit("-35, 0, 35" if self._erp or fisheye else "0")
         self.pitches.setToolTip("Up / down angles in degrees (up is positive), one row of views each")
+        self.layout = QComboBox()  # 360 sources: the usual view layouts (docs/specs/08 P4), or the grid below
+        for key, (label, pairs) in VIEW_LAYOUTS.items():
+            self.layout.addItem(f"{label}", key)
+        self.layout.addItem("Custom: yaw × pitch", None)
+        self.layout.setToolTip("COLMAP overlapping: COLMAP's own default for 360 (views overlap, so they match well). "
+                               "No layout has been shown to train better; more views = more images of the same pixels")
+        if not self._erp:
+            self.layout.setCurrentIndex(self.layout.count() - 1)  # a fisheye looks one way: its own grid
         self.fov = QSpinBox()
         self.fov.setRange(30, 150)
         self.fov.setValue(90)
@@ -222,7 +230,8 @@ class ExportDialog(QDialog):
         self._pin_row = QWidget()
         prow = QHBoxLayout(self._pin_row)
         prow.setContentsMargins(0, 0, 0, 0)
-        self._view_widgets = (QLabel("yaw"), self.yaws, QLabel("pitch"), self.pitches, self.fov)
+        self._yaw_label, self._pitch_label = QLabel("yaw"), QLabel("pitch")
+        self._view_widgets = (self.layout, self._yaw_label, self.yaws, self._pitch_label, self.pitches, self.fov)
         for w in (self.convert,) + self._view_widgets + (self.side,):
             prow.addWidget(w)
         self.out = QLineEdit(str(default_dir))
@@ -269,6 +278,7 @@ class ExportDialog(QDialog):
         self.target.currentIndexChanged.connect(self._apply_target)
         self.to_new.toggled.connect(lambda _on: self._apply_target())
         self.convert.currentIndexChanged.connect(lambda _i: self._apply_target())
+        self.layout.currentIndexChanged.connect(lambda _i: self._apply_target())
         for w in (self.fov, self.side):
             w.valueChanged.connect(lambda _v: self._run_check())
         for w in (self.yaws, self.pitches):
@@ -334,6 +344,9 @@ class ExportDialog(QDialog):
             except ValueError:
                 return ()
 
+        key = self.layout.currentData() if self._erp else None
+        if key is not None:
+            return Views(fov=float(self.fov.value()), size=self.side.value(), layout=VIEW_LAYOUTS[key][1])
         return Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
                      fov=float(self.fov.value()), size=self.side.value())
 
@@ -375,6 +388,10 @@ class ExportDialog(QDialog):
         kind = self.convert.currentData()
         for w in self._view_widgets:
             w.setVisible(kind == "pinhole")
+        grid = kind == "pinhole" and self.layout.currentData() is None
+        for w in (self._yaw_label, self.yaws, self._pitch_label, self.pitches):
+            w.setVisible(grid)
+        self.layout.setVisible(kind == "pinhole" and self._erp)
         self.side.setVisible(kind is not None)
         if p is None:
             self.out.setText(self._custom_dir)
