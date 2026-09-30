@@ -317,11 +317,10 @@ def test_propagation_needs_current_in_range(win):
 def test_navigation_and_autosave_reload(win, qapp, folder, tmp_path):
     win.new_object()
     click(win, 30, 30)
-    win.step(1)  # blocked while editing
-    assert win.session.index == 0
+    win.step(1)  # editing goes on on the next image (v0.4-p41)
+    assert win.session.index == 1 and win.session.mode == Mode.EDIT
     win.finish_editing()
-    win.step(1)
-    assert win.session.index == 1 and win.session.mode == Mode.IDLE
+    assert win.session.mode == Mode.IDLE
     win._save_task.wait()  # written in the background on image change
     assert (sidecar_dir(folder) / "project.json").is_file()
     marks = [win.images_panel.status_mark(i) for i in range(2)]
