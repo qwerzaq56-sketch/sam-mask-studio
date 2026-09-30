@@ -297,7 +297,8 @@ class ObjectsPanel(QWidget):
             item.setText(0, o.name)
         item.setIcon(0, color_icon(o.color))
         state = Qt.CheckState.Checked if o.included else Qt.CheckState.Unchecked
-        if item.checkState(0) != state:
+        # a new row has no check state at all (it reads as Unchecked but draws no box): always set it once
+        if item.data(0, Qt.ItemDataRole.CheckStateRole) is None or item.checkState(0) != state:
             item.setCheckState(0, state)
         has = key is not None and o.mask(key) is not None
         n = sum(1 for fs in o.frames.values() if fs.mask is not None)
