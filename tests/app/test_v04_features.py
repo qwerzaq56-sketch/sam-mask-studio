@@ -1702,3 +1702,19 @@ def test_point_layers_are_saved_and_shown(qapp, win):
     assert (back.mask == fs.mask).all()
     assert tree.topLevelItem(0).data(0, LAYER_ROLE) == 0
 
+
+# --- p54: an export shows its progress -----------------------------------------------------------------
+
+
+def test_export_shows_progress(qapp, win, tmp_path):
+    from src.core.storage import ExportOptions
+    from tests.app.conftest import wait_until
+
+    make_objects(win, 1)
+    seen = []
+    win.run_export(ExportOptions(out_dir=tmp_path / "out", include_empty=True))
+    bar = win._export_bar
+    assert bar.isVisible()
+    wait_until(qapp, lambda: (seen.append(bar.labelText()) or win._busy is None))
+    assert not bar.isVisible() and len(list((tmp_path / "out").iterdir())) == len(win.session.keys)
+

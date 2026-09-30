@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QProgressDialog,
     QScrollBar,
     QSizePolicy,
     QSplitter,
@@ -2484,6 +2485,40 @@ class MainWindow(QMainWindow):
         self._busy = "Exporting…"
         keep = [k for k in s.keys if k not in s.project.excluded] if dataset is not None else None
         report = []
+        state = {"stage": "Preparing…", "n": 0, "total": 0}  # written by the worker, read by the timer
+
+        def step(stage):
+            def cb(n, total):
+                state.update(stage=stage, n=n, total=total)
+            state.update(stage=stage, n=0, total=0)
+            return cb
+
+        bar = QProgressDialog("Exporting…", "", 0, 0, self)
+        bar.setWindowTitle("Export")
+        bar.setCancelButton(None)  # the files are being written: no half-cancelled export
+        bar.setWindowModality(Qt.WindowModality.WindowModal)
+        bar.setMinimumDuration(0)
+        bar.setMinimumWidth(420)
+        bar.setAutoClose(False)
+        bar.setAutoReset(False)
+        bar.show()
+        self._export_bar = bar  # (tests read it)
+
+        def show_progress():
+            n, total = state["n"], state["total"]
+            bar.setLabelText(f"{state['stage']}  {n} / {total}" if total else state["stage"])
+            bar.setMaximum(max(total, 0))
+            bar.setValue(min(n, total) if total else 0)
+            self.mode_label.setText(f"Exporting… {n} / {total}" if total else "Exporting…")
+
+        timer = QTimer(self)
+        timer.setInterval(150)
+        timer.timeout.connect(show_progress)
+        timer.start()
+
+        def finish_bar():
+            timer.stop()
+            bar.close()
 
         def work():
             if views is not None:  # converted cameras: images, masks and model together (docs/specs/08)
@@ -2492,15 +2527,23 @@ class MainWindow(QMainWindow):
                          for o in jobs]
                 if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
                     groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]
-                    report.append(stitch_to_erp(s.image_dir, self.scene.model_dir, dataset, groups, views.width, masks))
+                    report.append(stitch_to_erp(s.image_dir, self.scene.model_dir, dataset, groups, views.width, masks,
+                                                progress=step("Stitching images and masks")))
                 else:
-                    report.append(convert(s.image_dir, self.scene.model_dir, dataset, keep, views, masks))
+                    report.append(convert(s.image_dir, self.scene.model_dir, dataset, keep, views, masks,
+                                          progress=step("Converting images and masks")))
                 return [sorted(o.out_dir.iterdir()) for o in jobs]
             if dataset is not None:
+                step("Linking images, filtering the model")
                 report.append(build_dataset(s.image_dir, self.scene.model_dir, dataset, keep))
-            return [s.export(o, keys=keep) for o in jobs]
+            out = []
+            for n, o in enumerate(jobs, 1):
+                name = o.out_dir.name + (f" ({n} of {len(jobs)})" if len(jobs) > 1 else "")
+                out.append(s.export(o, progress=step(f"Writing masks to {name}"), keys=keep))
+            return out
 
         def done(paths):
+            finish_bar()
             self._busy = None
             if report and views is not None:
                 r = report[0]
@@ -2519,6 +2562,7 @@ class MainWindow(QMainWindow):
             self.refresh()
 
         def failed(msg):
+            finish_bar()
             self._busy = None
             self.refresh()
             self.warn(f"Export failed: {msg}")
