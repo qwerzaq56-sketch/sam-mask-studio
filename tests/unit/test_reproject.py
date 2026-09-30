@@ -386,13 +386,32 @@ def test_thin_prism_fisheye_matches_colmap():
 
 
 def test_view_layouts():
+    """Layouts are rules (rings + poles), the FOV apart; names and purposes as in docs/specs/08 P4."""
     from src.core.reproject import VIEW_LAYOUTS, Views, view_name
 
-    counts = {k: len(Views(layout=pairs).pairs()) for k, (_label, pairs) in VIEW_LAYOUTS.items()}
-    assert counts == {"colmap12": 12, "cube6": 6, "horizon4": 4, "rings16": 16}
-    colmap = VIEW_LAYOUTS["colmap12"][1]
-    assert (45.0, 35.0) in colmap and (0.0, -35.0) in colmap and (0.0, 35.0) not in colmap  # upper ring turned
-    for _k, (_label, pairs) in VIEW_LAYOUTS.items():
-        names = [view_name("f", y, p) for y, p in pairs]
-        assert len(set(names)) == len(names)  # every view its own file
+    assert {k: lay.count for k, lay in VIEW_LAYOUTS.items()} == {"colmap12": 12, "cube6": 6, "horizon4": 4,
+                                                                  "rings16": 16}
+    assert [lay.label for lay in VIEW_LAYOUTS.values()] == [
+        "COLMAP Overlap · 12 Views", "Cubemap · 6 Views", "Horizon · 4 Views", "Two Rings · 16 Views"]
+    colmap = VIEW_LAYOUTS["colmap12"]
+    pairs = colmap.pairs()
+    assert (45.0, 35.0) in pairs and (0.0, -35.0) in pairs and (0.0, 35.0) not in pairs  # upper ring turned
+    assert colmap.overlap(90) == (0.0, 55.0) and colmap.overlap(120)[0] == 30.0  # the FOV is a separate setting
+    assert Views(layout=colmap, yaw_offset=10).pairs()[0] == (10.0, -35.0)  # the whole layout turned
+    for lay in VIEW_LAYOUTS.values():
+        names = [view_name("f", y, p) for y, p in lay.pairs()]
+        assert len(set(names)) == len(names) and len(names) == lay.count  # every view its own file
 
+
+def test_fisheye_views_it_cannot_fill_are_left_out(tmp_path):
+    from src.core.colmap import read_cameras_full
+    from src.core.reproject import convert, view_share
+
+    src = tmp_path / "fish"
+    names = make_fisheye_scene(src)
+    cam = next(iter(read_cameras_full(src / "sparse" / "0").values()))
+    assert view_share(cam, 0, 0, 90) > 0.9 and view_share(cam, 180, 0, 90) < 0.1  # ahead vs behind the lens
+    out = tmp_path / "out"
+    r = convert(src / "images", src / "sparse" / "0", out, names, Views(yaws=(0, 180), pitches=(0,)), [])
+    assert r.views_out == len(names) and r.views_dropped == len(names)  # the view behind: not made
+    assert not list((out / "images").glob("*_y180_*"))
