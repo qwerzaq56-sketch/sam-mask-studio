@@ -278,6 +278,11 @@
   내보내는 이미지의 마스크는 두 이름 모두 백업으로 옮겨, 한 이미지에 한 파일만 남음.
 - 백업이 `cam0/`, `cam1/` 하위 폴더를 유지. 전에는 한 폴더로 모으면서 같은 이름(카메라별 `00011.jpg.png`)끼리 덮어써 절반이 사라졌음.
 
+### 40단계 · Frame List: 가운데 클릭으로 이동, 우클릭 메뉴 복귀, 복사 기본 Replace (`v0.4-p40`, 피드백)
+- **가운데 클릭**: 그 프레임을 열고 고른 프레임(Shift / Ctrl-클릭)은 그대로. **우클릭**: 고른 프레임은 그대로 두고 메뉴
+  (Copy Mask / Copy Mask (Options)… / Clear Masks on Picked Frames / Exclude). 37단계에서 뺀 메뉴를 되돌림.
+- Copy Mask to Picked Frames의 기본이 **Replace**(Options에서 Add).
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

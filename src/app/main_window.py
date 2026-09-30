@@ -357,12 +357,12 @@ class MainWindow(QMainWindow):
         )
         self.act_stamp = self._action(
             "Copy Mask to Picked Frames", lambda: self.stamp_picked_frames(),
-            tip="The selected Objects' mask on the reference ◎ (else this image), added to their masks "
+            tip="The selected Objects' mask on the reference ◎ (else this image) replaces their masks "
                 "on the frames picked in the Frame List",
         )
         self.act_stamp_options = self._action(
             "Copy Mask to Picked Frames (Options)…", self.stamp_options,
-            tip="Add to the masks there, or Replace them",
+            tip="Replace the masks there, or Add to them",
         )
         self.act_merge = self._action(
             "Merge", lambda: self.merge(self.objects_panel.selected_ids()),
@@ -606,6 +606,10 @@ class MainWindow(QMainWindow):
         pp.cancel_requested.connect(lambda: self.stop_job(discard=True))
         pp.navigate_requested.connect(self.go_to)
         self.images_panel.navigate_requested.connect(self.go_to)
+        # right click on the Frame List / Frames: what works on the picked frames (the picks do not change)
+        for view in (self.images_panel.list, self.images_panel.frame_list):
+            view.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+            view.addActions([self.act_stamp, self.act_stamp_options, self.act_clear_frames, self.act_exclude])
         sp = self.properties_panel.special
         sp.params_changed.connect(self.special_params)
         sp.generate_requested.connect(self.special_generate)
@@ -1866,9 +1870,9 @@ class MainWindow(QMainWindow):
                  if gone else "Nothing to clear: the selected Objects have no mask on the picked frames")
         self.refresh()
 
-    def stamp_picked_frames(self, replace: bool = False) -> None:
+    def stamp_picked_frames(self, replace: bool = True) -> None:
         """The selected Objects' mask on the reference ◎ (else this image), copied onto the other picked
-        frames (Add, or Replace). The reference, as in propagation: picking frames moves the open one."""
+        frames (Replace, or Add). The reference, as in propagation: picking frames moves the open one."""
         ids = self._many_frames_ready("copying a mask to the picked frames")
         if ids is None:
             return
@@ -1893,11 +1897,11 @@ class MainWindow(QMainWindow):
             "Copy Mask to Picked Frames",
             "The selected Objects' mask on the reference ◎ (else the open image) goes to the frames "
             "picked in the Frame List.",
-            [("Their masks there", ["Add: this mask is added (union)", "Replace: they become this mask"], 0)],
+            [("Their masks there", ["Replace: they become this mask", "Add: this mask is added (union)"], 0)],
             "Copy",
         )
         if picked is not None:
-            self.stamp_picked_frames(replace=picked[0] == 1)
+            self.stamp_picked_frames(replace=picked[0] == 0)
 
     def undo(self) -> None:
         if not self._busy:

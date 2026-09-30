@@ -21,7 +21,7 @@ from typing import Dict, List, Optional, Sequence, Set
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QIcon, QImage, QPalette, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -283,6 +283,7 @@ class ImagesPanel(QWidget):
         self.list.itemDoubleClicked.connect(lambda it: self.reference_requested.emit(self.list.row(it)))
         self.list.setToolTip(
             "Click: open the image · Shift/Ctrl-click: pick images (batch / propagation Selection)\n"
+            "Middle click: open an image, the picks stay · Right click: what to do with the picked images\n"
             "Double-click: make it the propagation reference (◎) · shaded tiles are pinned (📌)\n" + LEGEND_ONE
         )
         self.list.horizontalScrollBar().valueChanged.connect(lambda _v: self._visible_timer.start())
@@ -310,6 +311,9 @@ class ImagesPanel(QWidget):
         self.frame_list.setMinimumWidth(170)  # ID, marks and most of the file name
         # names are elided, never scrolled sideways (no horizontal bar, folded or not)
         self.frame_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # middle click: open that frame, the picked ones stay picked; right click: its menu, picks unchanged
+        for view in (self.list, self.frame_list):
+            view.viewport().installEventFilter(self)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.list)
@@ -471,6 +475,18 @@ class ImagesPanel(QWidget):
         self.list.scrollToItem(it, QAbstractItemView.ScrollHint.PositionAtCenter)
         self.frame_list.scrollTo(self.list.indexFromItem(it), QAbstractItemView.ScrollHint.PositionAtCenter)
         self._visible_timer.start()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            view = next((v for v in (self.list, self.frame_list) if obj is v.viewport()), None)
+            if view is not None and event.button() == Qt.MouseButton.RightButton:
+                return True  # no selection change: the menu (context menu event) works on the picks as they are
+            if view is not None and event.button() == Qt.MouseButton.MiddleButton:
+                ix = view.indexAt(event.position().toPoint())
+                if ix.isValid():
+                    view.selectionModel().setCurrentIndex(ix, QItemSelectionModel.SelectionFlag.NoUpdate)
+                return True
+        return super().eventFilter(obj, event)
 
     def selected_rows(self) -> list:
         return sorted(self.list.row(it) for it in self.list.selectedItems())
