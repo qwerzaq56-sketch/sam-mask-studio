@@ -24,6 +24,7 @@ class Preset:
     note: str = ""  # what to set in the trainer
     verified: str = ""
     unconfirmed_cameras: Tuple[str, ...] = ()  # camera models this trainer is not known to read
+    either_name: bool = True  # reads a.png as well as a.jpg.png: into a scene, follow the masks already there
 
 
 PRESETS: Tuple[Preset, ...] = (
@@ -53,11 +54,13 @@ PRESETS: Tuple[Preset, ...] = (
              "to their own folder: drop the files on the Image Set's Image Masks and set Mask Mode = Remove Occluders.",
         verified="Postshot User Guide (Image Set > Mask Mode); how files pair with images is not documented — "
                  "named like the images (a.png), check that they pair",
+        either_name=False,
     ),
     Preset(
         "colmap", "COLMAP (feature extraction)",
         note="For COLMAP's --ImageReader.mask_path: no features are taken from black pixels.",
         verified="COLMAP documentation",
+        either_name=False,  # COLMAP reads a.jpg.png only
     ),
 )
 CUSTOM = "custom"  # the dialog's own choices (the export as before v0.4-p24)

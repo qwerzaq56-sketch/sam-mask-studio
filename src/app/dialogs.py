@@ -31,9 +31,8 @@ from PyQt6.QtWidgets import (
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
-from src.engine.imageio import key_stem
 from src.core.reproject import CONVERTIBLE, FISHEYES, Erp, Stitch, Views
-from src.core.storage import ExportCheck, ExportOptions
+from src.core.storage import ExportCheck, ExportOptions, existing_style, mask_files
 
 
 def _path_row(edit: QLineEdit, pick) -> QWidget:
@@ -384,12 +383,22 @@ class ExportDialog(QDialog):
             if self._scene is not None:
                 root = self.dataset_root() or self._scene.root
                 self.out.setText(str(root / p.folder))
-            self.pattern.setCurrentIndex([v for _, v in self.PATTERNS].index(p.pattern))
+            pattern, follows = p.pattern, ""
+            style = self._scene_style(p)
+            if style is not None and style != p.pattern:  # the scene's masks are named the other way: follow them
+                pattern, follows = style, f"File names follow the masks already in {p.folder}/ ({style}). "
+            self.pattern.setCurrentIndex([v for _, v in self.PATTERNS].index(pattern))
             self.invert.setChecked(p.object_black)
             self.empty.setChecked(p.every_image)
-            self.note.setText(f"{p.note} Files already there are moved to {p.folder}_backup_<time>/ first. "
-                              f"Checked against: {p.verified}.")
+            self.note.setText(f"{p.note} {follows}Masks already there for these images (a.png or a.jpg.png) are "
+                              f"moved to {p.folder}_backup_<time>/ first. Checked against: {p.verified}.")
         self._run_check()
+
+    def _scene_style(self, p) -> Optional[str]:
+        """Into the scene, for a trainer that reads either naming: how the masks there are named."""
+        if not p.either_name or self._scene is None or self.dataset_root() is not None or self._check is None:
+            return None
+        return existing_style(self._scene.root / p.folder, self._check(p.pattern).keys)
 
     def _run_check(self) -> None:
         self._show_folders()
@@ -468,8 +477,7 @@ class ExportDialog(QDialog):
         out = Path(self.out.text().strip())
         c = getattr(self, "check_result", None)
         if c is not None and out.is_dir():
-            names = [p.pattern.format(stem=key_stem(k), name=k) for k in c.keys]
-            n = sum(1 for nm in names if (out / nm).is_file())
+            n = len(mask_files(out, c.keys))
             if n:
                 rows.append(line(False, f"{n} file(s) in {out.name}/ will be moved to {out.name}_backup_…/ first"))
         return rows

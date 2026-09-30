@@ -21,7 +21,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -303,12 +303,37 @@ class ExportOptions:
     object_ids: Optional[List[int]] = None  # a mask set's Objects; None = the Final Mask (the checked ones)
 
 
-def backup_existing(out_dir: Path, names: List[str]) -> Optional[Path]:
-    """Move the files in *out_dir* that *names* would overwrite into ``<out_dir>_backup_<time>/``.
+NAME_STYLES = ("{stem}.png", "{name}.png")  # a.png, a.jpg.png: the two ways a mask pairs with a.jpg
+
+
+def mask_files(out_dir: Path, keys: Sequence[str]) -> List[Path]:
+    """The mask files in *out_dir* for *keys*, in either naming (a.png, a.jpg.png)."""
+    out = []
+    for k in keys:
+        for style in NAME_STYLES:
+            p = out_dir / style.format(stem=key_stem(k), name=k)
+            if p.is_file() and p not in out:
+                out.append(p)
+    return out
+
+
+def existing_style(out_dir: Path, keys: Sequence[str]) -> Optional[str]:
+    """How the masks already in *out_dir* are named ("{stem}.png" or "{name}.png"); None: none there, or a tie."""
+    counts = {style: sum(1 for k in keys if (out_dir / style.format(stem=key_stem(k), name=k)).is_file())
+              for style in NAME_STYLES}
+    a, b = counts[NAME_STYLES[0]], counts[NAME_STYLES[1]]
+    return None if a == b else NAME_STYLES[0] if a > b else NAME_STYLES[1]
+
+
+def backup_existing(out_dir: Path, names: List[str], keys: Sequence[str] = ()) -> Optional[Path]:
+    """Move the files in *out_dir* that *names* would overwrite, and any other mask of *keys* (the other
+    naming: a trainer might read that stale one), into ``<out_dir>_backup_<time>/``, sub-folders kept
+    (cam0/, cam1/ hold the same names).
 
     Returns the backup folder, or None when nothing would be overwritten.
     """
     existing = [out_dir / n for n in names if (out_dir / n).is_file()]
+    existing += [p for p in mask_files(out_dir, keys) if p not in existing]
     if not existing:
         return None
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -319,7 +344,9 @@ def backup_existing(out_dir: Path, names: List[str]) -> Optional[Path]:
         backup = out_dir.parent / f"{out_dir.name}_backup_{stamp}-{n}"
     backup.mkdir(parents=True)
     for p in existing:
-        shutil.move(str(p), str(backup / p.name))
+        dest = backup / p.relative_to(out_dir)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(p), str(dest))
     return backup
 
 
@@ -400,7 +427,7 @@ def export_final_masks(
     if keys is None:
         keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
     if options.backup:
-        backup_existing(options.out_dir, export_names(project, options, keys))
+        backup_existing(options.out_dir, export_names(project, options, keys), keys)
     written = []
     for i, key in enumerate(keys):
         h0, w0 = original_size(key)
