@@ -427,7 +427,8 @@ class MainWindow(QMainWindow):
         )
         self.act_hide_masks = self._action(
             "Hide Masks", lambda _on: self._update_overlays(),
-            tip="No Object colors on the canvas (the Object in Edit still shows)", checkable=True,
+            tip="No Object colors on the canvas, the Object in Edit included: the plain image "
+                "(a tool's preview still shows)", checkable=True,
         )
         for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
                   self.act_pick_all, self.act_edit, self.act_new, self.act_solo, self.act_hide_masks,
@@ -610,10 +611,6 @@ class MainWindow(QMainWindow):
         sp.detect_requested.connect(self.special_detect)
         sp.apply_requested.connect(self.special_apply)
         self.objects_panel.special_requested.connect(self.add_special)
-        # right-click on the picked frames: what works on many frames at once
-        for view in (self.images_panel.list, self.images_panel.frame_list):
-            view.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
-            view.addActions([self.act_stamp, self.act_stamp_options, self.act_clear_frames, self.act_exclude])
 
     # ------------------------------------------------------------------
     # Helpers
@@ -825,7 +822,8 @@ class MainWindow(QMainWindow):
             elif shown is None or o.id in shown:
                 overlays.append(Overlay(m, o.color, "normal" if o.included else "faint"))
         if edit_layer is not None:
-            overlays.append(edit_layer)
+            if not self.act_hide_masks.isChecked():  # Hide: the plain image while editing too (tools still show)
+                overlays.append(edit_layer)
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             added, removed = s.auto_changes()
             if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed

@@ -707,7 +707,7 @@ def test_solo_and_hide_masks(qapp, win):
     win.toggle_edit(ids[2])
     assert sorted(colors()) == sorted([p.get(ids[1]).color, p.get(ids[2]).color])  # and the one in Edit
     win.act_hide_masks.trigger()
-    assert colors() == [p.get(ids[2]).color]  # Hide: only the one in Edit
+    assert colors() == []  # Hide: the plain image, the one in Edit too (p37)
     win.finish_editing()
     assert colors() == []
     win.act_hide_masks.trigger()
@@ -1212,7 +1212,7 @@ def test_clear_masks_on_picked_frames(qapp, win):
     assert "Cleared 2 mask(s)" in win.log_view.toPlainText()
     win.undo()  # one step
     assert sorted(s.project.get(a).frames) == [k[0], k[2]]
-    assert win.act_clear_frames in win.images_panel.frame_list.actions()  # also on right-click
+    assert win.act_clear_frames not in win.images_panel.frame_list.actions()  # p37: no right-click menu there
 
 
 def test_copy_mask_to_picked_frames_add_or_replace(qapp, win):
