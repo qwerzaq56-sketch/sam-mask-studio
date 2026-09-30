@@ -333,6 +333,12 @@
   보기 설정이라 저장과 Undo에 들어가지 않음(이번 실행 동안 유지).
 - + Special 버튼의 스타일 기본 메뉴 화살표가 깨진 그림처럼 보여서, 글자 "▾"로 바꿈.
 
+### 51단계 · THIN_PRISM_FISHEYE 변환 (`v0.4-p51`, 버그)
+- 증상: OSMO 360 장면(카메라 THIN_PRISM_FISHEYE)을 New dataset → Pinhole views로 내보내면 "No image here uses a camera this can
+  convert". 변환이 이 카메라 모델을 몰랐음(창은 카메라 짝(듀얼 피시아이)이 있다는 이유로 변환 목록을 보여 줬음).
+- COLMAP 소스(`sensor/models/thin_prism.h`)대로 추가: 등거리 피시아이 점에 방사(k1~k4) · 접선(p1, p2) · 얇은 프리즘(sx1, sy1) 왜곡.
+  Pinhole / 360 / 듀얼 피시아이 이어 붙이기 모두 이 카메라를 받음.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

@@ -351,3 +351,36 @@ def test_stitching_gives_the_panorama_back(tmp_path):
     back = cv2.imread(str(tmp_path / "pano" / "images" / "000.jpg"))
     diff = np.abs(back.astype(int) - pano.astype(int)).mean(axis=2)[10:-10]  # away from the poles
     assert diff.mean() < 3 and np.percentile(diff, 99) < 12
+
+
+def test_thin_prism_fisheye_matches_colmap():
+    """THIN_PRISM_FISHEYE (OSMO 360 scenes): zero distortion = FISHEYE; with distortion, COLMAP's formula
+    written out point by point (sensor/models/thin_prism.h)."""
+    import math
+
+    from src.core.colmap import Camera
+    from src.core.reproject import CONVERTIBLE, source_projection
+
+    assert "THIN_PRISM_FISHEYE" in CONVERTIBLE
+    rays = np.array([[0.1, -0.2, 1.0], [0.8, 0.3, 0.5], [-0.4, 0.9, 0.2], [0.0, 0.0, 1.0]])
+    plain = Camera(1, "THIN_PRISM_FISHEYE", 1000, 900, (400.0, 410.0, 500.0, 450.0) + (0.0,) * 8)
+    fish = Camera(1, "FISHEYE", 1000, 900, (400.0, 410.0, 500.0, 450.0))
+    a, b = source_projection(plain)(plain, rays), source_projection(fish)(fish, rays)
+    assert np.allclose(a[0], b[0]) and np.allclose(a[1], b[1])
+    params = (400.0, 410.0, 500.0, 450.0, 0.05, -0.01, 0.002, -0.003, 0.004, -0.001, 0.0015, -0.002)
+    cam = Camera(1, "THIN_PRISM_FISHEYE", 1000, 900, params)
+    xs, ys, ok = source_projection(cam)(cam, rays)
+    fx, fy, cx, cy, k1, k2, p1, p2, k3, k4, sx1, sy1 = params
+    for (x, y, z), gx, gy in zip(rays, xs, ys):
+        u, v = x / z, y / z
+        r = math.hypot(u, v)
+        if r > 1e-12:
+            th = math.atan(r)
+            u, v = u * th / r, v * th / r
+        r2 = u * u + v * v
+        rad = k1 * r2 + k2 * r2 ** 2 + k3 * r2 ** 3 + k4 * r2 ** 4
+        du = u * rad + 2 * p1 * u * v + p2 * (r2 + 2 * u * u) + sx1 * r2
+        dv = v * rad + 2 * p2 * u * v + p1 * (r2 + 2 * v * v) + sy1 * r2
+        assert math.isclose(gx, fx * (u + du) + cx, abs_tol=1e-6) and math.isclose(gy, fy * (v + dv) + cy, abs_tol=1e-6)
+    assert ok.all()
+
