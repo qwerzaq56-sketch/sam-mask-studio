@@ -1613,6 +1613,10 @@ def test_eye_hides_an_object_on_the_image_only(qapp, win):
     eye.click()
     qapp.processEvents()
     assert colors() == [s.project.get(ids[1]).color] and s.project.get(ids[0]).included  # still in the Final Mask
+    win.toggle_edit(ids[0])  # the Object in Edit shows, 👁 or not (p52)
+    assert s.project.get(ids[0]).color in colors()
+    win.finish_editing()
+    assert s.project.get(ids[0]).color not in colors()
     make_objects(win, 1)  # rows made again: it stays hidden
     assert not op.tree.findChild(EyeButton, f"eye_{ids[0]}").shown
     op.tree.findChild(EyeButton, f"eye_{ids[0]}").click()

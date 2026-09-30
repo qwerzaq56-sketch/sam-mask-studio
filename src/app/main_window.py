@@ -831,7 +831,7 @@ class MainWindow(QMainWindow):
         overlays: List[Overlay] = []
         edit_layer = None
         shown = self._colored_ids()
-        hidden = self.objects_panel.hidden  # 👁 off
+        hidden = self.objects_panel.hidden - {s.editing}  # 👁 off; the Object in Edit shows anyway
         for o in s.project.objects:
             m = o.mask(key) if key else None
             if m is None or o.id in hidden:

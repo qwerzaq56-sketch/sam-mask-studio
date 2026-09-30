@@ -109,7 +109,8 @@ class EyeButton(QPushButton):
         shown = self.shown
         self._fade.setOpacity(0.85 if shown else 0.2)
         self.setToolTip("Shown on the image (click to hide it there; the Final Mask is the check box)" if shown
-                        else "Hidden on the image (click to show it; it still counts in the Final Mask if checked)")
+                        else "Hidden on the image, except while it is edited (click to show it; "
+                             "it still counts in the Final Mask if checked)")
 
 
 def color_icon(rgb, size: int = 12) -> QIcon:
