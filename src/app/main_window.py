@@ -438,9 +438,9 @@ class MainWindow(QMainWindow):
 
         # --- Go: moving between frames and Objects ----------------------------------------
         self.act_prev_frame = self._action("&Previous Frame", lambda: self.step(-1), ["Left", "PgUp"],
-                                           "Not while editing")
+                                           "While editing: the same Object, on that frame")
         self.act_next_frame = self._action("&Next Frame", lambda: self.step(1), ["Right", "PgDown"],
-                                           "Not while editing")
+                                           "While editing: the same Object, on that frame")
         self.act_prev_object = self._action("Previous Object", lambda: self.step_object(-1), ["Up"],
                                             "The previous Object with a mask on this image (Edit follows)")
         self.act_next_object = self._action("Next Object", lambda: self.step_object(1), ["Down"],
@@ -963,22 +963,39 @@ class MainWindow(QMainWindow):
         if d:
             self.offer_masks([Path(d)], "Import Masks")
 
+    def _unwritten_picks(self) -> bool:
+        """An auto tool in Paint mode has picked parts not written in yet (moving on would drop them)."""
+        s = self.session
+        if s.auto_tool is None or s.auto_mode != "paint":
+            return False
+        taken = s.auto_taken()
+        return taken is not None and bool(taken.any())
+
     def go_to(self, index: int) -> None:
         if self._busy or index is None:
             return
-        if self.session.mode == Mode.EDIT and index != self.session.index:
-            self.log("Finish editing (Esc) before moving to another image")
-            self.images_panel.set_current(self.session.index)
-            return
+        s = self.session
+        keep_edit = None  # moving while editing: go on editing the same Object there, with the same brush
+        if s.mode == Mode.EDIT and index != s.index:
+            if self._unwritten_picks():
+                msg = "The auto tool's picks are not written in yet: Enter applies them, Esc drops them"
+                self.log(msg)
+                self.statusBar().showMessage(msg, 6000)  # seen where the eyes are, not only in the log
+                self.images_panel.set_current(s.index)
+                return
+            keep_edit = (s.editing, "" if self._tool in AUTO_TOOLS else self._tool)
         self.close_tool()
         self.save(background=True)
         try:
-            moved = self.session.go_to(index)
+            moved = s.go_to(index)
         except ValueError as e:
             self.warn(str(e))
             return
         if moved:
-            self.canvas.set_image(self.session.image)
+            self.canvas.set_image(s.image)
+            if keep_edit is not None and s.project.get(keep_edit[0]) is not None:
+                s.edit(keep_edit[0])
+                self.set_brush_tool(keep_edit[1], redraw=False)
         self.refresh()
 
     def step(self, delta: int) -> None:

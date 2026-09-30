@@ -713,7 +713,8 @@ def test_arrows_step_objects_and_points_drag_or_double_click(qapp, win):
     win.step_object(1)  # Edit follows
     assert s.editing == ids[1]
     win.step(1)
-    assert s.index == 0  # no image change while editing
+    assert s.index == 1 and s.editing == ids[1]  # editing goes on on the next image (v0.4-p41)
+    win.step(-1)
 
     s.click(20, 40)  # a second point
     win.refresh()

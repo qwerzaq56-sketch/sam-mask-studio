@@ -283,6 +283,11 @@
   (Copy Mask / Copy Mask (Options)… / Clear Masks on Picked Frames / Exclude). 37단계에서 뺀 메뉴를 되돌림.
 - Copy Mask to Picked Frames의 기본이 **Replace**(Options에서 Add).
 
+### 41단계 · Edit 중에도 프레임 이동 (`v0.4-p41`, 피드백)
+- Edit 중 다른 프레임으로 가면 같은 Object를 그 프레임에서 이어서 편집(브러시 / Restore 도구도 유지). 편집 내용은 프레임마다 이미 저장돼 있음.
+- 막는 경우는 하나: 오토 툴 Paint 모드에서 골라 둔(칠한) 부분이 아직 안 써졌을 때. 이유를 상태 표시줄에 바로 표시
+  (Enter = 쓰기, Esc = 버리기, A = 선택 없음). 그 밖의 오토 툴 미리보기는 이동하면 버려짐.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

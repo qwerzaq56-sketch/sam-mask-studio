@@ -1461,3 +1461,27 @@ def test_middle_click_opens_a_frame_and_keeps_the_picks(qapp, win):
     assert s.index == 4 and win.images_panel.selected_rows() == [1, 2]  # opened, picks kept
     press(Qt.MouseButton.RightButton, 0)
     assert s.index == 4 and win.images_panel.selected_rows() == [1, 2]  # right click changes nothing
+
+
+# --- p41: moving to another frame while editing keeps editing there ----------------------------------
+
+
+def test_moving_frames_while_editing(qapp, win):
+    from src.app.session import Mode
+
+    ids = make_objects(win, 1)
+    s = win.session
+    p = win.properties_panel
+    win.toggle_edit(ids[0])
+    assert win._tool == "paint"
+    win.step(1)
+    assert s.index == 1 and s.mode == Mode.EDIT and s.editing == ids[0] and win._tool == "paint"
+    win.go_to(0)
+    p.tool_btns["grow"].click()
+    p.mode_paint_btn.click()  # Paint mode: everything picked, not written yet
+    win.step(1)
+    assert s.index == 0 and "not written in yet" in win.statusBar().currentMessage()
+    win.a_key()  # nothing picked: nothing to lose
+    win.step(1)
+    assert s.index == 1 and s.editing == ids[0] and s.auto_tool is None
+
