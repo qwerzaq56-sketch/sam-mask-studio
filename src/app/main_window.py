@@ -2574,6 +2574,8 @@ class MainWindow(QMainWindow):
                 self.log(f"Converted dataset {dataset}: {r.images_in} image(s) → {r.views_out} "
                          f"{'pinhole view(s)' if isinstance(views, Views) else '360 image(s)'} {r.side} px wide, "
                          f"3D points {r.points_kept} kept / {r.points_dropped} removed"
+                         + (f"; {r.views_dropped} view(s) the fisheye could not fill were left out"
+                            if getattr(r, "views_dropped", 0) else "")
                          + (f"; not converted: {', '.join(r.skipped[:5])}" if r.skipped else ""))
             elif report:
                 r = report[0]

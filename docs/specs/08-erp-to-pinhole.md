@@ -87,6 +87,25 @@
 
 **결정**: 표준 배치를 프리셋으로(기본 COLMAP overlapping 12, 전의 기본과 같되 위 줄만 45° 돌림), 격자는 Custom으로 남김. 피시아이 원본은 한 방향을 보므로 전처럼 격자.
 
+### 8.1 프리셋의 역할과 구조 (`v0.4-p58`, GPT 리뷰 반영)
+
+| 배치 | 역할 |
+|---|---|
+| **COLMAP Overlap · 12 Views**(기본) | COLMAP panorama SfM 방식 기반의 overlapping perspective views. 일반적인 360 → COLMAP 변환의 기본값, 특징 겹침 / SfM 안정성 중심 |
+| **Cubemap · 6 Views** | 90° 단위 6방향, 구 전체를 고르게 덮는 단순 · 직관적 변환 |
+| **Horizon · 4 Views** | 수평 4방향(위 / 아래 없음). 실내 · 건축물처럼 수평 공간 중심, 빠른 처리 |
+| **Two Rings · 16 Views** | 상 · 하 두 줄. 수직 방향 coverage와 overlap이 늘어남(품질이 더 좋다고 하지 않음): dense coverage / SfM 안정성 실험용 |
+| **Custom** | yaw × pitch를 직접: 특수 촬영 환경이나 실험용 |
+
+- 이름은 "COLMAP 카메라 모델"이 아니라 "COLMAP 방식의 뷰 배치"로 읽히게. 프리셋은 더 늘리지 않음.
+- **구조**: 배치는 이미지 목록이 아니라 규칙 — `ViewLayout(rings = Ring(pitch, 개수, 시작 yaw) …, poles = 위 / 아래)`.
+  Projection(Pinhole) · 배치 · FOV · 해상도는 따로(`Views(layout, fov, size, yaw_offset)`), 뷰 개수와 겹침(옆 / 줄 사이, 수평 기준)은 규칙에서 계산.
+  FOV 110° / 120°도 같은 규칙으로. 전체 회전(`yaw_offset`)은 구조만 있고 화면에는 아직 없음.
+- **360 / 피시아이 분리**: 360(ERP)은 구 전체에 배치(프리셋 목록). 피시아이는 렌즈가 보는 쪽에 격자(yaw × pitch)이고,
+  **렌즈가 절반도 못 채우는 뷰는 만들지 않음**(`MIN_VIEW_SHARE` = 0.5, 전에는 검은 이미지 + 무시 마스크로 만들었음). 결과 보고에 뺀 수.
+- **미리보기**: Export 창에 뷰 지도(구를 360 이미지처럼 펼친 것: 가운데 = 정면, 위 = 위쪽). 뷰마다 윤곽선과 가운데 점, 선이 겹치는 곳이 겹침.
+  피시아이가 못 채워 빠지는 뷰는 회색 점선. 배치의 역할 · 뷰 개수 · 겹침을 한 줄로.
+
 출처: [COLMAP `pycolmap/panorama.py`](https://github.com/colmap/colmap/blob/main/python/pycolmap/panorama.py) ·
 [COLMAP Rig Support](https://colmap.github.io/rigs.html) ·
 [nerfstudio custom data](https://docs.nerf.studio/quickstart/custom_dataset.html) ·

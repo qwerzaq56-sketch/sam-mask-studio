@@ -172,21 +172,83 @@ def _focal(cam: Camera) -> float:
 # --- targets --------------------------------------------------------------------------------------
 
 
-def _ring(yaws, pitch, offset=0.0):
-    return tuple(((y + offset) % 360, float(pitch)) for y in yaws)
+@dataclass(frozen=True)
+class Ring:
+    """*count* views evenly around at *pitch*, the first at yaw *offset* (degrees)."""
+
+    pitch: float
+    count: int
+    offset: float = 0.0
+
+    def yaws(self) -> List[float]:
+        return [(self.offset + i * 360.0 / self.count) % 360 for i in range(self.count)]
 
 
-# the (yaw, pitch) layouts 360 tools use, all 90° views (docs/specs/08 P4, sources there)
-VIEW_LAYOUTS = {
-    # COLMAP panorama_sfm "PERSPECTIVE_OVERLAPPING": 4 yaws at -35 / 0 / 35, the upper ring turned by half a step
-    "colmap12": ("COLMAP overlapping · 12", _ring((0, 90, 180, 270), -35) + _ring((0, 90, 180, 270), 0)
-                 + _ring((0, 90, 180, 270), 35, 45.0)),
-    "cube6": ("Cubemap · 6 (4 sides, up, down)", _ring((0, 90, 180, 270), 0) + ((0.0, 90.0), (0.0, -90.0))),
-    # COLMAP "PERSPECTIVE_NON_OVERLAPPING": a cubemap without up and down (sky / the operator below)
-    "horizon4": ("Horizon · 4 (no up / down)", _ring((0, 90, 180, 270), 0)),
-    # LichtFeld 360 plugin "Medium": two rings of 8 at +-35, the upper one staggered
-    "rings16": ("Two rings · 16 (8 at ±35°)", _ring(range(0, 360, 45), -35) + _ring(range(0, 360, 45), 35, 22.5)),
-}
+@dataclass(frozen=True)
+class ViewLayout:
+    """A rule for where a 360 image's pinhole views look (docs/specs/08 P4): rings of views, plus single
+    views straight up / down (*poles*: +90 / -90). The field of view and the resolution are separate
+    settings (``Views.fov`` / ``Views.size``), so one layout works at 90°, 110°, 120° ..."""
+
+    key: str
+    label: str
+    purpose: str
+    rings: Tuple[Ring, ...]
+    poles: Tuple[float, ...] = ()
+
+    def pairs(self, yaw_offset: float = 0.0) -> List[Tuple[float, float]]:
+        out = [((y + yaw_offset) % 360, float(ring.pitch)) for ring in self.rings for y in ring.yaws()]
+        return out + [(yaw_offset % 360, float(p)) for p in self.poles]
+
+    @property
+    def count(self) -> int:
+        return sum(r.count for r in self.rings) + len(self.poles)
+
+    def overlap(self, fov: float) -> Tuple[float, Optional[float]]:
+        """(sideways, between rings) overlap in degrees at *fov*: how far neighbouring views cover the same
+        directions (<= 0: they only touch or leave a gap). Measured at the horizon, a simple guide."""
+        side = min(fov - 360.0 / r.count for r in self.rings)
+        pitches = sorted({r.pitch for r in self.rings} | set(self.poles))
+        gaps = [b - a for a, b in zip(pitches, pitches[1:])]
+        return side, (fov - min(gaps)) if gaps else None
+
+
+# the layouts 360 tools use (docs/specs/08 §8, sources there); no more: these cover the usual needs
+VIEW_LAYOUTS = {lay.key: lay for lay in (
+    ViewLayout("colmap12", "COLMAP Overlap · 12 Views",
+               "COLMAP panorama SfM 방식 기반의 overlapping perspective views (4 × pitch −35 / 0 / 35, 위 줄 45° 엇갈림). "
+               "일반적인 360 → COLMAP 변환의 기본값: 겹침으로 특징 매칭 / SfM 안정성 중심",
+               (Ring(-35, 4), Ring(0, 4), Ring(35, 4, 45.0))),
+    ViewLayout("cube6", "Cubemap · 6 Views",
+               "90° 단위 6방향(앞 · 오른쪽 · 뒤 · 왼쪽 · 위 · 아래). 구 전체를 고르게 덮는 단순하고 직관적인 변환",
+               (Ring(0, 4),), (90.0, -90.0)),
+    ViewLayout("horizon4", "Horizon · 4 Views",
+               "수평 4방향, 위 / 아래 없음(COLMAP의 non-overlapping). 실내 · 건축물 등 수평 공간 중심, 빠른 처리용. "
+               "하늘과 아래쪽 촬영자가 빠짐",
+               (Ring(0, 4),)),
+    ViewLayout("rings16", "Two Rings · 16 Views",
+               "±35°의 두 줄 × 8(위 줄 22.5° 엇갈림, LichtFeld 360 플러그인 Medium). 위아래 방향의 coverage와 "
+               "overlap이 늘어남: dense coverage / SfM 안정성 실험용",
+               (Ring(-35, 8), Ring(35, 8, 22.5))),
+)}
+MIN_VIEW_SHARE = 0.5  # a fisheye's view with less of it seen by the lens is not made (docs/specs/08 P4)
+
+
+def view_share(cam: Camera, yaw: float, pitch: float, fov: float, n: int = 24) -> float:
+    """How much of a view the source camera sees (0..1), from an n x n grid of its rays.
+    A 360 image sees everything; a fisheye only its side (and inside its frame)."""
+    proj = source_projection(cam)
+    if proj is None:
+        return 0.0
+    if cam.model == "EQUIRECTANGULAR":
+        return 1.0
+    t = np.tan(np.radians(fov) / 2)
+    s = (np.arange(n) + 0.5) / n * 2 * t - t
+    uu, vv = np.meshgrid(s, s)
+    rays = np.stack([uu, vv, np.ones_like(uu)], -1) @ view_rotation(yaw, pitch)
+    x, y, ok = proj(cam, rays)
+    inside = ok & (x >= 0) & (x < cam.width) & (y >= 0) & (y < cam.height)
+    return float(inside.mean())
 
 
 @dataclass(frozen=True)
@@ -197,12 +259,13 @@ class Views:
     pitches: Tuple[float, ...] = DEFAULT_PITCHES
     fov: float = DEFAULT_FOV
     size: int = 0  # 0 = auto: the source's resolution at that field of view
-    layout: Tuple[Tuple[float, float], ...] = ()  # a named layout's views (VIEW_LAYOUTS), instead of the grid
+    layout: Optional["ViewLayout"] = None  # a layout rule (VIEW_LAYOUTS) instead of the yaw x pitch grid
+    yaw_offset: float = 0.0  # the whole layout turned right by this much
 
     def pairs(self) -> List[Tuple[float, float]]:
-        if self.layout:
-            return list(self.layout)
-        return [(y, p) for p in self.pitches for y in self.yaws]
+        if self.layout is not None:
+            return self.layout.pairs(self.yaw_offset)
+        return [((y + self.yaw_offset) % 360 if self.yaw_offset else y, p) for p in self.pitches for y in self.yaws]
 
     def side(self, source_width: int) -> int:  # kept for callers of v0.4-p29
         s = self.size or max(64, source_width // 4)
@@ -317,6 +380,7 @@ class ConvertReport:
     points_dropped: int = 0
     side: int = 0  # the output width
     skipped: List[str] = field(default_factory=list)  # images whose camera cannot be converted
+    views_dropped: int = 0  # views a fisheye could not fill (less than MIN_VIEW_SHARE seen): not made
 
 
 def _read_points(path: Path):
@@ -399,6 +463,9 @@ def convert(images_dir: Path, model_dir: Path, root: Path, keep: Sequence[str], 
             if (cid, v) not in tables:
                 tables[(cid, v)] = _tables(cam, plan, rot)
             mx, my, valid = tables[(cid, v)]
+            if valid.mean() < MIN_VIEW_SHARE:  # a direction the lens barely saw (a fisheye's back): no view
+                report.views_dropped += 1
+                continue
             vname = f"{stem}{suffix}.jpg"
             (out_img / vname).parent.mkdir(parents=True, exist_ok=True)
             _write_image(out_img / vname, cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=border))

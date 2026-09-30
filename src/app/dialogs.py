@@ -31,7 +31,9 @@ from PyQt6.QtWidgets import (
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
-from src.core.reproject import CONVERTIBLE, FISHEYES, VIEW_LAYOUTS, Erp, Stitch, Views
+from src.app.view_preview import ViewPreview
+from src.core.colmap import read_cameras_full
+from src.core.reproject import CONVERTIBLE, FISHEYES, MIN_VIEW_SHARE, VIEW_LAYOUTS, Erp, Stitch, Views, view_share
 from src.core.storage import ExportCheck, ExportOptions, existing_style, mask_files
 
 
@@ -210,11 +212,25 @@ class ExportDialog(QDialog):
         self.pitches = QLineEdit("-35, 0, 35" if self._erp or fisheye else "0")
         self.pitches.setToolTip("Up / down angles in degrees (up is positive), one row of views each")
         self.layout = QComboBox()  # 360 sources: the usual view layouts (docs/specs/08 P4), or the grid below
-        for key, (label, pairs) in VIEW_LAYOUTS.items():
-            self.layout.addItem(f"{label}", key)
-        self.layout.addItem("Custom: yaw × pitch", None)
-        self.layout.setToolTip("COLMAP overlapping: COLMAP's own default for 360 (views overlap, so they match well). "
-                               "No layout has been shown to train better; more views = more images of the same pixels")
+        for key, lay in VIEW_LAYOUTS.items():
+            self.layout.addItem(lay.label, key)
+            self.layout.setItemData(self.layout.count() - 1, lay.purpose, Qt.ItemDataRole.ToolTipRole)
+        self.layout.addItem("Custom", None)
+        self.layout.setItemData(self.layout.count() - 1, "사용자가 yaw × pitch를 직접 지정: 특수 촬영 환경이나 실험용",
+                                Qt.ItemDataRole.ToolTipRole)
+        self.layout.setToolTip("Where the pinhole views look (a layout, not a camera model). No layout has been shown "
+                               "to train better; more views = more coverage / overlap and more images")
+        # what the layout is for, how many views and how much they overlap, and a map of them
+        self.layout_note = QLabel("")
+        self.layout_note.setWordWrap(True)
+        self.layout_note.setStyleSheet("color: gray;")
+        self.view_preview = ViewPreview()
+        self._cameras = []
+        if scene is not None and not self._erp:  # a fisheye's views are checked against its lens
+            try:
+                self._cameras = [c for c in read_cameras_full(scene.model_dir).values() if c.model in FISHEYES]
+            except (OSError, ValueError):
+                self._cameras = []
         if not self._erp:
             self.layout.setCurrentIndex(self.layout.count() - 1)  # a fisheye looks one way: its own grid
         self.fov = QSpinBox()
@@ -254,6 +270,8 @@ class ExportDialog(QDialog):
             form.addRow(self.note)
             form.addRow("Output", self._out_row)
             form.addRow("", self._pin_row)
+            form.addRow("", self.layout_note)
+            form.addRow("", self.view_preview)
         if check is not None:
             form.addRow(self.summary)
             form.addRow(self.problems)
@@ -281,8 +299,10 @@ class ExportDialog(QDialog):
         self.layout.currentIndexChanged.connect(lambda _i: self._apply_target())
         for w in (self.fov, self.side):
             w.valueChanged.connect(lambda _v: self._run_check())
+        self.fov.valueChanged.connect(lambda _v: self._apply_target())
         for w in (self.yaws, self.pitches):
             w.textChanged.connect(lambda _t: self._run_check())
+            w.textChanged.connect(lambda _t: self._apply_target())
         self.dataset.textChanged.connect(lambda _t: self._apply_target())
         self.mask.currentIndexChanged.connect(self._run_check)
         self.out.textChanged.connect(lambda _t: self._show_folders())
@@ -328,6 +348,44 @@ class ExportDialog(QDialog):
         text = self.dataset.text().strip()
         return Path(text) if text else None
 
+    def _kept_views(self, v: Views) -> int:
+        """The views made per image: all of them, less a fisheye's views its lens cannot fill."""
+        if not self._cameras:
+            return len(v.pairs())
+        return sum(all(view_share(c, y, p, v.fov) >= MIN_VIEW_SHARE for c in self._cameras) for y, p in v.pairs())
+
+    def _show_layout(self, on: bool) -> None:
+        """The layout's purpose, its view count and overlap, and the map of the views (docs/specs/08 P4)."""
+        self.layout_note.setVisible(on)
+        self.view_preview.setVisible(on)
+        if not on:
+            return
+        v = Views(fov=float(self.fov.value()))
+        key = self.layout.currentData() if self._erp else None
+        pairs = VIEW_LAYOUTS[key].pairs() if key is not None else None
+        if pairs is None:  # the typed grid
+            def angles(field):
+                try:
+                    return tuple(float(t) for t in field.text().replace(";", ",").split(",") if t.strip())
+                except ValueError:
+                    return ()
+            pairs = Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,)).pairs()
+        fov = v.fov
+        kept = [all(view_share(c, y, p, fov) >= MIN_VIEW_SHARE for c in self._cameras) if self._cameras else True
+                for y, p in pairs]
+        self.view_preview.set_views(pairs, fov, kept)
+        if key is not None:
+            lay = VIEW_LAYOUTS[key]
+            side, rings = lay.overlap(fov)
+            ov = f"sideways {side:+.0f}°" + (f", between rings {rings:+.0f}°" if rings is not None else "")
+            self.layout_note.setText(f"{lay.purpose}<br><b>{lay.count} views</b> per image at {fov:.0f}° · overlap {ov}")
+        else:
+            dropped = kept.count(False)
+            self.layout_note.setText(
+                f"<b>{kept.count(True)} views</b> per image at {fov:.0f}°"
+                + (f" · {dropped} left out: the fisheye cannot fill them (gray)" if dropped else "")
+                + ("" if self._cameras else " · Custom: yaw × pitch as typed"))
+
     def views(self):
         """What the new dataset's cameras become: ``Views`` (pinhole), ``Erp`` (360) or None (kept)."""
         kind = self.convert.currentData()
@@ -346,7 +404,7 @@ class ExportDialog(QDialog):
 
         key = self.layout.currentData() if self._erp else None
         if key is not None:
-            return Views(fov=float(self.fov.value()), size=self.side.value(), layout=VIEW_LAYOUTS[key][1])
+            return Views(fov=float(self.fov.value()), size=self.side.value(), layout=VIEW_LAYOUTS[key])
         return Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
                      fov=float(self.fov.value()), size=self.side.value())
 
@@ -388,10 +446,11 @@ class ExportDialog(QDialog):
         kind = self.convert.currentData()
         for w in self._view_widgets:
             w.setVisible(kind == "pinhole")
-        grid = kind == "pinhole" and self.layout.currentData() is None
+        grid = kind == "pinhole" and (self.layout.currentData() is None or not self._erp)
         for w in (self._yaw_label, self.yaws, self._pitch_label, self.pitches):
             w.setVisible(grid)
         self.layout.setVisible(kind == "pinhole" and self._erp)
+        self._show_layout(kind == "pinhole" and self._convertible and self.to_new.isChecked())
         self.side.setVisible(kind is not None)
         if p is None:
             self.out.setText(self._custom_dir)
@@ -436,7 +495,7 @@ class ExportDialog(QDialog):
             written = c.images - self._excluded  # a new dataset holds the kept frames only
         v = self.views()
         if isinstance(v, Views):
-            written *= len(v.pairs())  # one mask per view
+            written *= self._kept_views(v)  # one mask per view (a fisheye's unfillable views are not made)
         elif isinstance(v, Stitch):
             written = len(self._groups)  # one mask per moment (a moment with a ⊘ image is left out)
         rows = [
@@ -478,7 +537,7 @@ class ExportDialog(QDialog):
             v = self.views()
             what = (f"{len(self._groups)} 360 image(s) stitched from camera pairs" if isinstance(v, Stitch)
                     else "one 360 image each" if isinstance(v, Erp)
-                    else f"{len(v.pairs())} pinhole views per image ({v.fov:.0f}°)" if v is not None
+                    else f"{self._kept_views(v)} pinhole views per image ({v.fov:.0f}°)" if v is not None
                     else "images/ linked, sparse/0/ filtered")
             rows.append(line(not why, why or f"New dataset: {root.name}/ — {what}"
                                               + (f", {self._excluded} ⊘ frame(s) left out" if self._excluded else "")))
