@@ -1546,3 +1546,23 @@ def test_ctrl_click_adds_or_takes_out_a_piece(qapp, win):
     win.undo()
     assert s.editing_frame().mask[far[1], far[0]]  # one undo step each
 
+
+# --- p48: an unchecked Object keeps its check box when the rows are made again ---------------------------
+
+
+def test_unchecked_object_keeps_its_check_box(qapp, win):
+    from PyQt6.QtCore import Qt
+
+    ids = make_objects(win, 2)
+    s = win.session
+    s.project.set_included(ids[0], False)
+    win.refresh()
+    make_objects(win, 1)  # a new row: the list is made again
+    from src.app.objects_panel import ID_ROLE
+
+    tree = win.objects_panel.tree
+    [item] = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+              if tree.topLevelItem(i).data(0, ID_ROLE) == ids[0]]
+    assert item.data(0, Qt.ItemDataRole.CheckStateRole) is not None  # the box is drawn
+    assert item.checkState(0) == Qt.CheckState.Unchecked
+
