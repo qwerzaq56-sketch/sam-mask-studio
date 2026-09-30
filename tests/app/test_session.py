@@ -80,6 +80,7 @@ def test_variant_select_and_brush(session):
     # the stroke is an edit layer on top of the kept point prompt
     assert len(fs.points) == 1 and fs.mask.sum() == 25 and fs.prompt_mask is small and fs.edit is not None
     session.apply_edit()  # baked in: becomes the prior for later clicks
+    session.select_layer(0)  # the Original (by default a point layer on top, v0.4-p53)
     session.click(70, 50)
     assert session.engine.calls[-1][2] is True and session.editing_frame().mask[0, 0]
 
@@ -119,6 +120,7 @@ def test_add_checked_detections(session):
     assert session.detections == []
     # a SAM3 Object is refined with SAM2 using its detection as the prior
     session.edit(ids[0])
+    session.select_layer(0)  # the Original (by default a point layer on top, v0.4-p53)
     session.click(70, 50)
     fs = session.editing_frame()
     assert fs.mask[10, 10] and fs.mask[50, 70] and session.engine.calls[-1][2] is True

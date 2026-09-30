@@ -90,6 +90,7 @@ def test_apply_makes_edited_mask_the_main_mask(session):
     assert session.apply_edit()
     fs = session.editing_frame()
     assert fs.edit is None and fs.points == () and np.array_equal(fs.mask, t) and np.array_equal(fs.base_mask, t)
+    session.select_layer(0)  # the Original (by default a point layer on top, v0.4-p53)
     session.click(60, 40)  # refines from the applied mask (seed)
     assert session.engine.calls[-1][2] is True and session.editing_frame().mask[0, 0]
 

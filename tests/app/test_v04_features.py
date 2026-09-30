@@ -1624,3 +1624,81 @@ def test_eye_hides_an_object_on_the_image_only(qapp, win):
     assert len(colors()) == 3 and set(both) <= set(colors())
     assert "▾" in op.special_btn.text()
 
+
+# --- p53: point layers inside an Object (docs/specs/10-prompt-layers.md) --------------------------------
+
+
+def _imported(win):
+    """An Object whose mask came without points (like an imported one): a box on the left of image 0."""
+    import numpy as np
+
+    from src.core.project import FrameState, Source
+
+    s = win.session
+    h, w = s.working_hw()
+    m = np.zeros((h, w), bool)
+    m[5:30, 5:30] = True
+    oid = s.project.add_object(s.keys[0], FrameState.from_mask(m), Source.IMPORTED, "imported")
+    win.refresh()
+    return oid, m
+
+
+def test_point_layers_add_and_take_out_pieces_keeping_the_mask(qapp, win):
+    s = win.session
+    oid, m = _imported(win)
+    win.toggle_edit(oid)
+    assert s.current_layer() == 1  # no points of its own: the first click makes Layer 1
+    s.click(60, 40)
+    fs = s.editing_frame()
+    assert len(fs.layers) == 1 and fs.layers[0].points and fs.prompt_mask is fs.base_mask
+    assert fs.mask[40, 60] and (fs.mask | ~m).all()  # the piece added, the mask kept
+    assert s.engine.calls[-1][2] is False  # the layer's piece: its own prompts only, no seed
+    s.toggle_layer_subtract()  # the same piece now taken out
+    assert not s.editing_frame().mask[40, 60]
+    s.toggle_layer_subtract()
+    s.add_layer(subtract=True)
+    s.click(10, 10)  # a subtract layer: the piece under the click goes
+    fs = s.editing_frame()
+    assert len(fs.layers) == 2 and not fs.mask[10, 10] and fs.mask[40, 60]
+    s.select_layer(0)  # the Original: points refine the old mask as before (seeded)
+    assert s.active_prompts() == ((), None)
+    s.select_layer(2)
+    s.remove_layer()
+    assert s.current_layer() == 1 and s.editing_frame().mask[10, 10]
+    painted = s.editing_frame().mask.copy()
+    painted[50:55, 5:10] = True
+    s.brush(painted)  # a hand edit on top of the layers
+    s.delete_prompt(1, 0)  # the layer's only point (× in the list): its piece goes, the paint stays
+    fs = s.editing_frame()
+    assert not fs.mask[40, 60] and fs.mask[52, 7] and fs.mask[10, 10]
+    win.undo()
+    assert s.editing_frame().mask[40, 60]
+
+
+def test_point_layers_are_saved_and_shown(qapp, win):
+    from src.app.properties_panel import LAYER_ROLE
+    from src.core.storage import ProjectStore
+
+    s = win.session
+    oid, _m = _imported(win)
+    win.toggle_edit(oid)
+    s.click(60, 40)
+    s.click(62, 44, positive=False)
+    win.refresh()
+    tree = win.properties_panel.points
+    assert tree.topLevelItemCount() == 2 and tree.topLevelItem(1).text(0) == "Layer 1 (+)"
+    assert tree.topLevelItem(1).childCount() == 2 and tree.topLevelItem(1).font(0).bold()
+    x = tree.itemWidget(tree.topLevelItem(1).child(1), 1)
+    x.click()  # × on the negative point
+    qapp.processEvents()
+    assert len(s.editing_frame().layers[0].points) == 1
+    win.properties_panel.add_layer_btn.click()
+    qapp.processEvents()
+    assert s.current_layer() == 2 and len(s.editing_frame().layers) == 2
+    win.save(force=True)
+    back = ProjectStore(s.image_dir, s.max_side).load(list(s.keys)).get(oid).frame(s.keys[0])
+    fs = s.editing_frame()
+    assert len(back.layers) == 2 and back.layers[0].points == fs.layers[0].points and back.layers[1].mask is None
+    assert (back.mask == fs.mask).all()
+    assert tree.topLevelItem(0).data(0, LAYER_ROLE) == 0
+

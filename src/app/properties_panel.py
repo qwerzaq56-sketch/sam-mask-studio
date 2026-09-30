@@ -12,13 +12,14 @@ from typing import Optional
 import cv2
 import numpy as np
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtGui import QFont, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QFormLayout,
     QGridLayout,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -30,6 +31,8 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -65,6 +68,7 @@ RESTORE_MODES = (
     ("both", "Both"),
 )
 POINT_ROLE = Qt.ItemDataRole.UserRole
+LAYER_ROLE = Qt.ItemDataRole.UserRole + 1  # Points tree: the point layer a row belongs to (0 = Original)
 
 
 def mask_thumbnail(image: Optional[np.ndarray], mask: np.ndarray, color, size: int = THUMB) -> QIcon:
@@ -148,6 +152,11 @@ class PropertiesPanel(QWidget):
     variant_selected = pyqtSignal(int)
     point_selected = pyqtSignal(int)
     delete_point_requested = pyqtSignal()
+    layer_selected = pyqtSignal(int)  # Points tree: clicks go to this layer (0 = Original)
+    add_layer_requested = pyqtSignal()
+    toggle_layer_requested = pyqtSignal()  # the current layer: add <-> subtract
+    remove_layer_requested = pyqtSignal()
+    delete_prompt_requested = pyqtSignal(int, int)  # × on a row: layer, point index (-1: the box)
     clear_points_requested = pyqtSignal()
     clear_box_requested = pyqtSignal()
     finish_requested = pyqtSignal()
@@ -183,9 +192,28 @@ class PropertiesPanel(QWidget):
         vbox = QGroupBox("Variants (pick one)")
         QVBoxLayout(vbox).addWidget(self.variants)
 
-        self.points = QListWidget()
+        # the Original and its point layers (docs/specs/10), each with its points / box and a × per row
+        self.points = QTreeWidget()
+        self.points.setColumnCount(2)
+        self.points.setHeaderHidden(True)
+        self.points.setRootIsDecorated(True)
+        self.points.header().setStretchLastSection(False)
+        self.points.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.points.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.points.currentItemChanged.connect(self._on_point)
+        self.points.itemClicked.connect(self._on_prompt_row)
+        self.add_layer_btn = QPushButton("+ Layer")
+        self.add_layer_btn.setToolTip("A point layer: its own points make a piece added to the mask "
+                                      "(the mask under it is kept)")
+        self.add_layer_btn.clicked.connect(self.add_layer_requested)
+        self.layer_sign_btn = QPushButton("+ / −")
+        self.layer_sign_btn.setToolTip("The current point layer adds its piece <-> takes it out")
+        self.layer_sign_btn.clicked.connect(self.toggle_layer_requested)
+        self.remove_layer_btn = QPushButton("Remove Layer")
+        self.remove_layer_btn.setToolTip("Remove the current point layer (its piece goes with it)")
+        self.remove_layer_btn.clicked.connect(self.remove_layer_requested)
         self.box_label = QLabel("Box: —")
+        self.box_label.setVisible(False)  # the box is a row in the tree now
         self.del_point_btn = QPushButton("Delete Point")
         self.del_point_btn.setToolTip("Delete the selected point (Delete)")
         self.del_point_btn.clicked.connect(self.delete_point_requested)
@@ -199,7 +227,10 @@ class PropertiesPanel(QWidget):
         pbox = QGroupBox("Points")
         pl = QVBoxLayout(pbox)
         pl.addWidget(self.points)
-        pl.addWidget(self.box_label)
+        lrow = QHBoxLayout()
+        for b in (self.add_layer_btn, self.layer_sign_btn, self.remove_layer_btn):
+            lrow.addWidget(b)
+        pl.addLayout(lrow)
         pl.addLayout(row)
 
         # --- edit layer (hand edits on top of the prompt-based mask)
@@ -371,7 +402,7 @@ class PropertiesPanel(QWidget):
         ml = QVBoxLayout(mask_page)
         ml.setContentsMargins(0, 0, 0, 0)
         ml.addWidget(vbox, 1)
-        ml.addWidget(pbox, 1)
+        ml.addWidget(pbox, 2)  # the point layers need the room more than the Variants
         layer_page = QWidget()
         el = QVBoxLayout(layer_page)
         el.setContentsMargins(0, 0, 0, 0)
@@ -399,7 +430,52 @@ class PropertiesPanel(QWidget):
 
     def selected_point(self) -> Optional[int]:
         it = self.points.currentItem()
-        return it.data(POINT_ROLE) if it is not None else None
+        return it.data(0, POINT_ROLE) if it is not None else None
+
+    def _prompt_rows(self, frame: FrameState, layer: int, selected_point: Optional[int], editing: bool) -> None:
+        """The Points tree: Original, Layer 1 (+), ... each with its points and box; the current layer bold."""
+        sets = [("Original", frame.points, frame.box, None)]
+        sets += [(f"Layer {n} ({'−' if ly.subtract else '+'})", ly.points, ly.box, ly)
+                 for n, ly in enumerate(frame.layers, 1)]
+        if layer > len(frame.layers):  # the next click makes it
+            sets.append((f"Layer {layer} (+) · next click", (), None, None))
+        for n, (title, pts, box, ly) in enumerate(sets):
+            head = QTreeWidgetItem([title])
+            head.setData(0, LAYER_ROLE, n)
+            if ly is not None and ly.mask is None and ly.has_prompts:
+                head.setToolTip(0, "No piece yet")
+            f = QFont()
+            f.setBold(n == layer and editing)
+            head.setFont(0, f)
+            self.points.addTopLevelItem(head)
+            for i, p in enumerate(pts):
+                it = QTreeWidgetItem([f"{'●' if p.positive else '×'} Point {i + 1}   ({p.x:.0f}, {p.y:.0f})"])
+                it.setData(0, POINT_ROLE, i)
+                it.setData(0, LAYER_ROLE, n)
+                head.addChild(it)
+                if editing:
+                    self.points.setItemWidget(it, 1, self._x_button(n, i))
+                if n == layer and i == selected_point:
+                    self.points.setCurrentItem(it)
+            if box is not None:
+                it = QTreeWidgetItem(["▭ Box   " + ", ".join(f"{v:.0f}" for v in box)])
+                it.setData(0, LAYER_ROLE, n)
+                head.addChild(it)
+                if editing:
+                    self.points.setItemWidget(it, 1, self._x_button(n, -1))
+            head.setExpanded(True)
+
+    def _x_button(self, layer: int, index: int) -> QPushButton:
+        b = QPushButton("×")
+        b.setFixedWidth(22)
+        b.setFlat(True)
+        b.setToolTip("Delete this point" if index >= 0 else "Delete the box")
+        b.clicked.connect(lambda _=False: self.delete_prompt_requested.emit(layer, index))
+        return b
+
+    def _on_prompt_row(self, item, _column: int = 0) -> None:
+        if not self._updating and item is not None and item.parent() is None:
+            self.layer_selected.emit(item.data(0, LAYER_ROLE))
 
     def show_frame(
         self,
@@ -409,6 +485,7 @@ class PropertiesPanel(QWidget):
         image: Optional[np.ndarray],
         new_mode: bool = False,
         editing: bool = False,
+        layer: int = 0,
     ) -> None:
         """Show *obj*'s frame on the current image; point/box controls only work while *editing*."""
         self._updating = True
@@ -442,30 +519,28 @@ class PropertiesPanel(QWidget):
                 self.variants.addItem(it)
             if frame.variants:
                 self.variants.setCurrentRow(min(frame.selected, len(frame.variants) - 1))
-            for positive, header in ((True, "Positive Points"), (False, "Negative Points")):
-                group = [(i, p) for i, p in enumerate(frame.points) if p.positive == positive]
-                if not group:
-                    continue
-                h = QListWidgetItem(header)
-                h.setFlags(Qt.ItemFlag.NoItemFlags)
-                self.points.addItem(h)
-                for i, p in group:
-                    it = QListWidgetItem(f"  {'●' if positive else '×'} Point {i + 1}   ({p.x:.0f}, {p.y:.0f})")
-                    it.setData(POINT_ROLE, i)
-                    if not editing:
-                        it.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                    self.points.addItem(it)
-                    if i == selected_point:
-                        self.points.setCurrentItem(it)
+            self._prompt_rows(frame, layer, selected_point, editing)
             self.box_label.setText("Box: " + (", ".join(f"{v:.0f}" for v in frame.box) if frame.box else "—"))
         else:
             self.box_label.setText("Box: —")
         editing = editing and obj is not None
-        has_points = frame is not None and bool(frame.points)
+        has_points = frame is not None and (frame.has_prompts or bool(frame.layers))
+        on_layer = frame is not None and 1 <= layer <= len(frame.layers)
+        if frame is None:
+            cur_pts, cur_box = (), None
+        elif layer == 0:
+            cur_pts, cur_box = frame.points, frame.box
+        elif on_layer:
+            cur_pts, cur_box = frame.layers[layer - 1].points, frame.layers[layer - 1].box
+        else:
+            cur_pts, cur_box = (), None
         self.del_point_btn.setEnabled(editing and selected_point is not None)
-        self.clear_btn.setEnabled(editing and frame is not None and frame.has_prompts)
-        self.clear_box_btn.setEnabled(editing and frame is not None and frame.box is not None)
-        self.points.setEnabled(has_points)
+        self.clear_btn.setEnabled(editing and (bool(cur_pts) or cur_box is not None))
+        self.clear_box_btn.setEnabled(editing and cur_box is not None)
+        self.add_layer_btn.setEnabled(editing and frame is not None)
+        self.layer_sign_btn.setEnabled(editing and on_layer)
+        self.remove_layer_btn.setEnabled(editing and on_layer)
+        self.points.setEnabled(has_points or editing)
         self.variants.setEnabled(obj is not None)
         layer = frame.edit if frame is not None else None
         self.layer_label.setText(
@@ -577,5 +652,6 @@ class PropertiesPanel(QWidget):
             later(self, self.variant_selected, row)
 
     def _on_point(self, item, _previous=None) -> None:
-        if not self._updating and item is not None and item.data(POINT_ROLE) is not None:
-            later(self, self.point_selected, item.data(POINT_ROLE))
+        if not self._updating and item is not None and item.data(0, POINT_ROLE) is not None:
+            later(self, self.layer_selected, item.data(0, LAYER_ROLE))
+            later(self, self.point_selected, item.data(0, POINT_ROLE))
