@@ -31,7 +31,7 @@ from src.core.project import (
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.special import LABELS as SPECIAL_LABELS
-from src.core.special import LENS_EDGE, Special, lens_edge_mask, refine_sky, sky_mask
+from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
@@ -810,9 +810,8 @@ class Session:
         for n, key in enumerate(keys):
             if cancelled is not None and cancelled():
                 break
-            rgb = self.working_image(key)
-            prob = model.probability(rgb)
-            for refined, m in ((False, prob), (True, refine_sky(prob, rgb))):
+            prob, refined_map = sky_maps(model, self.working_image(key))
+            for refined, m in ((False, prob), (True, refined_map)):
                 path = self.sky_cache(key, refined)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 ok, buf = cv2.imencode(".png", m)

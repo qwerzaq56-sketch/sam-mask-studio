@@ -107,3 +107,18 @@ def test_close_gaps_fills_narrow_gaps_and_notches_only():
     edge[:, :10] = True
     assert (close_gaps(edge, 10) == edge).all()  # the image border is no reason to fill
 
+
+def test_black_is_never_sky():
+    from src.core.special import sky_maps
+
+    class Everything:  # a network that calls every pixel sky
+        def probability(self, rgb):
+            p = np.full(rgb.shape[:2], 255, np.uint8)
+            p[0, 0] = 0
+            return p
+
+    rgb = np.full((80, 80, 3), 180, np.uint8)
+    rgb[:, :15] = 3  # a fisheye's black edge
+    prob, refined = sky_maps(Everything(), rgb)
+    assert prob[40, 5] == 0 and refined[40, 5] == 0 and prob[40, 50] == 255
+
