@@ -1508,3 +1508,31 @@ def test_alt_right_drag_sets_the_brush_size(qapp, win):
     QTest.mouseRelease(c, Qt.MouseButton.RightButton, alt, start + QPoint(-10, 0))
     assert c._size_drag is None and not win.session.editing_frame().points[1:]  # no negative point added
 
+
+# --- p44: Ctrl+click adds / takes out the piece under the cursor, the rest of the mask stays ------------
+
+
+def test_ctrl_click_adds_or_takes_out_a_piece(qapp, win):
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from tests.app.test_gui import canvas_pos
+
+    ids = make_objects(win, 1)
+    s = win.session
+    win.toggle_edit(ids[0])  # the brush is on: Ctrl+click works all the same
+    before = s.editing_frame().mask.copy()
+    fs0 = s.editing_frame()
+    far = (70, 50)
+    assert not before[far[1], far[0]]
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    q = canvas_pos(win, *far)
+    QTest.mouseClick(win.canvas, Qt.MouseButton.LeftButton, ctrl, q)
+    fs = s.editing_frame()
+    assert fs.mask[far[1], far[0]] and (fs.mask | ~before).all()  # added, nothing lost
+    assert fs.points == fs0.points and fs.edit is not None  # in the edit layer; the prompts unchanged
+    QTest.mouseClick(win.canvas, Qt.MouseButton.RightButton, ctrl, q)
+    assert not s.editing_frame().mask[far[1], far[0]]  # taken out again
+    win.undo()
+    assert s.editing_frame().mask[far[1], far[0]]  # one undo step each
+
