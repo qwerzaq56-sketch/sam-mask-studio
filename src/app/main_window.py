@@ -1709,6 +1709,12 @@ class MainWindow(QMainWindow):
     def _picked_rows(self) -> List[int]:
         return self.images_panel.selected_rows() or ([self.session.index] if self.session.key else [])
 
+    def target_object_ids(self) -> List[int]:
+        """The Objects that propagation and many-frame work act on: the selected rows, or those selected
+        last when opening other frames took their rows out of the list. [] = none selected."""
+        ids = self.objects_panel.selected_ids() or self.objects_panel.last_selected
+        return [i for i in ids if self.session.project.get(i) is not None]
+
     def _many_frames_ready(self, what: str) -> Optional[List[int]]:
         """The selected Object ids, or None (logged) when the work cannot start."""
         s = self.session
@@ -1717,9 +1723,7 @@ class MainWindow(QMainWindow):
         if s.mode == Mode.EDIT:
             self.log(f"Finish editing (Esc) before {what}")
             return None
-        ids = self.objects_panel.selected_ids()
-        if not ids:  # the rows went out of the list as frames were picked: the Objects selected last
-            ids = [i for i in self.objects_panel.last_selected if s.project.get(i) is not None]
+        ids = self.target_object_ids()
         if not ids:
             self.log(f"Select the Objects first, then {what}")
             return None
@@ -2044,9 +2048,11 @@ class MainWindow(QMainWindow):
         if not plan.targets:
             self.warn("Nothing to propagate: no images in that direction.")
             return
-        seeds = s.seeds(ref)
+        ids = self.target_object_ids()
+        seeds = s.seeds(ref, ids=ids) if ids else s.seeds(ref)
         if not seeds:
-            self.warn(f"Check at least one Object that has a mask on the reference image ({s.keys[ref]}).")
+            self.warn(f"Select (or, with none selected, check) an Object that has a mask on the reference image "
+                      f"({s.keys[ref]}).")
             return
         existing = s.overwrite_targets(plan, seeds)
         if existing:
