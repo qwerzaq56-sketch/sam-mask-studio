@@ -391,6 +391,22 @@ class Session:
         self.project.set_frame(self.editing, self.key, dataclasses.replace(fs, edit=layer, status=FrameStatus.MANUAL))
         return True
 
+    def segment_edit(self, x: float, y: float, add: bool = True) -> bool:
+        """Ctrl+click while editing: the piece SAM2 sees at (x, y) on its own (no other prompt, no seed),
+        added to the edited mask or (*add* False) taken out of it, inside the region if there is one.
+
+        Kept in the edit layer like a brush stroke: the rest of the mask, its points and Variants
+        stay as they are (a new point would re-run SAM2 and redraw the whole mask instead).
+        """
+        if self.editing is None or self.key is None:
+            return False
+        variants = self._require_sam2().predict((Point(float(x), float(y), True),), None, None)
+        if not variants:
+            return False
+        piece = variants[0].mask
+        cur, area = self._edit_area()
+        return self._set_target(cur | (piece & area) if add else cur & ~(piece & area))
+
     def brush(self, mask: np.ndarray) -> bool:
         """A finished brush stroke: *mask* is what the edited frame should now show.
 

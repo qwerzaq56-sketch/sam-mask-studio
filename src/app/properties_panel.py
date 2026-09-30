@@ -169,6 +169,7 @@ class PropertiesPanel(QWidget):
         self.hint = QLabel(
             "Pick an Object's <b>Points</b> (E), or <b>+ New Object from Points</b>.<br>"
             "Left click = positive, right click = negative, drag = box.<br>"
+            "Ctrl+click adds the piece under the cursor, Ctrl+right-click takes it out (the rest stays).<br>"
             "Hand edits go to the <b>Edit Layer</b> tab (Paint: D)."
         )
         self.hint.setWordWrap(True)

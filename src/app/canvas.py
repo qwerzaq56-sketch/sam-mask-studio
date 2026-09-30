@@ -156,6 +156,7 @@ def _qimage(arr: np.ndarray) -> QImage:
 
 class Canvas(QWidget):
     clicked = pyqtSignal(float, float, bool)  # x, y, positive
+    segment_clicked = pyqtSignal(float, float, bool)  # Ctrl+click while editing: x, y, add (left) / take out (right)
     box_drawn = pyqtSignal(float, float, float, float)
     point_picked = pyqtSignal(int)
     point_moved = pyqtSignal(int, float, float)  # index, new x, y (dragged)
@@ -215,6 +216,7 @@ class Canvas(QWidget):
 
         self.brush_size = 30  # screen px diameter
         self._size_drag = None  # Alt+right-drag: (start x, size then, where the circle stays)
+        self._seg_press = None  # Ctrl+click while editing: (where, button)
         self.brush_mode = False  # Brush editing turned on (only acts in EDIT)
         self._brush = BrushEngine()
 
@@ -603,6 +605,10 @@ class Canvas(QWidget):
                 and mods & Qt.KeyboardModifier.AltModifier):
             self._size_drag = (pos.x(), self.brush_size, QPointF(pos))  # left / right: smaller / bigger
             return
+        if (self.mode == Mode.EDIT and not self.region_mode and mods & Qt.KeyboardModifier.ControlModifier
+                and btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton)):
+            self._seg_press = (QPointF(pos), btn)  # a piece of the image added / taken out, brush on or off
+            return
         shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         if self.mode == Mode.EDIT and self.region_mode:
             if btn == Qt.MouseButton.LeftButton:
@@ -692,6 +698,13 @@ class Canvas(QWidget):
         if self._size_drag is not None:
             self._size_drag = None
             self.update()
+            return
+        if self._seg_press is not None:
+            start, btn = self._seg_press
+            self._seg_press = None
+            d = pos - start
+            if btn == event.button() and (d.x() ** 2 + d.y() ** 2) ** 0.5 <= CLICK_SLOP and self._inside(pos):
+                self.segment_clicked.emit(*self.to_image(pos), btn == Qt.MouseButton.LeftButton)
             return
         if self._pan_from is not None:
             self._pan_from = None

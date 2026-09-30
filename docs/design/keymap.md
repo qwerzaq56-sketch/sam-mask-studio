@@ -81,6 +81,7 @@
 |---|---|
 | 좌클릭 / 우클릭 / 드래그 | Positive / Negative 포인트 / Box (Region Box 켜면 영역 추가) |
 | 포인트 드래그 / 더블클릭 | 포인트 이동 / 삭제 |
+| Ctrl+좌클릭 / Ctrl+우클릭 | 그 자리의 조각(SAM2, 그 점 하나로)을 Mask에 더하기 / 빼기. Edit Layer에 쌓이고 나머지 Mask는 그대로 (브러시 켜져 있어도) |
 | Ctrl+I | 편집 중인 Mask 인버트 (Region 안에서만, 있으면) |
 | Ctrl+Backspace | 편집 중인 Mask 비우기 (이 이미지, Region 안에서만, 있으면) |
 | D | Paint 브러쉬 켜기 / 끄기 (`E`로 편집을 시작하면 켜진 채로 시작) |

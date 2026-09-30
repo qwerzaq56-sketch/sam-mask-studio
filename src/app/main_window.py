@@ -537,6 +537,7 @@ class MainWindow(QMainWindow):
     def _connect(self) -> None:
         c = self.canvas
         c.clicked.connect(self.on_click)
+        c.segment_clicked.connect(lambda x, y, add: self._prompt(lambda: self.session.segment_edit(x, y, add)))
         c.box_drawn.connect(lambda x0, y0, x1, y1: self._prompt(lambda: self.session.drag_box((x0, y0, x1, y1))))
         c.point_picked.connect(self.on_point_selected)
         c.point_moved.connect(lambda i, x, y: self._prompt(lambda: self.session.move_point(i, x, y)))
