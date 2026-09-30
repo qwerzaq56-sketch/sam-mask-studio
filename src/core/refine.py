@@ -153,3 +153,19 @@ def shrink_mask(mask: np.ndarray, px: int) -> np.ndarray:
     # edge padding: where the mask runs off the image, the image border is not an edge of it
     dist = cv2.distanceTransform(np.pad(m, 1, mode="edge").astype(np.uint8), cv2.DIST_L2, 5)[1:-1, 1:-1]
     return dist > px
+
+
+def close_gaps(mask: np.ndarray, gap: int) -> np.ndarray:
+    """Fill gaps up to *gap* px wide between parts of the mask, and narrow U-shaped notches cut into it
+    (a round morphological closing: grow by half the gap, then shrink back). Only adds: what the mask
+    covers stays, and wide bays or anything farther than the gap are left alone."""
+    m = mask.astype(bool)
+    r = max(1, int(round(gap / 2)))
+    if gap <= 0 or not m.any():
+        return m.copy()
+    # padded so the image border does not count as mask when growing, nor as an edge when shrinking
+    pad = r + 2
+    grown = grow_mask(np.pad(m, pad), r)
+    closed = shrink_mask(grown, r)[pad:-pad, pad:-pad]
+    return m | closed
+
