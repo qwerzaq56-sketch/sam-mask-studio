@@ -37,7 +37,7 @@ from src.core.special import LENS_EDGE, SKY
 from src.core.project import MaskObject
 
 ID_ROLE = Qt.ItemDataRole.UserRole
-COLUMNS = 6  # name · linked (🔗 n) · 🔒 · Edit · × · ···
+COLUMNS = 7  # name · linked (🔗 n) · 👁 · 🔒 · Edit · × · ···
 VARIANT_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
@@ -63,7 +63,7 @@ class LockButton(QPushButton):
         super().__init__(parent)
         self.setCheckable(True)
         self.setFlat(True)
-        self.setFixedWidth(26)
+        self.setFixedWidth(22)
         self._fade = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._fade)
         self._hover = False
@@ -88,6 +88,30 @@ class LockButton(QPushButton):
         super().leaveEvent(event)
 
 
+class EyeButton(QPushButton):
+    """👁 shown on the canvas; faint when hidden (the check box is the Final Mask, this is only the view)."""
+
+    def __init__(self, parent=None):
+        super().__init__("👁", parent)
+        self.shown = True  # (not a checkable button: a checked flat button draws a pressed box)
+        self.setFlat(True)
+        self.setFixedWidth(22)
+        self._fade = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._fade)
+        self.update_look()
+
+    def set_shown(self, on: bool) -> None:
+        if on != self.shown:
+            self.shown = on
+            self.update_look()
+
+    def update_look(self) -> None:
+        shown = self.shown
+        self._fade.setOpacity(0.85 if shown else 0.2)
+        self.setToolTip("Shown on the image (click to hide it there; the Final Mask is the check box)" if shown
+                        else "Hidden on the image (click to show it; it still counts in the Final Mask if checked)")
+
+
 def color_icon(rgb, size: int = 12) -> QIcon:
     """A color chip with a thin darker border, so light colors (lavender, pale yellow) still show."""
     pm = QPixmap(size, size)
@@ -105,6 +129,7 @@ class ObjectsPanel(QWidget):
     renamed = pyqtSignal(int, str)
     edit_requested = pyqtSignal(int)  # obj id; the Object already in Edit means "finish"
     new_requested = pyqtSignal()
+    visibility_changed = pyqtSignal()  # 👁: which Objects the canvas shows (view only, not saved, no undo)
     special_requested = pyqtSignal(str)  # a special Object's kind (sky, lens_edge)
     merge_requested = pyqtSignal(list)  # Add, at once
     merge_options_requested = pyqtSignal(list)  # ⚙: Add / Override with A / B
@@ -122,6 +147,7 @@ class ObjectsPanel(QWidget):
         super().__init__(parent)
         # the Objects selected last, kept when picking other frames takes their rows out of the list
         # (many-frame work: Copy Mask / Clear Masks on Picked Frames)
+        self.hidden: set = set()  # 👁 off: not drawn on the image (this session only)
         self.last_selected: List[int] = []
         self._objects: List[MaskObject] = []
         self._editing: Optional[int] = None
@@ -153,7 +179,8 @@ class ObjectsPanel(QWidget):
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
         self.new_btn.clicked.connect(lambda: later(self, self.new_requested))
         self.special_btn = QToolButton()
-        self.special_btn.setText("+ Special")
+        self.special_btn.setText("+ Special ▾")
+        self.special_btn.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.special_btn.setToolTip("An Object made from settings, not points: the sky, a fisheye's black edge")
         self.special_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.special_btn)
@@ -279,10 +306,11 @@ class ObjectsPanel(QWidget):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEditable)
             self.tree.addTopLevelItem(item)
             item.setSelected(o.id in keep)
-            self.tree.setItemWidget(item, 2, self._lock_button(o.id))
-            self.tree.setItemWidget(item, 3, self._edit_button(o.id, o.id == editing))
-            self.tree.setItemWidget(item, 4, self._delete_button(o.id))
-            self.tree.setItemWidget(item, 5, self._more_button(o.id))
+            self.tree.setItemWidget(item, 2, self._eye_button(o.id))
+            self.tree.setItemWidget(item, 3, self._lock_button(o.id))
+            self.tree.setItemWidget(item, 4, self._edit_button(o.id, o.id == editing))
+            self.tree.setItemWidget(item, 5, self._delete_button(o.id))
+            self.tree.setItemWidget(item, 6, self._more_button(o.id))
             for i in range(self._variant_count(o, key)):
                 child = QTreeWidgetItem(item)
                 child.setData(0, ID_ROLE, o.id)
@@ -309,10 +337,13 @@ class ObjectsPanel(QWidget):
             item.setText(1, link)
             item.setToolTip(1, f"Linked: masks on {n} images" if link else "")
         item.setForeground(0, QBrush() if has else QBrush(QColor(140, 140, 140)))
-        lock = self.tree.itemWidget(item, 2)
+        eye = self.tree.itemWidget(item, 2)
+        if isinstance(eye, EyeButton):
+            eye.set_shown(o.id not in self.hidden)
+        lock = self.tree.itemWidget(item, 3)
         if isinstance(lock, LockButton) and lock.isChecked() != o.locked:
             lock.setChecked(o.locked)
-        delete = self.tree.itemWidget(item, 4)
+        delete = self.tree.itemWidget(item, 5)
         if isinstance(delete, QPushButton):
             delete.setEnabled(not o.locked)
             delete.setToolTip("Locked: unlock it to delete" if o.locked else "Delete this Object (Ctrl+Z undoes it)")
@@ -341,6 +372,20 @@ class ObjectsPanel(QWidget):
         b.setToolTip(tip)
         b.clicked.connect(slot)
         return b
+
+    def _eye_button(self, oid: int) -> QPushButton:
+        b = EyeButton()
+        b.setObjectName(f"eye_{oid}")
+        b.set_shown(oid not in self.hidden)
+        b.clicked.connect(lambda _=False, i=oid, eye=b: self._set_shown(i, not eye.shown))
+        return b
+
+    def _set_shown(self, oid: int, on: bool) -> None:
+        (self.hidden.discard if on else self.hidden.add)(oid)
+        eye = self.tree.findChild(EyeButton, f"eye_{oid}")
+        if eye is not None:
+            eye.set_shown(on)
+        later(self, self.visibility_changed)
 
     def _lock_button(self, oid: int) -> QPushButton:
         b = LockButton()

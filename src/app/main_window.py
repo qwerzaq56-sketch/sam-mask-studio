@@ -623,6 +623,7 @@ class MainWindow(QMainWindow):
         sp.detect_requested.connect(self.special_detect)
         sp.apply_requested.connect(self.special_apply)
         self.objects_panel.special_requested.connect(self.add_special)
+        self.objects_panel.visibility_changed.connect(self._update_overlays)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -830,9 +831,10 @@ class MainWindow(QMainWindow):
         overlays: List[Overlay] = []
         edit_layer = None
         shown = self._colored_ids()
+        hidden = self.objects_panel.hidden  # 👁 off
         for o in s.project.objects:
             m = o.mask(key) if key else None
-            if m is None:
+            if m is None or o.id in hidden:
                 continue
             if o.id == s.editing:
                 edit_layer = Overlay(m, o.color, "edit")
