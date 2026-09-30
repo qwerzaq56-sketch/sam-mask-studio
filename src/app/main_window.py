@@ -575,6 +575,12 @@ class MainWindow(QMainWindow):
         p = self.properties_panel
         p.variant_selected.connect(self.on_properties_variant)
         p.point_selected.connect(self.on_point_selected)
+        p.layer_selected.connect(lambda n: (self.session.select_layer(n), self.refresh()))
+        p.add_layer_requested.connect(lambda: self._do(self.session.add_layer))
+        p.toggle_layer_requested.connect(lambda: self._do(self.session.toggle_layer_subtract))
+        p.remove_layer_requested.connect(lambda: self._do(self.session.remove_layer))
+        p.delete_prompt_requested.connect(
+            lambda n, i: self._prompt(lambda: self.session.delete_prompt(n, None if i < 0 else i)))
         p.delete_point_requested.connect(lambda: self._prompt(self.session.delete_point))
         p.clear_points_requested.connect(lambda: self._prompt(self.session.clear_points))
         p.clear_box_requested.connect(lambda: self._prompt(self.session.clear_box))
@@ -684,7 +690,8 @@ class MainWindow(QMainWindow):
         self._update_overlays()
 
         fs = s.editing_frame()
-        self.canvas.set_prompts(fs.points if fs else (), s.selected_point, fs.box if fs else None)
+        pts, box = s.active_prompts()  # the current point layer's (docs/specs/10)
+        self.canvas.set_prompts(pts, s.selected_point, box)
         editing_obj = project.get(s.editing) if s.editing is not None else None
         mode = s.effective_mode
         if s.mode != Mode.EDIT and (self._tool or self.canvas.brush_mode):
@@ -706,6 +713,7 @@ class MainWindow(QMainWindow):
             s.image,
             new_mode=s.mode == Mode.NEW_OBJECT,
             editing=shown is not None and shown is editing_obj,
+            layer=s.current_layer() if shown is not None and shown is editing_obj else 0,
         )
         note = ""
         if shown is not None and shown.special is not None and shown.special.kind == SKY:

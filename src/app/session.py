@@ -24,6 +24,7 @@ from src.core.project import (
     FrameStatus,
     Point,
     Project,
+    PromptLayer,
     Source,
     Variant,
     freeze,
@@ -107,6 +108,7 @@ class Session:
         self.mode = Mode.IDLE
         self.editing: Optional[int] = None  # id of the one Object in Edit
         self.selected_point: Optional[int] = None
+        self.active_layer: Optional[int] = None  # clicks go to: 0 = Original, n = Layer n; None = automatic
         # Box region the whole-mask tool buttons are limited to (None: the whole mask).
         # UI state for the Object in Edit on this image: not saved, but undoable (below).
         self.region: Optional[np.ndarray] = None
@@ -210,12 +212,14 @@ class Session:
         self.mode = Mode.EDIT
         self.editing = obj_id
         self.selected_point = None
+        self.active_layer = None
 
     def cancel_mode(self) -> None:
         """Finish Editing / leave New Object mode."""
         self.mode = Mode.IDLE
         self.editing = None
         self.selected_point = None
+        self.active_layer = None
         self._reset_region()
 
     finish_editing = cancel_mode
@@ -231,7 +235,9 @@ class Session:
         if self.editing is not None and self.project.get(self.editing) is None:
             self.cancel_mode()
         fs = self.editing_frame()
-        if self.selected_point is not None and (fs is None or self.selected_point >= len(fs.points)):
+        if fs is None or (self.active_layer is not None and self.active_layer > len(fs.layers)):
+            self.active_layer = None
+        if self.selected_point is not None and self.selected_point >= len(self.active_prompts()[0]):
             self.selected_point = None
 
     def editing_frame(self) -> Optional[FrameState]:
@@ -314,7 +320,7 @@ class Session:
             if not positive:
                 return None  # an Object cannot start from a background point
             return self._create(FrameState(points=(p,)), Source.SAM2_POINT)
-        self._update(lambda fs: dataclasses.replace(fs, points=fs.points + (p,)))
+        self._update_prompts(lambda pts, box: (pts + (p,), box))
         self.selected_point = None
         return self.editing
 
@@ -327,49 +333,151 @@ class Session:
             return None
         if mode == Mode.NEW_OBJECT:
             return self._create(FrameState(box=box), Source.SAM2_BOX)
-        self._update(lambda fs: dataclasses.replace(fs, box=box))
+        self._update_prompts(lambda pts, _old: (pts, box))
         return self.editing
 
     def select_point(self, index: Optional[int]) -> None:
-        fs = self.editing_frame()
-        self.selected_point = index if fs is not None and index is not None and 0 <= index < len(fs.points) else None
+        pts = self.active_prompts()[0]
+        self.selected_point = index if index is not None and 0 <= index < len(pts) else None
 
     def delete_point(self, index: Optional[int] = None) -> bool:
-        """Delete one point (default: the selected one) and re-run SAM2 on the rest."""
+        """Delete one point of the current layer (default: the selected one) and re-run SAM2 on the rest."""
         index = self.selected_point if index is None else index
-        fs = self.editing_frame()
-        if fs is None or index is None or not (0 <= index < len(fs.points)):
+        pts = self.active_prompts()[0]
+        if self.editing_frame() is None or index is None or not (0 <= index < len(pts)):
             return False
-        self._update(lambda f: dataclasses.replace(f, points=f.points[:index] + f.points[index + 1 :]))
+        self._update_prompts(lambda p, box: (p[:index] + p[index + 1 :], box))
         self.selected_point = None
         return True
 
     def move_point(self, index: int, x: float, y: float) -> bool:
-        """Move one point (dragged on the image) and re-run SAM2."""
-        fs = self.editing_frame()
-        if fs is None or not (0 <= index < len(fs.points)):
+        """Move one point of the current layer (dragged on the image) and re-run SAM2."""
+        pts = self.active_prompts()[0]
+        if self.editing_frame() is None or not (0 <= index < len(pts)):
             return False
-        p = fs.points[index]
-        moved = Point(float(x), float(y), p.positive)
-        self._update(lambda f: dataclasses.replace(f, points=f.points[:index] + (moved,) + f.points[index + 1 :]))
+        moved = Point(float(x), float(y), pts[index].positive)
+        self._update_prompts(lambda p, box: (p[:index] + (moved,) + p[index + 1 :], box))
         self.selected_point = index
         return True
 
     def clear_points(self) -> bool:
-        """Remove every point and the box of the edited frame (its base mask stays)."""
-        fs = self.editing_frame()
-        if fs is None or not fs.has_prompts:
+        """Remove every point and the box of the current layer (Original: its base mask stays)."""
+        pts, box = self.active_prompts()
+        if self.editing_frame() is None or not (pts or box is not None):
             return False
-        self._update(lambda f: dataclasses.replace(f, points=(), box=None))
+        self._update_prompts(lambda _p, _b: ((), None))
         self.selected_point = None
         return True
 
     def clear_box(self) -> bool:
-        fs = self.editing_frame()
-        if fs is None or fs.box is None:
+        if self.editing_frame() is None or self.active_prompts()[1] is None:
             return False
-        self._update(lambda f: dataclasses.replace(f, box=None))
+        self._update_prompts(lambda p, _b: (p, None))
         return True
+
+    # ------------------------------------------------------------------
+    # Point layers (docs/specs/10-prompt-layers.md)
+    # ------------------------------------------------------------------
+
+    def current_layer(self) -> int:
+        """Where clicks go: 0 = Original, n = Layer n, len(layers) + 1 = a new layer the next click makes.
+
+        Automatic (none picked): a frame whose mask came without prompts of its own (imported,
+        propagated, applied) gets point layers, the last one or a new Layer 1; else the Original."""
+        fs = self.editing_frame()
+        if fs is None:
+            return 0
+        if self.active_layer is not None and self.active_layer <= len(fs.layers):
+            return self.active_layer
+        if fs.layers:
+            return len(fs.layers)
+        return 1 if fs.mask is not None and not fs.has_prompts else 0
+
+    def active_prompts(self) -> Tuple[Tuple[Point, ...], Optional[Box]]:
+        """The current layer's points and box (a layer not made yet: none)."""
+        fs = self.editing_frame()
+        if fs is None:
+            return (), None
+        i = self.current_layer()
+        if i == 0:
+            return fs.points, fs.box
+        if i <= len(fs.layers):
+            return fs.layers[i - 1].points, fs.layers[i - 1].box
+        return (), None
+
+    def _update_prompts(self, change: Callable[[Tuple[Point, ...], Optional[Box]], tuple]) -> None:
+        """Change the current layer's (points, box) and compute its mask (one undo step)."""
+        i = self.current_layer()
+        if i == 0:
+            self._update(lambda f: dataclasses.replace(f, **dict(zip(("points", "box"), change(f.points, f.box)))))
+            return
+        assert self.editing is not None and self.key is not None
+        fs = self.editing_frame() or FrameState()
+        layers = list(fs.layers)
+        if i > len(layers):
+            layers.append(PromptLayer())
+        ly = layers[i - 1]
+        pts, box = change(ly.points, ly.box)
+        mask = None
+        if pts or box is not None:  # the piece from this layer's prompts alone (no seed)
+            variants = self._require_sam2().predict(pts, box, None)
+            mask = variants[0].mask if variants else None
+        layers[i - 1] = dataclasses.replace(ly, points=pts, box=box, mask=mask)
+        self.active_layer = i
+        self.project.set_frame(self.editing, self.key,
+                               dataclasses.replace(fs, layers=tuple(layers), status=FrameStatus.MANUAL))
+
+    def _set_layers(self, layers: Sequence[PromptLayer]) -> None:
+        fs = self.editing_frame()
+        assert fs is not None and self.editing is not None and self.key is not None
+        self.project.set_frame(self.editing, self.key, dataclasses.replace(fs, layers=tuple(layers)))
+
+    def select_layer(self, index: int) -> bool:
+        """Clicks go to layer *index* from now on (0 = Original)."""
+        fs = self.editing_frame()
+        if fs is None or not (0 <= index <= len(fs.layers)):
+            return False
+        self.active_layer = index
+        self.selected_point = None
+        return True
+
+    def add_layer(self, subtract: bool = False) -> int:
+        """A new, empty point layer, made the current one (one undo step); returns its number."""
+        fs = self.editing_frame()
+        if fs is None:
+            return 0
+        self._set_layers(fs.layers + (PromptLayer(subtract=subtract),))
+        self.active_layer = len(fs.layers) + 1
+        self.selected_point = None
+        return self.active_layer
+
+    def toggle_layer_subtract(self, index: Optional[int] = None) -> bool:
+        """Layer *index* (default: the current one) adds <-> subtracts its piece."""
+        fs = self.editing_frame()
+        index = self.current_layer() if index is None else index
+        if fs is None or not (1 <= index <= len(fs.layers)):
+            return False
+        layers = list(fs.layers)
+        layers[index - 1] = dataclasses.replace(layers[index - 1], subtract=not layers[index - 1].subtract)
+        self._set_layers(layers)
+        return True
+
+    def remove_layer(self, index: Optional[int] = None) -> bool:
+        """Remove point layer *index* (default: the current one); the one before becomes current."""
+        fs = self.editing_frame()
+        index = self.current_layer() if index is None else index
+        if fs is None or not (1 <= index <= len(fs.layers)):
+            return False
+        self._set_layers(fs.layers[: index - 1] + fs.layers[index:])
+        self.active_layer = index - 1
+        self.selected_point = None
+        return True
+
+    def delete_prompt(self, layer: int, index: Optional[int]) -> bool:
+        """× in the Points list: point *index* (None: the box) of *layer*."""
+        if not self.select_layer(layer):
+            return False
+        return self.delete_point(index) if index is not None else self.clear_box()
 
     def select_variant(self, index: int, obj_id: Optional[int] = None) -> None:
         """Pick the Variant that becomes the Object's mask on this image (default: the edited Object)."""
@@ -386,7 +494,7 @@ class Session:
         if self.editing is None or self.key is None:
             return False
         fs = self.editing_frame() or FrameState()
-        layer = EditLayer.between(fs.prompt_mask, target)
+        layer = EditLayer.between(fs.layered_mask, target)  # hand edits sit on top of the point layers
         if layer is None and fs.edit is None:
             return False
         self.project.set_frame(self.editing, self.key, dataclasses.replace(fs, edit=layer, status=FrameStatus.MANUAL))
@@ -673,7 +781,7 @@ class Session:
                 return fs.mask & ~fs.edit.add
             if restore == "removed":
                 return fs.mask | fs.edit.sub
-            p = fs.prompt_mask
+            p = fs.layered_mask
             return p if p is not None else np.zeros(fs.edit.add.shape, bool)
         if fs.mask is None:
             return None

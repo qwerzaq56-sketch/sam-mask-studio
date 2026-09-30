@@ -28,7 +28,7 @@ import numpy as np
 
 from src.engine.imageio import key_stem
 from src.core.special import Special
-from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, Source, Variant, freeze
+from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, PromptLayer, Source, Variant, freeze
 
 FORMAT_VERSION = 1
 
@@ -173,6 +173,9 @@ class ProjectStore:
                 if fs.edit is not None:
                     live[(o.id, key + ".add")] = fs.edit.add
                     live[(o.id, key + ".sub")] = fs.edit.sub
+                for n, ly in enumerate(fs.layers, 1):  # point layers: <key>.L1.png ...
+                    if ly.mask is not None:
+                        live[(o.id, f"{key}.L{n}")] = ly.mask
                 sel = fs.variants[min(fs.selected, len(fs.variants) - 1)] if fs.variants else None
                 frames_json[key] = {
                     "points": [[p.x, p.y, 1 if p.positive else 0] for p in fs.points],
@@ -181,6 +184,12 @@ class ProjectStore:
                     "score": sel.score if sel else None,
                     "has_mask": m is not None,
                     "edit": fs.edit is not None,
+                    "layers": [
+                        {"points": [[p.x, p.y, 1 if p.positive else 0] for p in ly.points],
+                         "box": list(ly.box) if ly.box else None, "subtract": ly.subtract,
+                         "has_mask": ly.mask is not None}
+                        for ly in fs.layers
+                    ],
                 }
             objects_json.append(
                 {
@@ -264,6 +273,18 @@ class ProjectStore:
                 points = tuple(Point(float(x), float(y), bool(pos)) for x, y, pos in fj.get("points", []))
                 box = tuple(fj["box"]) if fj.get("box") else None
                 variants = (Variant(mask, float(fj.get("score") or 1.0)),) if mask is not None else ()
+                layers = []
+                for n, lj in enumerate(fj.get("layers") or [], 1):
+                    lm = None
+                    if lj.get("has_mask"):
+                        raw = _read_png(self.mask_path(oid, f"{key}.L{n}"))
+                        if raw is not None:
+                            lm = freeze(raw)
+                            self._written[(oid, f"{key}.L{n}")] = lm
+                    layers.append(PromptLayer(
+                        points=tuple(Point(float(x), float(y), bool(pos)) for x, y, pos in lj.get("points", [])),
+                        box=tuple(lj["box"]) if lj.get("box") else None,
+                        subtract=bool(lj.get("subtract", False)), mask=lm))
                 frames[key] = FrameState(
                     points=points,
                     box=box,
@@ -271,6 +292,7 @@ class ProjectStore:
                     variants=variants,
                     status=FrameStatus(fj.get("status", "manual")),
                     edit=edit,
+                    layers=tuple(layers),
                 )
             project.objects.append(
                 MaskObject(

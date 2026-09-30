@@ -122,6 +122,21 @@ class EditLayer:
 
 
 @dataclass(frozen=True)
+class PromptLayer:
+    """Points / a box of their own on top of an Object's mask (docs/specs/10-prompt-layers.md):
+    SAM2's piece from these prompts alone (no seed), added to the mask or (*subtract*) taken out."""
+
+    points: Tuple[Point, ...] = ()
+    box: Optional[Box] = None
+    subtract: bool = False
+    mask: Optional[np.ndarray] = None
+
+    @property
+    def has_prompts(self) -> bool:
+        return bool(self.points) or self.box is not None
+
+
+@dataclass(frozen=True)
 class FrameState:
     """An Object's prompts and mask candidates on one image.
 
@@ -138,6 +153,7 @@ class FrameState:
     selected: int = 0
     status: FrameStatus = FrameStatus.MANUAL
     edit: Optional[EditLayer] = None
+    layers: Tuple[PromptLayer, ...] = ()  # point layers over the prompt mask (Original)
 
     @property
     def has_prompts(self) -> bool:
@@ -151,13 +167,29 @@ class FrameState:
         return self.base_mask
 
     @cached_property
+    def layered_mask(self) -> Optional[np.ndarray]:
+        """The prompt mask (Original) with the point layers: every added piece, then every subtracted one."""
+        base = self.prompt_mask
+        pieces = [ly for ly in self.layers if ly.mask is not None]
+        if not pieces:
+            return base
+        out = base.copy() if base is not None else np.zeros(pieces[0].mask.shape, bool)
+        for ly in pieces:
+            if not ly.subtract and ly.mask.shape == out.shape:
+                out |= ly.mask
+        for ly in pieces:
+            if ly.subtract and ly.mask.shape == out.shape:
+                out &= ~ly.mask
+        return freeze(out)
+
+    @cached_property
     def mask(self) -> Optional[np.ndarray]:
-        """The frame's current mask: the prompt mask with the edit layer applied.
+        """The frame's current mask: the layered mask with the edit layer applied.
 
         Cached, so repeated reads return the same (immutable) array — the
         autosaver relies on array identity to skip unchanged masks.
         """
-        base = self.prompt_mask
+        base = self.layered_mask
         if self.edit is None:
             return base
         if base is None:
