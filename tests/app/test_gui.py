@@ -69,7 +69,7 @@ def test_new_object_from_points_by_mouse(win):
     assert len(s.project.objects) == 1 and s.mode == Mode.EDIT
     obj = s.project.objects[0]
     tree = win.objects_panel.tree
-    assert tree.topLevelItem(0).text(0) == obj.name
+    assert tree.topLevelItem(0).text(1) == obj.name  # (column 0: the eye)
     assert tree.topLevelItem(0).childCount() == 3  # Variant rows under the Object
     assert win.properties_panel.variants.count() == 3
     assert win.work_bar.text().count(obj.name) == 1 and "Mode: Points" in win.work_bar.text()
@@ -258,7 +258,7 @@ def test_rename_include_duplicate_merge_delete(win, qapp):
     win.objects_panel.renamed.emit(a, "Player")
     assert s.project.get(a).name == "Player"
     item = win.objects_panel.tree.topLevelItem(1)
-    item.setCheckState(0, Qt.CheckState.Unchecked)
+    item.setCheckState(1, Qt.CheckState.Unchecked)  # (column 0: the eye)
     qapp.processEvents()
     assert not s.project.get(b).included
     assert s.project.final_mask(s.key)[30, 20] and not s.project.final_mask(s.key)[30, 60]
