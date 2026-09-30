@@ -13,7 +13,9 @@ def test_work_bar_shows_frame_object_and_mode(qapp, win):
     text = win.work_bar.text()
     assert f"Frame 1 / {len(s.keys)}" in text and "Object: —" in text and "Mode: View" in text
     win.toggle_edit(ids[0])
-    assert "Mode: Paint" in win.work_bar.text()  # Edit starts with the brush (v0.4-p15)
+    assert "Mode: Points" in win.work_bar.text()  # E: points (v0.4-p45)
+    win.act_brush.trigger()  # D: the brush
+    assert "Mode: Paint" in win.work_bar.text()
     win.act_brush.trigger()  # D: back to points
     text = win.work_bar.text()
     assert s.project.get(ids[0]).name in text and "(SAM2)" in text and "Mode: Points" in text
@@ -595,10 +597,16 @@ def test_paint_button_starts_with_everything_picked(qapp, win):
 
 
 def test_edit_starts_with_the_brush(qapp, win):
+    """p45: E starts with points, D with the brush (it starts editing the selected Object)."""
     ids = make_objects(win, 1)
     win.toggle_edit(ids[0])
-    assert win.act_brush.isChecked() and win.canvas.brush_mode
+    assert win.session.editing == ids[0] and not win.act_brush.isChecked() and not win.canvas.brush_mode
     win.edit_key()  # E again: done
+    assert win.session.editing is None
+    win.objects_panel.select_ids(ids)
+    win.act_brush.trigger()  # D, not editing: edit with the brush
+    assert win.session.editing == ids[0] and win.act_brush.isChecked() and win.canvas.brush_mode
+    win.edit_key()
     assert win.session.editing is None and not win.act_brush.isChecked()
 
 
@@ -1474,6 +1482,7 @@ def test_moving_frames_while_editing(qapp, win):
     s = win.session
     p = win.properties_panel
     win.toggle_edit(ids[0])
+    win.set_brush(True)
     assert win._tool == "paint"
     win.step(1)
     assert s.index == 1 and s.mode == Mode.EDIT and s.editing == ids[0] and win._tool == "paint"
@@ -1520,7 +1529,8 @@ def test_ctrl_click_adds_or_takes_out_a_piece(qapp, win):
 
     ids = make_objects(win, 1)
     s = win.session
-    win.toggle_edit(ids[0])  # the brush is on: Ctrl+click works all the same
+    win.toggle_edit(ids[0])
+    win.set_brush(True)  # the brush is on: Ctrl+click works all the same
     before = s.editing_frame().mask.copy()
     fs0 = s.editing_frame()
     far = (70, 50)
