@@ -194,7 +194,7 @@ File → **Export Final Masks…** (`Ctrl+E`). 장면이 아니면 **For**, **Ou
 |---|---|
 | **For** | 학습기 프리셋: Brush · LichtFeld Studio · Spirula Studio · Postshot · COLMAP (feature extraction) · **Custom (choose below)**. 고른 학습기를 기억합니다. 아래에 학습기 안내 문구 |
 | **Output** | **Into the scene**(장면에 마스크만 씀, 덮어쓸 파일은 `masks_backup_<시각>/`으로) · **New dataset:** + 빈 폴더([C6](03-recipes.md#c6-흐린-프레임-빼고-학습)) |
-| 변환 목록 (New dataset일 때) | **Keep the cameras** · **Pinhole views**(360이면 배치 목록, 아니면 yaw · pitch 목록) · **360 (ERP)** · **360 from camera pairs (N moments)**. **FOV**, 크기(**auto px**). [C8~C10](03-recipes.md#c8-360erp--pinhole) |
+| 변환 목록 (New dataset일 때) | **Keep the cameras** · **Pinhole views**(360이면 배치 목록 COLMAP Overlap · 12 Views / Cubemap · 6 Views / Horizon · 4 Views / Two Rings · 16 Views / Custom, 아니면 yaw · pitch 목록) · **360 (ERP)** · **360 from camera pairs (N moments)**. **FOV**, 크기(**auto px**). Pinhole views는 설명 · 뷰 개수 · 겹침과 미리보기 지도를 보여 줌. [C8~C10](03-recipes.md#c8-360erp--pinhole) |
 | 검사 | 저장될 파일 수, 마스크 없는 이미지, 빈 마스크, `⚠` `✕` 프레임, 파일 이름 충돌, 카메라 모델(학습기가 못 읽을 수 있으면 경고), 백업될 파일 수, 새 데이터셋이면 폴더가 비었는지와 뺄 장수 |
 | 문제 이미지 목록 | 더블클릭하면 창을 닫고 그 이미지로. 문제가 없으면 숨김 |
 | **Mask** | **Final Mask (the checked Objects)** · 이름 붙인 세트 · **Every set, one folder each (and the Final Mask)**. **Save Checked as Set…**(지금 체크한 Object를 이름으로) · **Delete Set** |
