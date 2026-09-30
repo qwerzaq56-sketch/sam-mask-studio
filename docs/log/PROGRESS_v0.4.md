@@ -355,6 +355,12 @@
 - Export 중 진행 창: 지금 단계(마스크 쓰기 / 새 데이터셋 만들기 / 변환 / 이어 붙이기)와 `n / 전체`, 막대. 상태 표시줄에도 `Exporting… n / 전체`.
   중간 취소는 두지 않음(반쯤 쓰인 결과가 남지 않게). 끝나면 닫히고 로그에 결과.
 
+### 55단계 · 오토 툴 키 A / S / D / F / G (`v0.4-p55`, p49 피드백)
+- 왼손 줄에 차례로: **A 취소**(나가기) · **S Fill** · **D Paint**(Paint에서 D 다시 = 전체 선택 / 해제) · **F 확인**(Apply & Close) · **G Apply & Continue**.
+  Enter(Continue) · Shift+Enter(Close)도 그대로.
+- Fill ↔ Paint를 오가도 Paint에서 고른(칠한) 부분이 남음(전에는 Paint로 갈 때마다 전체 선택으로 돌아감). 처음 Paint로 갈 때만 전체 선택.
+- S는 목록 위에서는 전처럼 이동 키, 캔버스 위에서는 오토 툴이 켜져 있을 때만 Fill(꺼져 있으면 다음 Object).
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

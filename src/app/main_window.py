@@ -334,7 +334,11 @@ class MainWindow(QMainWindow):
         self.act_pick_all = self._action("Auto Tool: Pick All / None", self.a_key, ["Shift+A"],
                                          "Fill mode -> Paint mode with everything picked; Paint mode: all / none")
         self.act_leave_auto = self._action("Auto Tool: Leave (drop its result)", self.leave_auto_key, ["A"],
-                                           "Back to points; D next to it = Paint / Fill, F = apply")
+                                           "Cancel, back to points (S Fill · D Paint · F apply & close)")
+        self.act_auto_fill = self._action("Auto Tool: Fill Mode", self.s_key, ["S"],
+                                          "With an auto tool on, the mouse off the lists (W / S step elsewhere)")
+        self.act_apply_continue = self._action("Auto Tool: Apply && Continue", self.g_key, ["G"],
+                                               "Write the result in and compute the next one (Enter)")
         # Ctrl+D / Ctrl+Shift+D only with the mouse over the Objects panel (eventFilter): shown, not bound
         self.act_duplicate = self._action(
             "Duplicate (this image)\tCtrl+D", lambda: self.duplicate(self.objects_panel.selected_ids()),
@@ -436,7 +440,8 @@ class MainWindow(QMainWindow):
                 "(a tool's preview still shows)", checkable=True,
         )
         for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
-                  self.act_pick_all, self.act_leave_auto, self.act_edit, self.act_new, self.act_solo,
+                  self.act_pick_all, self.act_leave_auto, self.act_auto_fill, self.act_apply_continue,
+                  self.act_edit, self.act_new, self.act_solo,
                   self.act_hide_masks,
                   self.act_invert, self.act_clear_mask):
             a.setAutoRepeat(False)  # held down: one toggle, not a flicker
@@ -480,7 +485,8 @@ class MainWindow(QMainWindow):
         tools.addAction(self.act_clear_mask)
         tools.addAction(self.act_pick_all)
         tools.addAction(self.act_leave_auto)
-        self._hint(tools, "Auto Tool: Apply && Continue", "Enter", self.reapply_tool)
+        tools.addAction(self.act_auto_fill)
+        tools.addAction(self.act_apply_continue)
         self._hint(tools, "Auto Tool: Apply && Close", "Shift+Enter", self.apply_and_leave_tool)
         self._hint(tools, "Leave the Active Auto Tool", "its button again")
         objects = m.addMenu("Objects")
@@ -1196,6 +1202,8 @@ class MainWindow(QMainWindow):
         zone = self._hover_zone()
         if zone == "canvas" and event.key() not in (Qt.Key.Key_W, Qt.Key.Key_S):
             return None  # over the canvas only W / S (A, D and the arrows keep their meaning there)
+        if zone == "canvas" and self.session.auto_tool is not None:
+            return None  # with an auto tool on, S is its Fill mode (and W does nothing there)
         return (zone, delta) if zone is not None else None
 
     def show_shortcuts(self) -> None:
@@ -1435,8 +1443,8 @@ class MainWindow(QMainWindow):
         self.session.set_auto_mode(mode)
         if self.session.auto_tool:
             self.canvas.set_brush_mode(mode == "paint")
-            if mode == "paint":
-                self.session.pick_everything()  # like A: what Fill showed stays picked, Alt+drag takes parts out
+            if mode == "paint" and not self.session.has_picks:
+                self.session.pick_everything()  # first time: what Fill showed stays picked; later: the picks kept
         self.refresh()
 
     def close_tool(self, apply: bool = False) -> None:
@@ -1504,10 +1512,13 @@ class MainWindow(QMainWindow):
                 self.act_brush.setChecked(False)
                 return
             self.set_brush(True)
-        elif s.auto_tool is not None:
-            mode = "fill" if s.auto_mode == "paint" else "paint"
-            self.set_auto_mode(mode)
-            self.properties_panel._set_mode(mode)
+        elif s.auto_tool is not None:  # D: into Paint; in Paint, pick all <-> none (S goes back to Fill)
+            if s.auto_mode == "paint":
+                if s.pick_all():
+                    self._update_overlays()
+            else:
+                self.set_auto_mode("paint")
+                self.properties_panel._set_mode("paint")
             self.act_brush.setChecked(False)
         elif self._tool == "paint":
             self.finish_editing()  # D again: out of Edit
@@ -1524,11 +1535,24 @@ class MainWindow(QMainWindow):
 
     def f_key(self) -> None:
         """F: over the Frame List / strip, or with no auto tool: go to the reference ◎. With an auto tool
-        (mouse elsewhere): apply its result and go on (like Enter): A cancels, F confirms."""
+        (mouse elsewhere): apply its result and close it (A cancels, F confirms; G applies and goes on)."""
         if self._hover_zone() != "frames" and self.session.auto_tool is not None:
-            self.reapply_tool()
+            self.apply_and_leave_tool()
+            self.refresh()
         else:
             self.go_to_reference()
+
+    def g_key(self) -> None:
+        """G: an auto tool's Apply & Continue (like Enter)."""
+        if self.session.auto_tool is not None:
+            self.reapply_tool()
+
+    def s_key(self) -> None:
+        """S with an auto tool on (mouse off the lists): back to Fill mode, the Paint picks kept (D: Paint)."""
+        s = self.session
+        if s.auto_tool is not None and s.auto_mode != "fill":
+            self.set_auto_mode("fill")
+            self.properties_panel._set_mode("fill")
 
     def apply_and_leave_tool(self) -> None:
         self.close_tool(True)

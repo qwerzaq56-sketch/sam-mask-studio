@@ -36,8 +36,10 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | E | Edit의 **포인트** 도구: 편집 시작(선택한 Object) · 브러쉬 / 오토 툴에서 → 포인트 · 포인트에서 다시 → 편집 끝 | 항상 |
 | Delete | 선택한 포인트 삭제, 없으면 선택한 Object 삭제 | 항상 |
 | Esc | 도구 나가기(오토 툴 결과 버림) → 편집 끝내기 | 편집 중 |
-| Enter / F | 오토 툴 Apply & Continue (확인). Enter: 오토 툴이 꺼져 있으면 기준 ◎ 지정. F: 프레임 목록 위나 오토 툴이 없으면 기준 ◎로 이동 | 오토 툴 |
+| F / Shift+Enter | 오토 툴 **Apply & Close**(확인). F: 프레임 목록 위나 오토 툴이 없으면 기준 ◎로 이동 | 오토 툴 |
+| G / Enter | 오토 툴 Apply & Continue. Enter: 오토 툴이 꺼져 있으면 기준 ◎ 지정 | 오토 툴 |
 | A | 오토 툴 나가기(결과 버림, 포인트로): 취소 | 오토 툴 |
+| S / D | 오토 툴 Fill / Paint 모드(오가도 Paint에서 고른 부분 유지). Paint에서 D 다시 = 전체 선택 / 해제. S는 목록 위에서는 이동 키 | 오토 툴 |
 | Shift+A | 오토 툴 Fill → 전체 선택된 Paint, Paint에서 전체 선택 / 해제 | 오토 툴 |
 
 ### 이동
@@ -114,6 +116,8 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 
 ## 변경 기록
 
+- `v0.4-p55`: 오토 툴 **F = Apply & Close**(전엔 Continue), **G = Apply & Continue**, **S = Fill / D = Paint**(Paint에서 D 다시 = 전체 선택 / 해제),
+  Fill ↔ Paint를 오가도 Paint의 선택 유지. A = 취소는 그대로(A 취소 · S D 모드 · F 확인 · G 계속).
 - `v0.4-p49`: Edit 안에서 **E = 포인트, D = 브러쉬** 도구, 같은 키를 다시 누르면 편집 끝. 오토 툴에서 **D = Paint / Fill**,
   **A = 나가기(취소)**, **F = 적용(확인)**, Shift+A = 전체 선택 / 해제(전의 A). **Q / `** Solo, **H** Hide Masks.
 - `v0.4-p8`: `,` / `.` 키프레임 이동, `F` 기준(◎)으로 이동 추가, Show Changes `F` → `R`, Final Mask 미리보기 → Mask Preview + `V` 대상 전환.
