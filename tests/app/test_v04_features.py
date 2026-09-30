@@ -1394,3 +1394,43 @@ def test_propagation_live_view_stop_and_cancel(qapp, win):
     assert len(s.project.get(oid).frames) == 3
     order = [pp.stop_btn, pp.resume_btn, pp.cancel_btn]
     assert sorted(order, key=lambda b: b.x()) == order  # Stop / Resume / Cancel
+
+
+# --- p39: into a scene, the export follows the masks already there and backs up per folder -------------
+
+
+def test_scene_export_follows_existing_names_and_keeps_camera_folders(qapp, win, tmp_path):
+    import cv2
+    import numpy as np
+
+    from src.app.dialogs import ExportDialog
+    from src.core.storage import check_export
+    from tests.unit.test_reproject import make_dual_fisheye_scene
+
+    root = tmp_path / "rig"
+    make_dual_fisheye_scene(root, frames=2)  # images/cam0/000.png, cam1/000.png, ...
+    for cam in ("cam0", "cam1"):  # masks from another tool: a.png naming, same names in both cameras
+        (root / "masks" / cam).mkdir(parents=True)
+        for k in range(2):
+            cv2.imwrite(str(root / "masks" / cam / f"{k:03d}.png"), np.full((8, 8), 10 + k, np.uint8))
+    stale = root / "masks" / "cam0" / "000.png.png"  # and one left by an earlier export in the other naming
+    cv2.imwrite(str(stale), np.full((8, 8), 99, np.uint8))
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    s = win.session
+    dlg = ExportDialog(tmp_path / "x", win, check=lambda pat: check_export(s.project, pat),
+                       scene=win.scene, target="spirula")
+    opts = dlg.options()
+    assert opts.name_pattern == "{stem}.png" and "follow the masks already" in dlg.note.text()
+    assert "5 file(s) in masks/ will be moved" in dlg.summary.text()
+    s.export(opts)
+    for cam in ("cam0", "cam1"):
+        assert sorted(p.name for p in (root / "masks" / cam).iterdir()) == ["000.png", "001.png"]  # replaced
+        assert cv2.imread(str(root / "masks" / cam / "000.png"), cv2.IMREAD_GRAYSCALE).min() == 255
+    [backup] = [d for d in root.iterdir() if d.name.startswith("masks_backup_")]
+    kept = sorted(p.relative_to(backup).as_posix() for p in backup.rglob("*.png"))
+    assert kept == ["cam0/000.png", "cam0/000.png.png", "cam0/001.png", "cam1/000.png", "cam1/001.png"]
+    assert cv2.imread(str(backup / "cam1" / "001.png"), cv2.IMREAD_GRAYSCALE)[0, 0] == 11  # nothing overwritten
+    colmap = ExportDialog(tmp_path / "x", win, check=lambda pat: check_export(s.project, pat),
+                          scene=win.scene, target="colmap")
+    assert colmap.options().name_pattern == "{name}.png"  # COLMAP reads a.jpg.png only

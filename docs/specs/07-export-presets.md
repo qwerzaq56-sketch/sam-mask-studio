@@ -157,6 +157,10 @@ PRESETS = {
 
 - `v0.4-p28`: Go → Exclude from Dataset(⊘), Export Output = Into the scene / New dataset(`images/` 하드링크, `sparse/0/` 걸러 씀, 마스크).
 
+- `v0.4-p39`(버그): 장면에 쓸 때 이미 있는 마스크의 이름 규칙(`a.png` / `a.jpg.png`)을 따름(두 이름을 다 읽는 학습기만, COLMAP은 항상
+  `a.jpg.png`). 내보내는 이미지의 마스크는 **두 이름 모두** 백업으로 옮겨 한 이미지에 한 파일만 남김. 백업이 `cam0/`, `cam1/` 폴더를
+  유지(전에는 한 폴더로 모아서 같은 이름끼리 덮어씀). 코드: `storage.existing_style / mask_files`.
+
 - `v0.4-p26`: Spirula Studio(`masks/`, 다른 학습기와 같은 파일), Postshot(`masks_postshot/`, 대상 흰색, `a.png`) 프리셋.
 
 - `v0.4-p24`: Export 창의 **For**(Brush / LichtFeld Studio / COLMAP / Custom, 장면일 때만). 프리셋은 폴더(장면의 `masks/`)·이름(`{name}.png`)·
