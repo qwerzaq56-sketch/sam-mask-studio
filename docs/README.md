@@ -16,7 +16,7 @@ docs/
 | 기능을 넣을 때 어떤 기준으로? | [`design/ux-principles.md`](design/ux-principles.md) |
 | 메뉴 / 툴바 어디에 둘까? | [`design/menu-design.md`](design/menu-design.md) |
 | 이 키는 무엇이고, 빈 키는? | [`design/keymap.md`](design/keymap.md) |
-| 이 기능은 원래 어떻게 기획됐나? | [`specs/`](specs) — 01 GUI · 02 전파 · 03 Object 관리 · 04 v0.3 요청 원문 · 05 Merge / Copy / Move · 06 COLMAP · 07 학습기별 Export Preset · 08 투영 변환(ERP / Fisheye → Pinhole) · 09 특수 Object(Sky, 피시아이 외곽) |
+| 이 기능은 원래 어떻게 기획됐나? | [`specs/`](specs) — 01 GUI · 02 전파 · 03 Object 관리 · 04 v0.3 요청 원문 · 05 Merge / Copy / Move · 06 COLMAP · 07 학습기별 Export Preset · 08 투영 변환(ERP / Fisheye → Pinhole) · 09 특수 Object(Sky, 피시아이 외곽) · 10 포인트 레이어 · 11 사용 설명서 기획 |
 | 다음에 뭘 하나? | [`backlog/ideas.md`](backlog/ideas.md) · 작은 UI 문제는 [`backlog/ui-issues.md`](backlog/ui-issues.md) |
 | 언제 무엇이 바뀌었나? | [`log/PROGRESS_v0.4.md`](log/PROGRESS_v0.4.md) · [`log/PROGRESS_v0.3.md`](log/PROGRESS_v0.3.md) · 끝난 아이디어 [`log/ideas-log.md`](log/ideas-log.md) |
 | 코드가 어떻게 짜여 있나? | [`DEVELOPMENT.md`](DEVELOPMENT.md) |
