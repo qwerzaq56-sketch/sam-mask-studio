@@ -48,7 +48,7 @@ MODE_STYLE = (  # the selected mode is shown by color only (no sunken "pressed" 
 # Direct brushes act as you paint; auto tools compute a result that is shown live
 # and either filled in at once (Fill mode) or painted in (Brush mode).
 DIRECT_TOOLS = ("paint", "restore")
-AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink")
+AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink", "close_gaps")
 TOOL_TEXT = {
     "paint": ("Paint", "Drag = add, Alt+drag = subtract (D)"),
     "restore": ("Restore", "Drag to undo the edit layer's changes where you paint (see the box)"),
@@ -57,6 +57,7 @@ TOOL_TEXT = {
     "remove_specks": ("Remove Specks", "Remove separate small pieces (the main piece stays)"),
     "grow": ("Grow", "Widen the whole mask by the amount"),
     "shrink": ("Shrink", "Narrow the whole mask by the amount"),
+    "close_gaps": ("Close Gaps", "Fill narrow gaps between parts of the mask and narrow notches cut into it"),
 }
 RESTORE_MODES = (
     ("added", "Add"),  # undo what the edit layer added
@@ -273,7 +274,7 @@ class PropertiesPanel(QWidget):
         av = QVBoxLayout(abox)
         rows = (
             (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
-            (None, [tool_button("grow"), tool_button("shrink")]),
+            (None, [tool_button("grow"), tool_button("shrink"), tool_button("close_gaps")]),
             ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
             (" ", [self.recompute_btn, self.apply_auto_btn]),
             (self.mode_hint, None),
@@ -306,7 +307,8 @@ class PropertiesPanel(QWidget):
         self.grow = SliderField(1, 200, 20, " px")
         self.sensitivity = SliderField(0, 100, 50)
         self.amount = SliderField(1, 100, 3, " px")
-        for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount):
+        self.gap = SliderField(1, 200, 10, " px")
+        for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount, self.gap):
             w.valueChanged.connect(lambda _v: self._settings_timer.start())
 
         def page(rows, text: str) -> QWidget:
@@ -334,6 +336,9 @@ class PropertiesPanel(QWidget):
         }
         self._pages["grow"] = self._pages["shrink"] = self.settings_stack.addWidget(page(
             (("Amount", self.amount),), "How many pixels Grow widens / Shrink narrows the mask (shared)."
+        ))
+        self._pages["close_gaps"] = self.settings_stack.addWidget(page(
+            (("Max gap", self.gap),), "Gaps and notches up to this wide are filled; the mask never shrinks."
         ))
         self.preview_label = note("")
         self.settings_box = CollapsibleBox("Settings")  # foldable: its state is kept in the settings
@@ -536,6 +541,7 @@ class PropertiesPanel(QWidget):
             "max_grow": self.grow.value(),
             "sensitivity": self.sensitivity.value(),
             "amount": self.amount.value(),
+            "gap": self.gap.value(),
             "restore": self.restore_mode.currentData(),
         }
 
@@ -559,7 +565,7 @@ class PropertiesPanel(QWidget):
         )
 
     def set_brush_size(self, px: int) -> None:
-        self.brush_size.setText(f"size {px}px · Ctrl+wheel to change")
+        self.brush_size.setText(f"size {px}px · Alt+right-drag or Ctrl+wheel to change")
 
     def _on_region_mode(self, on: bool) -> None:
         if on:

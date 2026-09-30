@@ -32,7 +32,7 @@ from src.core.project import (
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, Special, lens_edge_mask, refine_sky, sky_mask
-from src.core.refine import fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
+from src.core.refine import close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
 from src.engine.imageio import find_images, image_key, read_rgb, resize_mask, to_working, working_size
@@ -45,6 +45,7 @@ AUTO_PARAMS = {
     "remove_specks": ("speck_area",),
     "grow": ("amount",),
     "shrink": ("amount",),
+    "close_gaps": ("gap",),
 }
 
 
@@ -552,6 +553,8 @@ class Session:
             target = grow_mask(base, settings.get("amount", 3))
         elif tool == "shrink":
             target = shrink_mask(base, settings.get("amount", 3))
+        elif tool == "close_gaps":
+            target = close_gaps(base, settings.get("gap", 10))
         else:
             raise ValueError(f"Unknown auto tool: {tool}")
         self._auto_cache = (self._auto_key(tool, settings), base, target)

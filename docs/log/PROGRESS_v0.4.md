@@ -306,6 +306,11 @@
 - **D**: 편집 중이면 브러시 켜기 / 끄기(그대로). 편집 중이 아니면 선택한 Object를 **브러시로** 편집 시작.
 - 오토 툴 **Shift+Enter** = Apply & Close(Enter는 Apply & Continue). 제안했던 F는 Go to Reference ◎가 쓰고 있어서 보류.
 
+### 46단계 · 오토 툴 Close Gaps (`v0.4-p46`, 보류 아이디어 "갭 채우기")
+- Edit Layer 오토 툴 **Close Gaps**: 마스크 조각 사이의 좁은 틈과 안으로 파인 좁은 U자 홈을 채움(**Max gap** px, 기본 10).
+  원형 모폴로지 닫기(틈의 절반만큼 넓혔다가 다시 좁히기)라 더하기만 함: 마스크가 줄지 않고, 바깥으로 자라지 않고, 넓은 만(灣)은 그대로.
+  다른 오토 툴처럼 Fill / Paint 모드, Region, Enter / Shift+Enter.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

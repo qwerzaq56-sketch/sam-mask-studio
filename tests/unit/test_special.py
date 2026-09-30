@@ -88,3 +88,22 @@ def test_network_output_is_stretched_and_sized():
     out = np.linspace(-2, 3, 320 * 320, dtype=np.float32).reshape(1, 1, 320, 320)
     m = stretch_to_uint8(out.squeeze(), 90, 160)
     assert m.shape == (90, 160) and m.min() <= 1 and m.max() >= 254
+
+
+def test_close_gaps_fills_narrow_gaps_and_notches_only():
+    from src.core.refine import close_gaps
+
+    m = np.zeros((60, 120), bool)
+    m[20:40, 10:50] = True
+    m[20:40, 56:100] = True  # a 6 px gap between two parts
+    m[20:32, 70:74] = False  # a 4 px wide notch cut in from the top
+    m[20:40, 100:120] = False
+    out = close_gaps(m, 8)
+    assert out[30, 52] and out[25, 72]  # the gap and the notch are filled
+    assert (out | ~m).all()  # nothing taken away
+    assert not out[10, 30] and not out[50, 30]  # not grown outward
+    assert not close_gaps(m, 4)[30, 52]  # a 6 px gap is wider than 4
+    edge = np.zeros((40, 40), bool)
+    edge[:, :10] = True
+    assert (close_gaps(edge, 10) == edge).all()  # the image border is no reason to fill
+
