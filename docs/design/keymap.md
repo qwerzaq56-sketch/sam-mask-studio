@@ -5,23 +5,24 @@
 - 앱 안의 전체 목록(F1)은 `src/app/dialogs.py`의 `SHORTCUTS`가 원본입니다. 키를 바꾸면 그 표와 이 문서를 같이 고칩니다.
 - 새 단축키 아이디어는 맨 아래 "제안"에 적습니다. 결정되면 "현재 키맵"으로 옮깁니다.
 - 모든 키는 메뉴 바(File / Edit / View / Go / Help)에도 항목 오른쪽에 표시됩니다: [`menu-design.md`](menu-design.md).
-- 기준: v0.4.0 + `v0.4-p14` (2026-09-29).
+- 기준: v0.4.0 + `v0.4-p54` (2026-09-30).
 
 ## 한눈에 보기 (글자 키)
 
 ```text
  Q  W  E  R  T  Y  U  I  O  P  [  ]
- ·  ·  E  R  ·  ·  ·  ·  O  ·  [  ]        E Points 편집   R Show Changes   O Outline   [ ] 문제 프레임
+ Q  ·  E  R  ·  ·  ·  ·  O  ·  [  ]        Q Solo   E 포인트 편집   R Show Changes   O Outline   [ ] 문제 프레임
 
   A  S  D  F  G  H  J  K  L  ;  '
-  A  ·  D  F  ·  ·  ·  ·  ·  ·  ·          A 오토 툴 선택   D Paint   F 기준(◎)으로
+  A  ·  D  F  ·  H  ·  ·  ·  ·  ·          A 오토 툴 나가기   D 브러쉬 · 오토 툴 Paint↔Fill   F 기준(◎)으로 · 오토 툴 적용   H Hide Masks
 
    Z  X  C  V  B  N  M  ,  .  /
    Z  X  ·  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X Final↔Object   V Mask Preview   N New Object   , . 키프레임
 ```
 
-`·` = 비어 있음. 비어 있는 글자: **Q W S T Y U I P G H J K L C B M** 과 **/ ; '**, 숫자, Home / End, Tab.
-(`W` `S`는 목록 위에 마우스가 있을 때만 이동 키: 아래 "이동". 그때는 `A` `D`도 이동으로 바뀝니다.)
+`·` = 비어 있음. 비어 있는 글자: **W S T Y U I P G J K L C B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
+(`W` `S`는 마우스가 목록이나 캔버스 위에 있을 때만 이동 키: 아래 "이동". 목록 위에서는 `A` `D`도 이동으로 바뀝니다.
+Shift+A = 오토 툴 전체 선택 / 해제.)
 
 ## 현재 키맵
 
