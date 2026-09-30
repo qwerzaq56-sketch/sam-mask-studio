@@ -878,7 +878,7 @@ def test_objects_list_hides_empty_and_marks_linked(qapp, win):
     panel = win.objects_panel
     rows = lambda: [panel.tree.topLevelItem(i).data(0, 0x0100) for i in range(panel.tree.topLevelItemCount())]  # noqa: E731
     assert rows() == [b, c] and panel.shown_label.text() == "2 of 3 shown"
-    link = {panel.tree.topLevelItem(i).data(0, 0x0100): panel.tree.topLevelItem(i).text(1) for i in range(2)}
+    link = {panel.tree.topLevelItem(i).data(0, 0x0100): panel.tree.topLevelItem(i).text(2) for i in range(2)}
     assert link == {b: "🔗 2", c: ""}
     panel.show_all.setChecked(True)
     assert rows() == [a, b, c] and panel.shown_label.text() == ""

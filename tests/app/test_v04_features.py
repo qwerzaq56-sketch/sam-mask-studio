@@ -1566,8 +1566,8 @@ def test_unchecked_object_keeps_its_check_box(qapp, win):
     tree = win.objects_panel.tree
     [item] = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
               if tree.topLevelItem(i).data(0, ID_ROLE) == ids[0]]
-    assert item.data(0, Qt.ItemDataRole.CheckStateRole) is not None  # the box is drawn
-    assert item.checkState(0) == Qt.CheckState.Unchecked
+    assert item.data(1, Qt.ItemDataRole.CheckStateRole) is not None  # the box is drawn (column 1, after the eye)
+    assert item.checkState(1) == Qt.CheckState.Unchecked
 
 
 # --- p49: in an auto tool D = Paint <-> Fill, A = leave (cancel), F = apply (confirm); Q / H -------------
@@ -1728,4 +1728,20 @@ def test_export_shows_progress(qapp, win, tmp_path):
     assert bar.isVisible()
     wait_until(qapp, lambda: (seen.append(bar.labelText()) or win._busy is None))
     assert not bar.isVisible() and len(list((tmp_path / "out").iterdir())) == len(win.session.keys)
+
+
+# --- p56: the eye first in the row, a plain one-color icon --------------------------------------------
+
+
+def test_eye_is_the_first_column(qapp, win):
+    from src.app.objects_panel import EYE, NAME, EyeButton
+
+    ids = make_objects(win, 1)
+    tree = win.objects_panel.tree
+    item = tree.topLevelItem(0)
+    assert isinstance(tree.itemWidget(item, EYE), EyeButton) and EYE == 0
+    assert item.text(NAME) == win.session.project.get(ids[0]).name and item.checkState(NAME) is not None
+    eye = tree.itemWidget(item, EYE)
+    assert eye.text() == "" and not eye.icon().isNull()  # drawn, not the color emoji
+    assert tree.visualItemRect(item).left() <= eye.geometry().left() < 40
 

@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
-from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPixmap
+from PyQt6.QtCore import QPointF, QEvent, QObject, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -37,7 +37,8 @@ from src.core.special import LENS_EDGE, SKY
 from src.core.project import MaskObject
 
 ID_ROLE = Qt.ItemDataRole.UserRole
-COLUMNS = 7  # name · linked (🔗 n) · 👁 · 🔒 · Edit · × · ···
+COLUMNS = 7  # 👁 · name (check box) · linked (🔗 n) · 🔒 · Edit · × · ···  (the eye first, as in layer lists)
+EYE, NAME, LINK = 0, 1, 2
 VARIANT_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
@@ -88,11 +89,32 @@ class LockButton(QPushButton):
         super().leaveEvent(event)
 
 
+def eye_icon(color: QColor, size: int = 16) -> QIcon:
+    """A plain one-color eye (outline and pupil), like the eye of an image editor's layer list."""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(color, 1.4)
+    p.setPen(pen)
+    m, h = 1.5, size / 2
+    path = QPainterPath()
+    path.moveTo(m, h)
+    path.quadTo(h, h - size * 0.52, size - m, h)
+    path.quadTo(h, h + size * 0.52, m, h)
+    p.drawPath(path)
+    p.setBrush(color)
+    p.drawEllipse(QPointF(h, h), size * 0.16, size * 0.16)
+    p.end()
+    return QIcon(pm)
+
+
 class EyeButton(QPushButton):
     """👁 shown on the canvas; faint when hidden (the check box is the Final Mask, this is only the view)."""
 
     def __init__(self, parent=None):
-        super().__init__("👁", parent)
+        super().__init__("", parent)
+        self.setIcon(eye_icon(self.palette().color(self.foregroundRole())))
         self.shown = True  # (not a checkable button: a checked flat button draws a pressed box)
         self.setFlat(True)
         self.setFixedWidth(22)
@@ -167,9 +189,9 @@ class ObjectsPanel(QWidget):
             QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed
         )
         header = self.tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col in range(1, COLUMNS):
+        for col in range(COLUMNS):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(NAME, QHeaderView.ResizeMode.Stretch)
         header.setStretchLastSection(False)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.itemSelectionChanged.connect(self._on_selection)
@@ -307,7 +329,7 @@ class ObjectsPanel(QWidget):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEditable)
             self.tree.addTopLevelItem(item)
             item.setSelected(o.id in keep)
-            self.tree.setItemWidget(item, 2, self._eye_button(o.id))
+            self.tree.setItemWidget(item, EYE, self._eye_button(o.id))
             self.tree.setItemWidget(item, 3, self._lock_button(o.id))
             self.tree.setItemWidget(item, 4, self._edit_button(o.id, o.id == editing))
             self.tree.setItemWidget(item, 5, self._delete_button(o.id))
@@ -322,23 +344,23 @@ class ObjectsPanel(QWidget):
 
     def _fill(self, item: QTreeWidgetItem, o: MaskObject, key: Optional[str], editing: Optional[int]) -> None:
         """Write *o*'s current state into its row (and Variant rows)."""
-        if item.text(0) != o.name:
-            item.setText(0, o.name)
-        item.setIcon(0, color_icon(o.color))
+        if item.text(NAME) != o.name:
+            item.setText(NAME, o.name)
+        item.setIcon(NAME, color_icon(o.color))
         state = Qt.CheckState.Checked if o.included else Qt.CheckState.Unchecked
         # a new row has no check state at all (it reads as Unchecked but draws no box): always set it once
-        if item.data(0, Qt.ItemDataRole.CheckStateRole) is None or item.checkState(0) != state:
-            item.setCheckState(0, state)
+        if item.data(NAME, Qt.ItemDataRole.CheckStateRole) is None or item.checkState(NAME) != state:
+            item.setCheckState(NAME, state)
         has = key is not None and o.mask(key) is not None
         n = sum(1 for fs in o.frames.values() if fs.mask is not None)
-        item.setToolTip(0, f"{o.source.value} · masks on {n} image(s)" + ("" if has else " · none on this image"))
+        item.setToolTip(NAME, f"{o.source.value} · masks on {n} image(s)" + ("" if has else " · none on this image"))
         # linked: the same Object on several images (propagated, batch, ...)
         link = f"🔗 {n}" if n > 1 else ""
-        if item.text(1) != link:
-            item.setText(1, link)
-            item.setToolTip(1, f"Linked: masks on {n} images" if link else "")
-        item.setForeground(0, QBrush() if has else QBrush(QColor(140, 140, 140)))
-        eye = self.tree.itemWidget(item, 2)
+        if item.text(LINK) != link:
+            item.setText(LINK, link)
+            item.setToolTip(LINK, f"Linked: masks on {n} images" if link else "")
+        item.setForeground(NAME, QBrush() if has else QBrush(QColor(140, 140, 140)))
+        eye = self.tree.itemWidget(item, EYE)
         if isinstance(eye, EyeButton):
             eye.set_shown(o.id not in self.hidden)
         lock = self.tree.itemWidget(item, 3)
@@ -350,7 +372,7 @@ class ObjectsPanel(QWidget):
             delete.setToolTip("Locked: unlock it to delete" if o.locked else "Delete this Object (Ctrl+Z undoes it)")
         f = QFont()
         f.setBold(o.id == editing)
-        item.setFont(0, f)
+        item.setFont(NAME, f)
         fs = o.frame(key) if key is not None else None
         if fs is not None and item.childCount():
             sel = min(fs.selected, len(fs.variants) - 1)
@@ -458,7 +480,7 @@ class ObjectsPanel(QWidget):
     def _start_rename(self, oid: int) -> None:
         it = self._item(oid)
         if it is not None:
-            self.tree.editItem(it, 0)
+            self.tree.editItem(it, NAME)
 
     def selected_ids(self) -> List[int]:
         """Selected Object ids in the order they were selected (Merge keeps the first one's name)."""
@@ -512,17 +534,17 @@ class ObjectsPanel(QWidget):
             later(self, self.variant_selected, item.data(0, ID_ROLE), idx)
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
-        if self._updating or column != 0 or item.parent() is not None:
+        if self._updating or column != NAME or item.parent() is not None:
             return
         oid = item.data(0, ID_ROLE)
         obj = next((o for o in self._objects if o.id == oid), None)
         if obj is None:
             return
-        checked = item.checkState(0) == Qt.CheckState.Checked
+        checked = item.checkState(NAME) == Qt.CheckState.Checked
         if checked != obj.included:
             later(self, self.include_toggled, oid, checked)
-        elif item.text(0) != obj.name:  # empty names are rejected by the project and the row resets
-            later(self, self.renamed, oid, item.text(0))
+        elif item.text(NAME) != obj.name:  # empty names are rejected by the project and the row resets
+            later(self, self.renamed, oid, item.text(NAME))
 
     def _on_selection(self) -> None:
         self._remember(self.selected_ids())
