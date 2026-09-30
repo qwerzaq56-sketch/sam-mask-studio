@@ -330,8 +330,10 @@ class MainWindow(QMainWindow):
             "Clear Mask", lambda: self.mask_edit("clear"), ["Ctrl+Backspace"],
             "Empty the edited Object's mask on this image (inside the region, if any). Only while editing",
         )
-        self.act_pick_all = self._action("Auto Tool: Pick All / None", self.a_key, ["A"],
+        self.act_pick_all = self._action("Auto Tool: Pick All / None", self.a_key, ["Shift+A"],
                                          "Fill mode -> Paint mode with everything picked; Paint mode: all / none")
+        self.act_leave_auto = self._action("Auto Tool: Leave (drop its result)", self.leave_auto_key, ["A"],
+                                           "Back to points; D next to it = Paint / Fill, F = apply")
         # Ctrl+D / Ctrl+Shift+D only with the mouse over the Objects panel (eventFilter): shown, not bound
         self.act_duplicate = self._action(
             "Duplicate (this image)\tCtrl+D", lambda: self.duplicate(self.objects_panel.selected_ids()),
@@ -424,16 +426,17 @@ class MainWindow(QMainWindow):
         self.act_changes.setChecked(self.settings.show_edit_changes)
         # which Objects the canvas colors: all, only the selected / edited ones (Solo), or none (Hide)
         self.act_solo = self._action(
-            "Solo", lambda _on: self._update_overlays(),
+            "Solo", lambda _on: self._update_overlays(), ["Q", "`"],
             tip="Color only the selected Objects (and the one in Edit) on the canvas", checkable=True,
         )
         self.act_hide_masks = self._action(
-            "Hide Masks", lambda _on: self._update_overlays(),
+            "Hide Masks", lambda _on: self._update_overlays(), ["H"],
             tip="No Object colors on the canvas, the Object in Edit included: the plain image "
                 "(a tool's preview still shows)", checkable=True,
         )
         for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
-                  self.act_pick_all, self.act_edit, self.act_new, self.act_solo, self.act_hide_masks,
+                  self.act_pick_all, self.act_leave_auto, self.act_edit, self.act_new, self.act_solo,
+                  self.act_hide_masks,
                   self.act_invert, self.act_clear_mask):
             a.setAutoRepeat(False)  # held down: one toggle, not a flicker
 
@@ -450,7 +453,7 @@ class MainWindow(QMainWindow):
         self.act_next_problem = self._action("Next Problem (⚠ ✕)", lambda: self.step_problem(1), ["]"])
         self.act_prev_key = self._action("Previous Keyframe ★", lambda: self.step_keyframe(-1), [","])
         self.act_next_key = self._action("Next Keyframe ★", lambda: self.step_keyframe(1), ["."])
-        self.act_go_reference = self._action("Go to Reference ◎", self.go_to_reference, ["F"],
+        self.act_go_reference = self._action("Go to Reference ◎", self.f_key, ["F"],
                                              "The propagation reference (the double-clicked image)")
         self.act_exclude = self._action(
             "Exclude from Dataset / Include", self.toggle_excluded,
@@ -475,6 +478,7 @@ class MainWindow(QMainWindow):
         tools.addAction(self.act_invert)
         tools.addAction(self.act_clear_mask)
         tools.addAction(self.act_pick_all)
+        tools.addAction(self.act_leave_auto)
         self._hint(tools, "Auto Tool: Apply && Continue", "Enter", self.reapply_tool)
         self._hint(tools, "Auto Tool: Apply && Close", "Shift+Enter", self.apply_and_leave_tool)
         self._hint(tools, "Leave the Active Auto Tool", "its button again")
@@ -1473,11 +1477,11 @@ class MainWindow(QMainWindow):
         self.properties_panel.set_brush_tool(self._tool)  # the button stays on
         self._auto_refresh()  # recompute from the new mask
 
-    def brush_key(self, on: bool) -> None:
-        """D: the brush on / off; not editing, it starts editing the selected Object with the brush on
-        (E starts with points)."""
+    def brush_key(self, _on: bool = True) -> None:
+        """D, Edit's brush tool (E is its points): not editing, edit the selected Object with the brush;
+        points -> brush; with an auto tool, its Paint <-> Fill mode; the brush again -> out of Edit."""
         s = self.session
-        if on and s.editing is None:
+        if s.editing is None:
             ids = self.objects_panel.selected_ids()
             oid = ids[0] if len(ids) == 1 else (s.project.objects[0].id if len(s.project.objects) == 1 else None)
             if oid is None:
@@ -1488,7 +1492,32 @@ class MainWindow(QMainWindow):
             if s.editing != oid:
                 self.act_brush.setChecked(False)
                 return
-        self.set_brush(on)
+            self.set_brush(True)
+        elif s.auto_tool is not None:
+            mode = "fill" if s.auto_mode == "paint" else "paint"
+            self.set_auto_mode(mode)
+            self.properties_panel._set_mode(mode)
+            self.act_brush.setChecked(False)
+        elif self._tool == "paint":
+            self.finish_editing()  # D again: out of Edit
+        else:
+            self.set_brush(True)
+
+    def leave_auto_key(self) -> None:
+        """A: leave the auto tool, dropping its result (F writes it in), back to points."""
+        if self.session.auto_tool is None:
+            return
+        self.close_tool()
+        self.set_brush_tool("")
+        self.refresh()
+
+    def f_key(self) -> None:
+        """F: over the Frame List / strip, or with no auto tool: go to the reference ◎. With an auto tool
+        (mouse elsewhere): apply its result and go on (like Enter): A cancels, F confirms."""
+        if self._hover_zone() != "frames" and self.session.auto_tool is not None:
+            self.reapply_tool()
+        else:
+            self.go_to_reference()
 
     def apply_and_leave_tool(self) -> None:
         self.close_tool(True)
@@ -1623,9 +1652,15 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def edit_key(self) -> None:
+        """E, Edit's points tool (D is its brush): start editing; brush / auto tool -> points; points again -> out."""
         ids = self.objects_panel.selected_ids()
         if self.session.editing is not None:
-            self.finish_editing()
+            if self._tool:
+                self.close_tool()
+                self.set_brush_tool("")
+                self.refresh()
+            else:
+                self.finish_editing()
         elif len(ids) == 1:
             self.toggle_edit(ids[0])
         elif len(self.session.project.objects) == 1:

@@ -32,10 +32,12 @@
 | Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export | 항상 |
 | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | Undo / Redo | 항상 |
 | N | New Object (포인트로) | 항상 |
-| E | 선택한 Object 포인트 편집 시작 / 끝내기 | 항상 |
+| E | Edit의 **포인트** 도구: 편집 시작(선택한 Object) · 브러쉬 / 오토 툴에서 → 포인트 · 포인트에서 다시 → 편집 끝 | 항상 |
 | Delete | 선택한 포인트 삭제, 없으면 선택한 Object 삭제 | 항상 |
 | Esc | 도구 나가기(오토 툴 결과 버림) → 편집 끝내기 | 편집 중 |
-| Enter | 오토 툴 Apply & Continue (오토 툴이 꺼져 있으면 기준 ◎ 지정, 아래 "이동") | 오토 툴 |
+| Enter / F | 오토 툴 Apply & Continue (확인). Enter: 오토 툴이 꺼져 있으면 기준 ◎ 지정. F: 프레임 목록 위나 오토 툴이 없으면 기준 ◎로 이동 | 오토 툴 |
+| A | 오토 툴 나가기(결과 버림, 포인트로): 취소 | 오토 툴 |
+| Shift+A | 오토 툴 Fill → 전체 선택된 Paint, Paint에서 전체 선택 / 해제 | 오토 툴 |
 
 ### 이동
 
@@ -71,6 +73,8 @@
 | V | Mask Preview(흑백) 켜기 / 끄기 (누르고 있어도 한 번만) |
 | X | Mask Preview 대상 전환: Final Mask ↔ 선택한 Object (메뉴 `Toggle Final / Object Mask`, 툴바 `Preview: Final / Object` 버튼) |
 | O | Outline 켜기 / 끄기 |
+| Q / ` | Solo 켜기 / 끄기 (선택한 Object만 색칠) |
+| H | Hide Masks 켜기 / 끄기 (맨 이미지) |
 | R | Show Changes(에딧 레이어 초록 / 빨강) 켜기 / 끄기 |
 | 휠 / 가운데 드래그 · Space+드래그 | 확대·축소 / 이동 |
 | F1 | 단축키 전체 목록 |
@@ -85,9 +89,8 @@
 | Ctrl+I | 편집 중인 Mask 인버트 (Region 안에서만, 있으면) |
 | Ctrl+Backspace | 편집 중인 Mask 비우기 (이 이미지, Region 안에서만, 있으면) |
 | E | 편집 시작 / 끝: **포인트**로 (브러쉬 꺼짐) |
-| D | Paint 브러쉬 켜기 / 끄기. 편집 중이 아니면 선택한 Object를 브러쉬로 편집 시작 |
+| D | Edit의 **브러쉬** 도구: 편집 시작(선택한 Object) · 포인트에서 → 브러쉬 · 브러쉬에서 다시 → 편집 끝 · 오토 툴에서 → Paint / Fill 전환 |
 | Shift+Enter | 오토 툴 Apply & Close (Enter는 Apply & Continue) |
-| A | 오토 툴: Fill → 전체 선택된 Paint 모드(Paint 버튼도 같음), Paint 모드에서 전체 선택 / 해제 |
 | Alt+드래그 | Paint 빼기 · 오토 툴 선택 해제 · Region Box 빼기 |
 | Shift+드래그 | 브러쉬를 켜지 않고 칠하기 |
 | Alt+우클릭 드래그 좌우 | 브러쉬 크기 (Photoshop과 같음, 원은 누른 자리에 고정) |
@@ -106,11 +109,12 @@
 | 제안 키 | 동작 | 출처 / 메모 |
 |---|---|---|
 | Home / End | 첫 / 마지막 프레임 | 후보 |
-| H | Hide Masks 켜기 / 끄기 | `v0.4-p18`, 비어 있는 키 |
-| (없음) | Solo | `v0.4-p18`, 필요하면 키 정하기 |
+| (장기) | 단축키 직접 바꾸기(커스텀 매핑) | 사용자 메모 2026-09-30 |
 
 ## 변경 기록
 
+- `v0.4-p49`: Edit 안에서 **E = 포인트, D = 브러쉬** 도구, 같은 키를 다시 누르면 편집 끝. 오토 툴에서 **D = Paint / Fill**,
+  **A = 나가기(취소)**, **F = 적용(확인)**, Shift+A = 전체 선택 / 해제(전의 A). **Q / `** Solo, **H** Hide Masks.
 - `v0.4-p8`: `,` / `.` 키프레임 이동, `F` 기준(◎)으로 이동 추가, Show Changes `F` → `R`, Final Mask 미리보기 → Mask Preview + `V` 대상 전환.
 - `v0.4-p9`: `Enter`(오토 툴 없을 때) = 현재 프레임을 기준(◎)으로 지정 / 해제.
 - `v0.4-p13`: 마우스를 올린 목록 기준 `W A S D` / 화살표. Frame List · Frames 줄 위 = 프레임, Objects 목록 위 = Object. 목록 위에서 `S` = 다음(스크롤은 ⌖ 버튼이나 목록 밖에서 `S`). Shift / Ctrl+화살표는 목록의 여러 칸 선택 그대로.
