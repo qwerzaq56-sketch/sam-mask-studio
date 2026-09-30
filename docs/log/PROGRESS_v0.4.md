@@ -265,6 +265,13 @@
 - 34단계에서 넣은 Frame List / Frames 우클릭 메뉴를 뺌: 여러 프레임을 고른 상태에서 프레임을 옮기는 조작을 방해했음.
   Copy Mask / Clear Masks on Picked Frames는 Edit → Objects 메뉴에 그대로 있음.
 
+### 38단계 · 전파를 보면서: 라이브 뷰, Stop / Resume / Cancel (`v0.4-p38`, 피드백)
+- 전파 중 막 끝난 프레임과 그 새 마스크를 캔버스에 바로 보여 줌(저장은 끝날 때 한 번에, Undo 한 단계).
+- **Stop**: 그 프레임에 머문 채로 멈춤, 결과 유지, **Resume**으로 이어서.
+- **Cancel**: 지금까지의 결과는 **유지**하고 원래 보던 프레임으로 돌아감, 작업 완전히 끝(Resume 없음). 결과를 없애려면 Ctrl+Z(전파 전체가 한 단계).
+  전에는 Cancel이 결과를 버렸음. 배치(SAM3)의 Cancel은 그대로 버림.
+- 버튼 순서 Stop / Resume / Cancel.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

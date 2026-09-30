@@ -977,10 +977,10 @@ def test_stop_then_cancel_or_resume(qapp, win):
     pp.run_btn.click()
     wait_until(qapp, entered2.is_set)
     pp.stop_btn.click()
-    pp.cancel_btn.click()  # Stop, then Cancel: nothing is kept
+    pp.cancel_btn.click()  # Stop, then Cancel: the frames done are kept (p38), nothing to resume
     release2.set()
     wait_until(qapp, lambda: win._busy is None)
-    assert "Cancelled" in pp.phase.text()
+    assert "Cancelled" in pp.phase.text() and not pp.resume_btn.isEnabled()
 
 
 def test_id_ranges_and_range_scope_by_ids(qapp, win):
