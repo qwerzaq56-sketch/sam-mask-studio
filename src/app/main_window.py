@@ -396,9 +396,10 @@ class MainWindow(QMainWindow):
         self._show_preview_mode()
         self.act_brush = self._action(
             "Brush",
-            self.set_brush,
+            self.brush_key,
             ["D"],
-            "Brush editing on the edited Object: drag = add, Alt+drag = subtract, Ctrl+wheel = size",
+            "Brush editing (not editing: edits the selected Object with the brush): drag = add, "
+            "Alt+drag = subtract, Alt+right-drag / Ctrl+wheel = size",
             True,
         )
         self.act_outline = self._action(
@@ -475,6 +476,7 @@ class MainWindow(QMainWindow):
         tools.addAction(self.act_clear_mask)
         tools.addAction(self.act_pick_all)
         self._hint(tools, "Auto Tool: Apply && Continue", "Enter", self.reapply_tool)
+        self._hint(tools, "Auto Tool: Apply && Close", "Shift+Enter", self.apply_and_leave_tool)
         self._hint(tools, "Leave the Active Auto Tool", "its button again")
         objects = m.addMenu("Objects")
         for a in (self.act_duplicate, self.act_duplicate_all, None, self.act_move, self.act_transfer_options,
@@ -725,7 +727,7 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(s.can_redo and not busy)
         self.act_save.setEnabled(has_folder)
         self.act_export.setEnabled(has_folder and not busy)
-        self.act_brush.setEnabled(s.mode == Mode.EDIT and not busy)
+        self.act_brush.setEnabled(s.mode != Mode.NEW_OBJECT and not busy)  # D not editing: edit with the brush
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel,
                   self.images_panel.frame_list):
             w.setEnabled(has_folder and not busy)
@@ -1097,7 +1099,10 @@ class MainWindow(QMainWindow):
             and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
             and self.isActiveWindow()
         ):
-            self.reapply_tool()  # Enter = Apply & Continue
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                self.apply_and_leave_tool()  # Shift+Enter = Apply & Close
+            else:
+                self.reapply_tool()  # Enter = Apply & Continue
             return True
         if (
             t == QEvent.Type.KeyPress
@@ -1468,6 +1473,23 @@ class MainWindow(QMainWindow):
         self.properties_panel.set_brush_tool(self._tool)  # the button stays on
         self._auto_refresh()  # recompute from the new mask
 
+    def brush_key(self, on: bool) -> None:
+        """D: the brush on / off; not editing, it starts editing the selected Object with the brush on
+        (E starts with points)."""
+        s = self.session
+        if on and s.editing is None:
+            ids = self.objects_panel.selected_ids()
+            oid = ids[0] if len(ids) == 1 else (s.project.objects[0].id if len(s.project.objects) == 1 else None)
+            if oid is None:
+                self.act_brush.setChecked(False)
+                self.log("Select one Object to paint on (D), or E to edit with points")
+                return
+            self.toggle_edit(oid)
+            if s.editing != oid:
+                self.act_brush.setChecked(False)
+                return
+        self.set_brush(on)
+
     def apply_and_leave_tool(self) -> None:
         self.close_tool(True)
         self.set_brush_tool("")
@@ -1597,8 +1619,7 @@ class MainWindow(QMainWindow):
             self.session.finish_editing()
         else:
             self.session.edit(oid)
-            self.canvas.setFocus()
-            self.set_brush(True, redraw=False)  # Edit starts with the brush (D / E again leave it)
+            self.canvas.setFocus()  # E: points (the brush is D)
         self.refresh()
 
     def edit_key(self) -> None:

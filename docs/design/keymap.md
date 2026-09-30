@@ -84,7 +84,9 @@
 | Ctrl+좌클릭 / Ctrl+우클릭 | 그 자리의 조각(SAM2, 그 점 하나로)을 Mask에 더하기 / 빼기. Edit Layer에 쌓이고 나머지 Mask는 그대로 (브러시 켜져 있어도) |
 | Ctrl+I | 편집 중인 Mask 인버트 (Region 안에서만, 있으면) |
 | Ctrl+Backspace | 편집 중인 Mask 비우기 (이 이미지, Region 안에서만, 있으면) |
-| D | Paint 브러쉬 켜기 / 끄기 (`E`로 편집을 시작하면 켜진 채로 시작) |
+| E | 편집 시작 / 끝: **포인트**로 (브러쉬 꺼짐) |
+| D | Paint 브러쉬 켜기 / 끄기. 편집 중이 아니면 선택한 Object를 브러쉬로 편집 시작 |
+| Shift+Enter | 오토 툴 Apply & Close (Enter는 Apply & Continue) |
 | A | 오토 툴: Fill → 전체 선택된 Paint 모드(Paint 버튼도 같음), Paint 모드에서 전체 선택 / 해제 |
 | Alt+드래그 | Paint 빼기 · 오토 툴 선택 해제 · Region Box 빼기 |
 | Shift+드래그 | 브러쉬를 켜지 않고 칠하기 |
