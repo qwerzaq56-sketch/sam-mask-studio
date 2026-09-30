@@ -1338,11 +1338,11 @@ def test_sky_object_with_a_model_and_its_saved_settings(qapp, win, tmp_path):
     model = win.settings.sky_checkpoint = str(tmp_path / "sky.onnx")
     win.special_generate("all", 0, -1)
     assert "sky model is not there" in win.log_view.toPlainText()  # warn -> log in tests
-    keys = s.keys[:3]
+    keys = s.keys[1:4]  # (image 0 is all black: never sky, v0.4-p47)
     assert s.sky_missing(keys) == keys
     assert s.compute_sky(keys, TopHalf()) == 3 and not s.sky_missing(keys)
     win.images_panel.list.clearSelection()
-    for r in range(3):
+    for r in range(1, 4):
         win.images_panel.list.item(r).setSelected(True)
     open(model, "wb").close()  # a model file exists (not used: every picked frame is already cached)
     win.special_generate("selected", 0, -1)

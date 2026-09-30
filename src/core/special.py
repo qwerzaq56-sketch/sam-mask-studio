@@ -223,6 +223,18 @@ def refine_sky(prob: np.ndarray, rgb: np.ndarray, cell: int = 0, reg: float = 1e
     return cv2.bilateralFilter(q8, 9, 20, 10)
 
 
+def sky_maps(model, rgb: np.ndarray, dark: int = 32) -> Tuple[np.ndarray, np.ndarray]:
+    """(the network's sky map, the refined one) of an RGB image. Near-black pixels (every channel below
+    *dark*) are never sky: a fisheye's black corners and its dark rim came out as sky (10 left the rim,
+    32 cleared it on OSMO 360 footage), and left in they would also teach the refinement that black is sky."""
+    prob = model.probability(rgb)
+    black = rgb.max(axis=2) < dark
+    prob[black] = 0
+    refined = refine_sky(prob, rgb)
+    refined[black] = 0
+    return prob, refined
+
+
 def sky_mask(prob: np.ndarray, sp: Special) -> np.ndarray:
     """The sky from its map (already refined, when *refine* is on): above *threshold* %, only the
     pieces touching the top edge (*top_only*), then grown (+) or shrunk (-) by *grow* px."""
