@@ -364,6 +364,11 @@
 ### 56단계 · 👁을 맨 앞에, 단색 아이콘으로 (`v0.4-p56`, 피드백)
 - Objects 줄: **👁** · 체크박스 · 이름 · 🔗 · 🔒 · Points · × · ···(레이어 목록의 흔한 배치). 컬러 이모지 대신 직접 그린 단색 눈(글자색), 숨기면 흐리게.
 
+### 57단계 · 360 → Pinhole 뷰 배치 프리셋 (`v0.4-p57`, [`specs/08`](../specs/08-erp-to-pinhole.md) §8 리서치)
+- Export → New dataset → Pinhole views(360 원본)에 **배치** 목록: **COLMAP overlapping · 12**(기본, COLMAP 예제의 기본: 4 × −35 / 0 / 35, 위 줄 45° 돌림) ·
+  **Cubemap · 6** · **Horizon · 4**(위아래 뺌) · **Two rings · 16**(LichtFeld 360 플러그인 Medium) · **Custom**(전처럼 yaw × pitch 격자).
+- 리서치: 배치별 3DGS 품질 비교 자료는 없음. 연구는 360 그대로 학습이 더 낫다고 보지만 일반 학습기는 Pinhole이 필요. 겹침이 매칭에 유리.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
