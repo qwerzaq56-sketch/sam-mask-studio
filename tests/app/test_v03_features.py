@@ -277,7 +277,7 @@ def test_each_apply_adds_one_more_and_leaving_drops(qapp, win):
     win.a_key()  # Fill mode: A enters Paint mode with everything picked
     assert s.auto_mode == "paint" and p.mode_paint_btn.isChecked() and win.canvas.brush_mode
     assert (s.auto_taken() == s.auto_changes()[1]).all()
-    win.act_brush.trigger()  # switching tools drops the picks too
+    win.set_brush_tool("paint")  # switching tools (the Paint button) drops the picks too
     assert s.editing_frame().mask.sum() == area2 and s.auto_tool is None
     p.tool_btns["shrink"].click()  # a new auto tool starts in Fill mode (v0.4-p10)
     assert s.auto_mode == "fill" and p.mode_fill_btn.isChecked() and not win.canvas.brush_mode
@@ -372,7 +372,7 @@ def test_paint_mode_picks_parts_and_applies_them_on_exit(qapp, win):
     p.recompute_btn.click()  # Apply & Continue
     m = s.editing_frame().mask
     assert m[35, 35] and not m[25, 25]
-    win.act_brush.trigger()  # B = Paint
+    win.set_brush_tool("paint")  # the Paint button (D in an auto tool is Paint <-> Fill, v0.4-p49)
     assert win.canvas.brush_tool == "paint" and p.brush_btn.isChecked() and p.brush_btn.text() == "Paint"
 
 

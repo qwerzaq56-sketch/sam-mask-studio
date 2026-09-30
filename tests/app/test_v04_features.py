@@ -16,7 +16,7 @@ def test_work_bar_shows_frame_object_and_mode(qapp, win):
     assert "Mode: Points" in win.work_bar.text()  # E: points (v0.4-p45)
     win.act_brush.trigger()  # D: the brush
     assert "Mode: Paint" in win.work_bar.text()
-    win.act_brush.trigger()  # D: back to points
+    win.edit_key()  # E: back to points (v0.4-p49)
     text = win.work_bar.text()
     assert s.project.get(ids[0]).name in text and "(SAM2)" in text and "Mode: Points" in text
     win.set_brush_tool("fill_holes")
@@ -606,7 +606,10 @@ def test_edit_starts_with_the_brush(qapp, win):
     win.objects_panel.select_ids(ids)
     win.act_brush.trigger()  # D, not editing: edit with the brush
     assert win.session.editing == ids[0] and win.act_brush.isChecked() and win.canvas.brush_mode
-    win.edit_key()
+    win.edit_key()  # E in the brush: points, still editing (v0.4-p49)
+    assert win.session.editing == ids[0] and not win.act_brush.isChecked() and not win.canvas.brush_mode
+    win.act_brush.trigger()  # D: the brush again
+    win.act_brush.trigger()  # D in the brush: out of Edit
     assert win.session.editing is None and not win.act_brush.isChecked()
 
 
@@ -1565,4 +1568,29 @@ def test_unchecked_object_keeps_its_check_box(qapp, win):
               if tree.topLevelItem(i).data(0, ID_ROLE) == ids[0]]
     assert item.data(0, Qt.ItemDataRole.CheckStateRole) is not None  # the box is drawn
     assert item.checkState(0) == Qt.CheckState.Unchecked
+
+
+# --- p49: in an auto tool D = Paint <-> Fill, A = leave (cancel), F = apply (confirm); Q / H -------------
+
+
+def test_auto_tool_keys_a_d_f_and_view_keys(qapp, win):
+    ids = make_objects(win, 1)
+    s = win.session
+    p = win.properties_panel
+    win.toggle_edit(ids[0])
+    area0 = s.editing_frame().mask.sum()
+    p.amount.setValue(2)
+    p.tool_btns["grow"].click()
+    assert s.auto_mode == "fill"
+    win.act_brush.trigger()  # D: Paint mode
+    assert s.auto_mode == "paint" and p.mode_paint_btn.isChecked() and win.canvas.brush_mode
+    win.act_brush.trigger()  # D: back to Fill
+    assert s.auto_mode == "fill" and s.auto_tool == "grow" and not win.canvas.brush_mode
+    win.act_go_reference.trigger()  # F (mouse off the frame lists): apply and go on
+    assert s.editing_frame().mask.sum() > area0 and s.auto_tool == "grow"
+    area1 = s.editing_frame().mask.sum()
+    win.act_leave_auto.trigger()  # A: leave, the next result dropped
+    assert s.auto_tool is None and s.editing_frame().mask.sum() == area1 and s.editing == ids[0]
+    assert [a.toString() for a in win.act_solo.shortcuts()] == ["Q", "`"]
+    assert win.act_hide_masks.shortcut().toString() == "H" and win.act_pick_all.shortcut().toString() == "Shift+A"
 
