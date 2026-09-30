@@ -1594,3 +1594,29 @@ def test_auto_tool_keys_a_d_f_and_view_keys(qapp, win):
     assert [a.toString() for a in win.act_solo.shortcuts()] == ["Q", "`"]
     assert win.act_hide_masks.shortcut().toString() == "H" and win.act_pick_all.shortcut().toString() == "Shift+A"
 
+
+# --- p50: 👁 per Object (view only, apart from the Final Mask check box) ---------------------------------
+
+
+def test_eye_hides_an_object_on_the_image_only(qapp, win):
+    from src.app.objects_panel import EyeButton
+
+    ids = make_objects(win, 2)
+    s = win.session
+    op = win.objects_panel
+
+    def colors():
+        return sorted(o.color for o in win.canvas._overlays)
+
+    both = colors()
+    eye = op.tree.findChild(EyeButton, f"eye_{ids[0]}")
+    eye.click()
+    qapp.processEvents()
+    assert colors() == [s.project.get(ids[1]).color] and s.project.get(ids[0]).included  # still in the Final Mask
+    make_objects(win, 1)  # rows made again: it stays hidden
+    assert not op.tree.findChild(EyeButton, f"eye_{ids[0]}").shown
+    op.tree.findChild(EyeButton, f"eye_{ids[0]}").click()
+    qapp.processEvents()
+    assert len(colors()) == 3 and set(both) <= set(colors())
+    assert "▾" in op.special_btn.text()
+
