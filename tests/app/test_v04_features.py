@@ -1212,7 +1212,7 @@ def test_clear_masks_on_picked_frames(qapp, win):
     assert "Cleared 2 mask(s)" in win.log_view.toPlainText()
     win.undo()  # one step
     assert sorted(s.project.get(a).frames) == [k[0], k[2]]
-    assert win.act_clear_frames not in win.images_panel.frame_list.actions()  # p37: no right-click menu there
+    assert win.act_clear_frames in win.images_panel.frame_list.actions()  # right-click (back in p40)
 
 
 def test_copy_mask_to_picked_frames_add_or_replace(qapp, win):
@@ -1226,7 +1226,7 @@ def test_copy_mask_to_picked_frames_add_or_replace(qapp, win):
     win.go_to(0)
     win.objects_panel.select_ids([b])
     _pick(win, [0, 1, 3])
-    win.stamp_picked_frames()  # Add (default)
+    win.stamp_picked_frames()  # Replace (default since p40)
     o = s.project.get(b)
     src = o.mask(k[0])
     assert np.array_equal(o.mask(k[1]), src) and o.frame(k[1]).status == FrameStatus.PROPAGATED
@@ -1240,7 +1240,7 @@ def test_copy_mask_to_picked_frames_add_or_replace(qapp, win):
     win.go_to(3)  # picking frames opened one where A is not listed: A stays the Object to copy
     assert win.objects_panel.selected_ids() == []
     _pick(win, [0, 3])
-    win.choose = lambda title, text, groups, ok="OK": [1]  # Options: Replace
+    win.choose = lambda title, text, groups, ok="OK": [0]  # Options: Replace
     win.stamp_options()
     assert np.array_equal(s.project.get(a).mask(k[3]), s.project.get(a).mask(k[2]))
     assert "on " + k[2] in win.log_view.toPlainText()
@@ -1434,3 +1434,30 @@ def test_scene_export_follows_existing_names_and_keeps_camera_folders(qapp, win,
     colmap = ExportDialog(tmp_path / "x", win, check=lambda pat: check_export(s.project, pat),
                           scene=win.scene, target="colmap")
     assert colmap.options().name_pattern == "{name}.png"  # COLMAP reads a.jpg.png only
+
+
+# --- p40: the Frame List: middle click opens a frame and keeps the picks; right click keeps them ---------
+
+
+def test_middle_click_opens_a_frame_and_keeps_the_picks(qapp, win):
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtWidgets import QApplication
+
+    s = win.session
+    lst = win.images_panel.frame_list
+    lst.selectionModel().clearSelection()
+    for r in (1, 2):
+        win.images_panel.list.item(r).setSelected(True)
+
+    def press(button, row):
+        pos = QPointF(lst.visualRect(lst.model().index(row, 0)).center())
+        ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pos, pos, button, button,
+                         Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(lst.viewport(), ev)
+        qapp.processEvents()
+
+    press(Qt.MouseButton.MiddleButton, 4)
+    assert s.index == 4 and win.images_panel.selected_rows() == [1, 2]  # opened, picks kept
+    press(Qt.MouseButton.RightButton, 0)
+    assert s.index == 4 and win.images_panel.selected_rows() == [1, 2]  # right click changes nothing
