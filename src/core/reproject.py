@@ -110,6 +110,24 @@ def _fisheye(fx, fy, cx, cy, ks=()):
     return project
 
 
+def _thin_prism_fisheye(fx, fy, cx, cy, k1, k2, p1, p2, k3, k4, sx1, sy1):
+    """COLMAP's THIN_PRISM_FISHEYE (sensor/models/thin_prism.h): the equidistant fisheye point (uu, vv),
+    then radial (k1..k4 on r^2..r^8), tangential (p1, p2) and thin-prism (sx1, sy1) distortion of it."""
+    def project(_cam, rays):
+        x, y, z = rays[..., 0], rays[..., 1], rays[..., 2]
+        r = np.hypot(x, y)
+        theta = np.arctan2(r, z)
+        scale = np.where(r > 1e-12, theta / np.where(r > 1e-12, r, 1.0), 1.0 / np.where(z > 1e-12, z, 1.0))
+        u, v = x * scale, y * scale
+        u2, v2, uv = u * u, v * v, u * v
+        r2 = u2 + v2
+        radial = k1 * r2 + k2 * r2 ** 2 + k3 * r2 ** 3 + k4 * r2 ** 4
+        du = u * radial + 2 * p1 * uv + p2 * (r2 + 2 * u2) + sx1 * r2
+        dv = v * radial + 2 * p2 * uv + p1 * (r2 + 2 * v2) + sy1 * r2
+        return fx * (u + du) + cx, fy * (v + dv) + cy, theta < MAX_FISHEYE_ANGLE
+    return project
+
+
 def source_projection(cam: Camera) -> Optional[Callable]:
     """The projection of *cam*'s model, or None when it cannot be converted."""
     p, m = cam.params, cam.model
@@ -135,12 +153,16 @@ def source_projection(cam: Camera) -> Optional[Callable]:
         return _fisheye(p[0], p[0], p[1], p[2], (p[3], p[4]))
     if m == "OPENCV_FISHEYE":
         return _fisheye(p[0], p[1], p[2], p[3], tuple(p[4:8]))
+    if m == "THIN_PRISM_FISHEYE":
+        return _thin_prism_fisheye(*p[:12])
     return None
 
 
 CONVERTIBLE = ("EQUIRECTANGULAR", "SIMPLE_PINHOLE", "PINHOLE", "SIMPLE_RADIAL", "RADIAL", "OPENCV",
-               "SIMPLE_FISHEYE", "FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE")
-FISHEYES = ("SIMPLE_FISHEYE", "FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE")
+               "SIMPLE_FISHEYE", "FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE",
+               "THIN_PRISM_FISHEYE")
+FISHEYES = ("SIMPLE_FISHEYE", "FISHEYE", "SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE",
+            "THIN_PRISM_FISHEYE")
 
 
 def _focal(cam: Camera) -> float:
