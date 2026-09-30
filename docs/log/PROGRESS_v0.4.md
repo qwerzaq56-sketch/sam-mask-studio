@@ -339,6 +339,9 @@
 - COLMAP 소스(`sensor/models/thin_prism.h`)대로 추가: 등거리 피시아이 점에 방사(k1~k4) · 접선(p1, p2) · 얇은 프리즘(sx1, sy1) 왜곡.
   Pinhole / 360 / 듀얼 피시아이 이어 붙이기 모두 이 카메라를 받음.
 
+### 52단계 · 👁을 꺼도 Edit 중인 Object는 보임 (`v0.4-p52`, 피드백)
+- 👁을 끈 Object라도 지금 편집 중이면 이미지에 보임(편집을 끝내면 다시 숨음). 전체를 숨기는 Hide Masks(H)는 전처럼 편집 중인 것도 숨김.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
