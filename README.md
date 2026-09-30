@@ -33,7 +33,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 ## 사용법
 
-**사용 설명서: [`docs/manual/`](docs/manual/README.md)** (기준 `v0.4-p57`)
+**사용 설명서: [`docs/manual/`](docs/manual/README.md)** (기준 `v0.4-p58`)
 
 | 장 | 내용 |
 |---|---|
