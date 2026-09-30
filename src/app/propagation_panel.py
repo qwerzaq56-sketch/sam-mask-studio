@@ -140,7 +140,8 @@ class PropagationPanel(QWidget):
         self._form = form
 
         self.run_btn = QPushButton("Propagate Selected Objects")
-        self.run_btn.setToolTip("Every checked Object propagates from its mask on the reference image")
+        self.run_btn.setToolTip("The selected Objects propagate from their masks on the reference image "
+                                "(none selected: every checked Object)")
         self.run_btn.clicked.connect(self._run)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setToolTip("Stop and keep the frames propagated so far")

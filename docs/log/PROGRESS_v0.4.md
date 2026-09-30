@@ -246,6 +246,12 @@
 - 잠금은 결정대로 삭제만 막으므로, 잠긴 Object의 마스크도 비워짐.
 - 코드: `Project.clear_frames`, `Session.stamp_frames / clear_frames`, `ObjectsPanel.last_selected`.
 
+### 35단계 · 전파는 선택한 Object만 (`v0.4-p35`, 피드백)
+- 버튼 이름은 "Propagate Selected Objects"인데 실제로는 체크된 Object가 모두 전파되고 있었음. 그래서 선택한 Object는 대상 프레임에
+  마스크가 없는데도, 다른 Object의 마스크 때문에 덮어쓰기 경고가 떴음.
+- 이제 **선택한 Object**(기준 ◎에 마스크가 있는 것)만 전파하고, 덮어쓰기 경고도 그 Object들만 봄. 아무것도 선택 안 했으면 전처럼 체크된 전체.
+- 다른 프레임으로 가서 선택 줄이 목록에서 빠져도 마지막 선택이 유지됨(34단계와 같음). 빈 곳을 클릭해 선택을 풀면 잊음.
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

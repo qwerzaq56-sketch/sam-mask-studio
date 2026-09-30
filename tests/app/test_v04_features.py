@@ -1250,3 +1250,29 @@ def test_copy_mask_to_picked_frames_add_or_replace(qapp, win):
     before = s.project.revision
     win.stamp_picked_frames()
     assert s.project.revision == before and "Pick the frames to copy to" in win.log_view.toPlainText()
+
+
+# --- p35: propagation takes the selected Objects (the overwrite check only looks at them) -------------
+
+
+def test_propagation_warns_only_about_the_selected_objects(qapp, win):
+    from src.core.propagation import Direction
+
+    a, b = _two_linked(win)  # A on 0 and 2, B on 0 and 3
+    s = win.session
+    k = s.keys
+    win.go_to(0)
+    asked = []
+    win.ask = lambda title, text, ok: asked.append(text) or False  # answer "no": nothing runs
+    win.objects_panel.select_ids([a])
+    win.propagate(0, 3, Direction.FORWARD)
+    assert asked and k[2] in asked[0] and k[3] not in asked[0]  # B's mask on 3 is not A's business
+    asked.clear()
+    win.objects_panel.select_ids([b])
+    win.propagate(0, 3, Direction.FORWARD)
+    assert k[3] in asked[0] and k[2] not in asked[0]
+    asked.clear()
+    win.objects_panel.select_ids([])
+    win.objects_panel.last_selected = []  # none selected: every checked Object, as before
+    win.propagate(0, 3, Direction.FORWARD)
+    assert k[2] in asked[0] and k[3] in asked[0]

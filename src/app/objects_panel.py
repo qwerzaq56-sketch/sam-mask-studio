@@ -430,6 +430,7 @@ class ObjectsPanel(QWidget):
             and event.type() == QEvent.Type.MouseButtonPress
             and self.tree.itemAt(event.position().toPoint()) is None
         ):
+            self.last_selected = []  # cleared on purpose: nothing is remembered
             self.tree.clearSelection()
         return super().eventFilter(obj, event)
 
