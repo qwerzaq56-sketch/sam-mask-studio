@@ -1,5 +1,7 @@
 # SAM Mask Studio v0.4 진행 현황
 
+**v0.5.0 릴리스 (2026-10-01):** 8~58단계(`v0.4-p8` ~ `v0.4-p58`)와 사용 설명서(`docs/manual/`)가 `main`에 병합되고 `v0.5.0` 태그가 붙었습니다. 안정판 실행기와 포터블도 v0.5.0입니다. 릴리스 직전 수정: F1의 `D` 설명(오토 툴에서 Paint, 다시 = 전체 선택 / 해제), README · 설명서에 "SAM3 검출은 NVIDIA GPU 필요".
+
 **v0.4.0 릴리스 (2026-09-29):** 아래 1~7단계(`v0.4-p1` ~ `v0.4-p7.1`)가 `main`에 병합되고 `v0.4.0` 태그가 붙었습니다. 안정판 실행기와 포터블(`H:\Dev\Masking\dist\SAMMaskStudio`)도 v0.4.0입니다.
 
 외부(GPT) UX 리뷰 중 코드와 대조해서 타당했던 항목만 반영합니다. v0.3 기록: [`PROGRESS_v0.3.md`](PROGRESS_v0.3.md)
@@ -8,7 +10,7 @@
 
 - 브랜치 `dev`에서 단계별 브랜치(`feat/v04-pN-…`)로 작업 → `--no-ff` 병합 → 태그 `v0.4-pN`.
 - 되돌리기: 단계 전체 `git revert -m 1 <병합 커밋>`
-- 실행: `SAM Mask Studio (dev).bat` = 최신 dev, `SAM Mask Studio.bat` = 안정판 v0.4.0 (이전 안정판은 태그 `v0.3.0`)
+- 실행: `SAM Mask Studio (dev).bat` = 최신 dev, `SAM Mask Studio.bat` = 안정판 v0.5.0 (이전 안정판은 태그 `v0.4.0`, `v0.3.0`)
 
 ## 완료
 

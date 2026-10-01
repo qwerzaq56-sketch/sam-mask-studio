@@ -600,7 +600,7 @@ SHORTCUTS = (
         ("E", "Edit with points: start editing the selected Object; from the brush / an auto tool: back to points; "
               "points again: finish editing"),
         ("D", "Edit with the brush: start editing (the selected Object); from points: the brush; "
-              "the brush again: finish editing; in an auto tool: Paint <-> Fill"),
+              "the brush again: finish editing; in an auto tool: Paint mode (in Paint: pick all / none)"),
         ("Delete", "Delete the selected point, else the selected Objects (no question: Ctrl+Z; 🔒 locked ones stay)"),
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),
         ("Ctrl+I", "While editing: invert the mask on this image (inside the region, if any)"),

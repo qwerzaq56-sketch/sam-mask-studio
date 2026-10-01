@@ -100,6 +100,7 @@ File → **Settings…** 에서 모델 파일 위치를 정합니다.
 
 - 설정은 앱 폴더의 `config.local.json`에 저장됩니다.
 - SAM2 tiny와 SAM3를 함께 쓰면 VRAM을 약 4 GB 씁니다(8 GB GPU에서 개발 · 시험).
+- GPU가 없으면 SAM2(클릭, 전파)와 Sky는 CPU로 느리게 동작하지만, **SAM3 글자 검출(Detect / Batch)은 NVIDIA GPU가 있어야** 합니다. 이때는 **+ New Object from Points** (`N`)로 Object를 만드세요.
 
 ---
 

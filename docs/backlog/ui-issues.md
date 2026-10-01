@@ -12,6 +12,10 @@
 
 ## 완료
 
+### `v0.5.0` (2026-10-01)
+- F1 단축키 창의 `D` 줄이 p49 설명("Paint <-> Fill")이었음 → "in an auto tool: Paint mode (in Paint: pick all / none)". 독스트링도.
+- SAM3가 CPU에서 실패하는 것은 코드는 그대로, README와 설명서 A3에 "SAM3 검출은 NVIDIA GPU 필요"로 안내(사용자 메모의 항목은 남김).
+
 ### `v0.4-p7.1` (2026-09-29)
 - 20. 좁은 Frame List에서 개수 요약(`★3 ✓9 ⚠0 ✕0`)이 두 줄로 나와 불편함 → 이름을 접은 좁은 모드에서는 목록 아래 요약을 숨김(Frames 줄 오른쪽 요약은 그대로). 넓을 때는 한 줄.
 
@@ -52,4 +56,3 @@
 <!-- 여기에 한 줄씩: - 무엇이 / 어디서 / (캡처 파일 이름) -->
 - Export 창 New dataset → Pinhole views의 배치 설명(목록 툴팁과 아래 회색 글)만 한국어(`COLMAP panorama SfM 방식 기반의 …`), 나머지 UI는 영어 / `src/core/reproject.py` `VIEW_LAYOUTS`의 purpose, `dialogs.py` Custom 툴팁 (설명서 그림 `docs/manual/img/03-convert-options.png`, 2026-10-01)
 - GPU 없이(CPU) 실행하면 SAM2는 동작하지만 **SAM3 Detect가 실패**: `RuntimeError: No CUDA GPUs are available`. `vendor/sam3/sam3/model/position_encoding.py`의 `torch.zeros(..., device="cuda")` 고정. README와 포터블 안내는 "GPU가 없으면 CPU로 동작" / 실행: `CUDA_VISIBLE_DEVICES=-1` (설명서 그림 작업 중 발견, 2026-10-01)
-- F1 단축키 창의 `D` 줄이 아직 "in an auto tool: Paint <-> Fill"(p49). p55부터는 오토 툴에서 D = Paint(다시 = 전체 선택 / 해제), Fill은 S. 아래 `S / D` 줄과 어긋남 / `src/app/dialogs.py` `SHORTCUTS` (설명서 작업 중 발견, 2026-09-30)
