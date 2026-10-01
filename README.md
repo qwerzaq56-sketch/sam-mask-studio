@@ -73,6 +73,9 @@ $env:SAM2_BUILD_CUDA = "0"                              # SAM2 CUDA 확장은 �
 
 설치 없이 다른 Windows PC에서 쓰는 폴더를 만듭니다(파이썬, 패키지, 모델, VC++ 런타임 포함, 약 7 GB).
 
+> **받아서 쓰기**: v0.5.0 포터블 zip은 [Google Drive 폴더](https://drive.google.com/drive/folders/19-ovaNTtmeQ8GgGuD6sL7aspJ6b1hjiJ)에 있습니다.
+> SAM3 가중치가 들어 있어 공개하지 않으니, 링크에서 **액세스 요청**을 보내 주세요(승인 후 다운로드, 개인 사용 목적만).
+
 ```powershell
 .venv\Scripts\python.exe tools\make_portable.py <출력 폴더> [--force]
 ```
