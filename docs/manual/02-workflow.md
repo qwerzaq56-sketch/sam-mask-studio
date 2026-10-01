@@ -9,10 +9,14 @@
 B1 장면 열기 → B2 Object 만들기 → B3 다듬기 → B4 전파 → B5 검수 → B6 Export
 ```
 
-**예시 장면** `plaza/`: COLMAP으로 포즈를 낸 장면입니다. `images/`에 사진 40장, `sparse/0/`에 모델이 있고, 사람 두세 명이 지나갑니다.
+**예시 장면** `bedroom/`: `images/`에 사진 40장, `sparse/0/`에 COLMAP 모델이 있는 장면이고, 아이 두 명이 침대 위에서 움직입니다.
+실제 촬영본에서는 지나가는 사람이 이 자리에 들어갑니다.
+
+> 그림의 이미지는 SAM2 저장소의 예제 영상 `bedroom`(Apache 2.0, 얼굴은 원본에서 흐림 처리됨)에서 5장마다 한 장을 뽑은 것입니다.
+> COLMAP 모델은 그림을 위해 만든 것이라 포즈와 3D 점이 실제 값이 아닙니다. 모델은 GPU 없이(CPU) 돌렸습니다.
 
 ```text
-plaza/
+bedroom/
 ├─ images/      0001.jpg … 0040.jpg
 └─ sparse/0/    cameras.bin  images.bin  points3D.bin
 ```
@@ -26,17 +30,18 @@ plaza/
 **조작**
 
 1. File → **Open Folder…** (`Ctrl+O`).
-2. **장면 루트**(`plaza/`)를 고릅니다. 그 안의 `images/`를 골라도 됩니다.
+2. **장면 루트**(`bedroom/`)를 고릅니다. 그 안의 `images/`를 골라도 됩니다.
 
 **확인할 것**
 
 - **Logs** 탭에 COLMAP 장면 요약이 나옵니다: 모델의 이미지 수, 카메라 수와 카메라 모델, 3D 점 수.
   모델과 `images/`가 맞지 않는 이미지가 있으면 ⚠ 로그에 앞의 몇 개 이름이 나옵니다.
 - Frame List에 40줄, Frames 줄에 썸네일 40개가 보입니다. 목록의 숫자는 이미지 ID(1부터)입니다.
-- 장면 **옆**에 작업 파일 폴더 `plaza.sms/`가 생깁니다. 작업은 여기에 자동 저장되고(`Ctrl+S`로 바로 저장도 가능), 다음에 장면을 열면 이어서 합니다.
+- 장면 **옆**에 작업 파일 폴더 `bedroom.sms/`가 생깁니다. 작업은 여기에 자동 저장되고(`Ctrl+S`로 바로 저장도 가능), 다음에 장면을 열면 이어서 합니다.
   학습기가 장면 폴더를 통째로 읽기 때문에 작업 파일은 장면 안에 두지 않습니다.
 
-> 📷 `img/02-open-log.png` — 장면을 연 직후, Logs 탭의 장면 요약과 Frame List
+![장면을 연 직후: Logs 탭의 장면 요약(이미지 수, 카메라, 3D 점)과 Frame List](img/02-open-log.png)
+*장면을 연 직후: Logs 탭의 장면 요약(이미지 수, 카메라, 3D 점)과 Frame List*
 
 - 장면에 `masks/`가 이미 있으면 Object로 불러올지 묻는 창이 뜹니다: [C4](03-recipes.md#c4-이미-있는-마스크-고치기).
 - `images/` 아래 `cam0/`, `cam1/` 같은 하위 폴더의 이미지도 열립니다: [D5](04-reference.md#d5-colmap-장면--특수-object).
@@ -67,8 +72,9 @@ plaza/
 - 이 프레임에 `★`, 칸에 주황 테두리 `◎`가 보입니다.
 
 > 📷 `img/02-detect-candidates.png` — `person`으로 찾은 후보들, Select on Image가 켜진 캔버스
->
-> 📷 `img/02-objects-added.png` — Add Each 뒤의 Objects 목록
+
+![Object 두 개가 생긴 Objects 목록(아래에 각 Object의 Variant 행)](img/02-objects-added.png)
+*Object 두 개가 생긴 Objects 목록(아래에 각 Object의 Variant 행)*
 
 **다른 방법**
 
@@ -103,7 +109,8 @@ plaza/
 
 한 번의 클릭으로 끝내고 싶으면: `Ctrl`+클릭 = 그 자리의 조각을 **더하기**, `Ctrl`+우클릭 = **빼기**(Edit Layer에 쌓임).
 
-> 📷 `img/02-points-layers.png` — Points 트리(Original, Layer 1 (+), Layer 2 (−))와 캔버스
+![Points 트리: Original(박스)과 Layer 1 (+)의 + 점(아이) · − 점(침대)](img/02-points-layers.png)
+*Points 트리: Original(박스)과 Layer 1 (+)의 + 점(아이) · − 점(침대)*
 
 ### 브러쉬와 오토 툴: Edit Layer
 
@@ -118,7 +125,8 @@ plaza/
   - 설정값(Max size, Amount, Max gap …)은 **Settings** 칸에 있습니다.
 - **Apply Layer**: 손질을 굳혀 기본 마스크로 만듭니다. **Delete Layer**: 손질을 전부 버립니다.
 
-> 📷 `img/02-auto-tool-fill.png` — Fill Holes의 Fill 모드 미리보기(마젠타 / 보라)
+![Grow의 Fill 모드 미리보기: 마젠타 = 더해질 곳, 아래 Will apply에 바뀔 픽셀 수](img/02-auto-tool-fill.png)
+*Grow의 Fill 모드 미리보기: 마젠타 = 더해질 곳, 아래 Will apply에 바뀔 픽셀 수*
 
 **확인할 것**
 
@@ -150,9 +158,11 @@ plaza/
 
 - Frame List에 `✓`(전파됨), `⚠`(면적 급변), `✕`(빈 마스크)가 붙고 개수 요약이 바뀝니다.
 
-> 📷 `img/02-propagation-tab.png` — Propagation 탭(Reference, Scope, Direction)
->
-> 📷 `img/02-propagating-live.png` — 전파 중 캔버스와 진행 목록
+![Propagation 탭(Reference, Scope, Direction)](img/02-propagation-tab.png)
+*Propagation 탭(Reference, Scope, Direction)*
+
+![전파가 끝난 Propagation 탭: 방향별 막대, Objects / Frames 결과, Frame List의 ✓ ⚠](img/02-propagating-live.png)
+*전파가 끝난 Propagation 탭: 방향별 막대, Objects / Frames 결과, Frame List의 ✓ ⚠*
 
 ## B5. 검수
 
@@ -180,9 +190,11 @@ plaza/
 
 - 개수 요약의 `⚠` `✕`가 0이거나, 남은 것은 확인하고 괜찮다고 본 것뿐입니다.
 
-> 📷 `img/02-problem-frames.png` — ⚠ 프레임으로 이동한 모습(Frame List 색)
->
-> 📷 `img/02-mask-preview.png` — Mask Preview(흑백)
+![다음 문제 프레임 키로 ⚠ 프레임(19)에 온 모습: Frame List와 Frames 줄의 주황 ⚠](img/02-problem-frames.png)
+*`]`로 ⚠ 프레임(19)에 온 모습: Frame List와 Frames 줄의 주황 ⚠*
+
+![Mask Preview: Final Mask를 흑백으로(여기서는 흰색 = Object)](img/02-mask-preview.png)
+*Mask Preview: Final Mask를 흑백으로(여기서는 흰색 = Object)*
 
 ## B6. Export: Spirula Studio · Brush
 
@@ -201,7 +213,7 @@ plaza/
 **결과**
 
 ```text
-plaza/
+bedroom/
 ├─ images/
 ├─ sparse/0/
 ├─ masks/                        ← 새로 씀: 0001.jpg.png … 0040.jpg.png
@@ -217,9 +229,11 @@ plaza/
 - **Spirula Studio**: `images/` 옆의 `masks/`를 그대로 씁니다(0 = 무시). 마스크가 있으면 Spirula가 자체 AI 마스킹을 하지 않습니다.
 - **Brush**: 같은 `masks/`를 스스로 찾아 읽습니다(검정 = 무시, 흰색 = 학습). **For**를 **Brush**로 바꿔도 쓰이는 파일은 같고, 안내 문구와 검사만 달라집니다.
 
-> 📷 `img/02-export-dialog.png` — For = Spirula Studio, Output = Into the scene, 검사 목록
->
-> 📷 `img/02-export-result-folder.png` — 탐색기에서 본 `masks/`와 흑백 마스크 한 장
+![For = Spirula Studio, Output = Into the scene, 검사 목록](img/02-export-dialog.png)
+*For = Spirula Studio, Output = Into the scene, 검사 목록*
+
+![한 프레임과 그 프레임의 마스크(masks/0013.jpg.png): 사람 = 검정](img/02-export-result.png)
+*한 프레임과 그 프레임의 마스크(`masks/0013.jpg.png`): 사람 = 검정*
 
 **이어서**
 

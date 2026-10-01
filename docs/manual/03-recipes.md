@@ -59,7 +59,8 @@ B장의 흐름을 안다고 보고, 상황별로 짧게 적습니다. 각 레시
   3. 빼려면 레이어를 **+ / −**로 빼기로 바꾸거나, `Ctrl`+우클릭으로 조각을 뺍니다. 가장자리는 브러쉬로.
 - **확인**: 불러온 프레임은 `✓`(★ 아님)입니다. 고친 프레임에는 `★`가 붙습니다.
 
-> 📷 `img/03-import-masks.png` — 장면을 열 때 뜨는 마스크 불러오기 창
+![장면을 열 때 뜨는 마스크 불러오기 창](img/03-import-masks.png)
+*장면을 열 때 뜨는 마스크 불러오기 창*
 
 ## C5. 움직이지 않는 물체를 여러 프레임에
 
@@ -117,7 +118,8 @@ B장의 흐름을 안다고 보고, 상황별로 짧게 적습니다. 각 레시
   어느 배치가 학습 품질이 좋은지 확인된 자료는 없습니다. 뷰가 많을수록 덮는 범위와 겹침이 늘지만 이미지 수도 늘어납니다.
   같은 장면으로 360 그대로와 Pinhole을 둘 다 만들어 비교해 보길 권합니다.
 
-> 📷 `img/03-convert-options.png` — Export 창의 New dataset + Pinhole views + 배치 목록
+![Export 창의 New dataset + Pinhole views + 배치 목록](img/03-convert-options.png)
+*Export 창의 New dataset + Pinhole views + 배치 목록*
 
 ## C9. 피시아이 → Pinhole / 360
 
