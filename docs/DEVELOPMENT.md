@@ -323,6 +323,22 @@ audit on a real 123-image folder (tags `v0.4-p1` … `v0.4-p7.1`; details in `PR
   empty states hidden; side docks start within ~55 % of a small window; natural-size dock title
   buttons, compact title when the Frame List is folded.
 
+**v0.5.0 released** (2026-10-01): tags `v0.4-p8` … `v0.4-p58` (details in `docs/log/PROGRESS_v0.4.md`) and the
+user manual (`docs/manual/`, figures made on CPU from SAM2's `bedroom` demo).
+- Keys and menus: every key is a menu QAction; hover-aware `W A S D`; Edit's tools on keys (E points, D brush; auto
+  tool A cancel · S Fill · D Paint · F Apply & Close · G Apply & Continue); Mask Preview (V / X / hold Z); Solo (Q),
+  Hide Masks (H), a per-Object eye; `,` / `.` keyframes, `F` / `Enter` reference.
+- Objects: lock, Move / Copy A → B and Merge with ⚙ options, Copy / Clear Masks on Picked Frames, propagation of the
+  selected Objects only, live propagation with Stop / Resume / Cancel (keeps results), Edit across frames,
+  `Ctrl+I` / `Ctrl+Backspace`, Ctrl+click pieces, point layers inside an Object (Original + add / subtract layers),
+  Close Gaps.
+- COLMAP: scenes (`images/` + `sparse/`), sub-folder images, mask folders as Objects; Export presets per trainer
+  (Brush, LichtFeld, Spirula, Postshot, COLMAP) with backups and name-style following; mask sets; ⊘ frames and a
+  new dataset (hard links, filtered model); reprojection ERP / fisheye / dual fisheye → pinhole views or 360 with
+  view layouts and a preview; export progress.
+- Special Objects: Sky (skyseg ONNX + guided-filter refine) and Fisheye Lens Edge.
+- Known: SAM3 needs CUDA (vendor code builds on `cuda`); without a GPU only SAM2 and Sky run (on CPU).
+
 ### Remaining work
 
 1. P6 — COLMAP: read a COLMAP model, load its masks as Objects, write edits back to the `.bin`

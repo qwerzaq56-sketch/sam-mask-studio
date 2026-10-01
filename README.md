@@ -6,7 +6,7 @@
 <p align="center"><i>Object-based masking tool for image sequences and 3DGS / COLMAP datasets:
 SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carries masks across frames.</i></p>
 
-현재 버전: **v0.4.0** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
+현재 버전: **v0.5.0** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
 
 문서 지도와 정리 원칙: [`docs/README.md`](docs/README.md)
 
@@ -33,7 +33,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 
 ## 사용법
 
-**사용 설명서: [`docs/manual/`](docs/manual/README.md)** (기준 `v0.4-p58`)
+**사용 설명서: [`docs/manual/`](docs/manual/README.md)** (기준 `v0.5.0`)
 
 | 장 | 내용 |
 |---|---|
@@ -77,7 +77,7 @@ $env:SAM2_BUILD_CUDA = "0"                              # SAM2 CUDA 확장은 �
 .venv\Scripts\python.exe tools\make_portable.py <출력 폴더> [--force]
 ```
 
-대상 PC는 Windows 10/11 64비트면 되고, GPU로 돌리려면 NVIDIA + CUDA 13 지원 드라이버가 필요합니다(없으면 CPU로 동작).
+대상 PC는 Windows 10/11 64비트면 되고, GPU로 돌리려면 NVIDIA + CUDA 13 지원 드라이버가 필요합니다. GPU가 없으면 SAM2(클릭, 전파)와 Sky는 CPU로 동작하지만, **SAM3 글자 검출(Detect / Batch)은 NVIDIA GPU가 있어야** 합니다.
 결과 폴더의 `SAM Mask Studio.bat`로 실행합니다. SAM3 가중치는 사용 조건상 개인 PC 간 사용 용도로만 옮기세요.
 
 ## 개발

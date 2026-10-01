@@ -1498,7 +1498,7 @@ class MainWindow(QMainWindow):
 
     def brush_key(self, _on: bool = True) -> None:
         """D, Edit's brush tool (E is its points): not editing, edit the selected Object with the brush;
-        points -> brush; with an auto tool, its Paint <-> Fill mode; the brush again -> out of Edit."""
+        points -> brush; with an auto tool, its Paint mode (in Paint: pick all / none); the brush again -> out of Edit."""
         s = self.session
         if s.editing is None:
             ids = self.objects_panel.selected_ids()

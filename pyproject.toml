@@ -1,6 +1,6 @@
 [project]
 name = "sam-mask-studio"
-version = "0.4.0"
+version = "0.5.0"
 description = "Object-based masking tool: SAM3 finds, SAM2 cuts and refines, SAM2 video propagates"
 requires-python = ">=3.12"
 dependencies = [
