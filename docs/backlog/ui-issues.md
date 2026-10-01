@@ -50,4 +50,5 @@
 
 ## 사용자 메모
 <!-- 여기에 한 줄씩: - 무엇이 / 어디서 / (캡처 파일 이름) -->
+- GPU 없이(CPU) 실행하면 SAM2는 동작하지만 **SAM3 Detect가 실패**: `RuntimeError: No CUDA GPUs are available`. `vendor/sam3/sam3/model/position_encoding.py`의 `torch.zeros(..., device="cuda")` 고정. README와 포터블 안내는 "GPU가 없으면 CPU로 동작" / 실행: `CUDA_VISIBLE_DEVICES=-1` (설명서 그림 작업 중 발견, 2026-10-01)
 - F1 단축키 창의 `D` 줄이 아직 "in an auto tool: Paint <-> Fill"(p49). p55부터는 오토 툴에서 D = Paint(다시 = 전체 선택 / 해제), Fill은 S. 아래 `S / D` 줄과 어긋남 / `src/app/dialogs.py` `SHORTCUTS` (설명서 작업 중 발견, 2026-09-30)
