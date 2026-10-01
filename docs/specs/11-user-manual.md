@@ -178,6 +178,8 @@ docs/manual/
   [C](https://app.notion.com/p/3ebeaf5e52f581a69870e5446432e485) · [D](https://app.notion.com/p/3ebeaf5e52f581a1923cced93b79670a) · [E](https://app.notion.com/p/3ebeaf5e52f581048508ccf00ed8709a).
 - 옮긴 방법: 저장소 Markdown을 Notion Markdown으로 바꿈(표 → `<table>`, 📷 → 회색 callout, 줄바꿈으로 나뉜 문단은 한 줄로, 장 사이 링크 → Notion 페이지, 저장소 파일 링크 → GitHub `dev`).
   장마다 `replace_content`로 통째로 바꾸므로, 저장소를 고친 뒤 같은 방법으로 다시 옮기면 됨. 장 안의 절 앵커 링크는 페이지 링크로 바뀜.
+- 그림(2026-10-01): Notion에는 GitHub `dev`의 raw 주소(`raw.githubusercontent.com/.../docs/manual/img/…`)로 넣음(저장소가 공개). 저장소의 기울임 캡션 줄은 빼고 이미지 캡션만.
+- 주의: Notion Markdown은 `** + **`, `**+ X**`처럼 공백 앞뒤의 `+`를 목록 기호로 바꿔 `  •`로 저장함(`\+`도 같음). 옮길 때 그 `+`는 전각 `＋`로.
 
 ### 5.2 예시 데이터 후보 (2026-09-30 조사, 사용자 확인 전)
 
@@ -196,7 +198,9 @@ docs/manual/
 5. 주 시나리오: **사람 지우기**. Export는 Spirula 메인, Brush 서브, LichtFeld 본편 제외. 360 / 듀얼 피시아이는 레시피로.
 6. E / D / A / F: **지금 키로 쓰고 "바뀔 수 있음" 표시**. keymap.md 그림도 고침.
 
-남은 것: 예시 데이터 확정(§5.2) → 스크린샷(§0 5단계).
+그림(2026-10-01): **SAM2 예제 영상 `bedroom`**(Apache 2.0, 저장소 `vendor/sam2/notebooks/videos/bedroom`, 얼굴 흐림)으로 정함("제일 무난한 것"). 40장 + 그림용 COLMAP 모델.
+학습 중이라 GPU를 쓰지 않음: `CUDA_VISIBLE_DEVICES=-1`로 CPU 실행, SAM3는 CUDA 고정이라 CPU에서 안 돌아 Object는 SAM2 박스로 만듦.
+남은 그림: `02-detect-candidates`(SAM3, GPU 필요), `03-sky-special`(실외 이미지), `03-lens-edge`(피시아이), `01-concepts`(개념도).
 
 ## 7. 주의
 
