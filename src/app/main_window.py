@@ -68,7 +68,8 @@ from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
 from src.core.storage import check_export, default_export_dir, full_mask
-from src.logging_config import get_logger
+from src.logging_config import get_logger, log_file
+from src.version import app_version
 
 logger = get_logger(__name__)
 
@@ -138,7 +139,7 @@ class MainWindow(QMainWindow):
         self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
         self._loading_models = False
 
-        self.setWindowTitle("SAM Mask Studio")
+        self.setWindowTitle(f"SAM Mask Studio {app_version()}")
         self.resize(1500, 950)
         self._build_ui()
         self._build_actions()
@@ -467,6 +468,7 @@ class MainWindow(QMainWindow):
                 "The source scene is never changed",
         )
         self.act_shortcuts = self._action("&Keyboard Shortcuts", self.show_shortcuts, ["F1"])
+        self.act_about = self._action("&About SAM Mask Studio", self.show_about)
 
         # --- the menu bar: every command, with its key -----------------------------------
         mb = self.menuBar()
@@ -519,6 +521,8 @@ class MainWindow(QMainWindow):
         self._hint(m, "Mouse over the image: Objects", "W / S")
         m = mb.addMenu("&Help")
         m.addAction(self.act_shortcuts)
+        m.addSeparator()
+        m.addAction(self.act_about)
 
         # --- the toolbar: only what is toggled all the time while working ---------------------
         tb = QToolBar("Main")
@@ -918,7 +922,7 @@ class MainWindow(QMainWindow):
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.scene = find_scene(folder)
-        self.setWindowTitle(f"SAM Mask Studio — {folder}" + (" (COLMAP scene)" if self.scene else ""))
+        self.setWindowTitle(f"SAM Mask Studio {app_version()} — {folder}" + (" (COLMAP scene)" if self.scene else ""))
         loaded = len(self.session.project.objects)
         self.log(f"Opened {folder} ({n} images" + (f", {loaded} saved Objects)" if loaded else ")"))
         if self.scene is not None:
@@ -1208,6 +1212,16 @@ class MainWindow(QMainWindow):
 
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
+
+    def show_about(self) -> None:
+        """Help > About: the version (a dev build shows the commits after the release tag) and the log file."""
+        QMessageBox.about(
+            self, "About SAM Mask Studio",
+            f"<b>SAM Mask Studio {html.escape(app_version())}</b><br><br>"
+            "SAM3 finds, SAM2 cuts and refines, SAM2 video propagates.<br>"
+            "<a href='https://github.com/qwerzaq56-sketch/sam-mask-studio'>github.com/qwerzaq56-sketch/sam-mask-studio</a>"
+            f"<br><br>Log: {html.escape(str(log_file()))}",
+        )
 
     def closeEvent(self, event):
         if self._prop_worker is not None and self._prop_worker.isRunning():

@@ -1,6 +1,10 @@
 """Build a portable SAM Mask Studio folder that runs on another Windows PC without installing anything.
 
-    .venv\\Scripts\\python.exe tools\\make_portable.py H:\\Dev\\Masking\\dist\\SAMMaskStudio
+    .venv\\Scripts\\python.exe tools\\make_portable.py H:\\Dev\\Masking\\dist\\SAMMaskStudio --ref v0.5.1 --force --zip
+
+``--zip`` also writes ``<out>-<version>-portable.zip`` next to the folder (root folder inside: the folder's name).
+Model weights and already-compressed files are stored as they are (deflate barely shrinks them and costs most of the
+time); the rest is deflated at a fast level.
 
 Layout of the result (all paths inside are relative, so the folder can be copied anywhere):
 
@@ -27,6 +31,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -44,6 +50,9 @@ VC_DLLS = (
     "vcomp140.dll",
 )
 SKIP_SITE = {"_virtualenv.pth", "_virtualenv.py", "__pycache__"}
+# Stored, not deflated, in --zip: weights (float noise to deflate) and files that are compressed already.
+STORE_SUFFIXES = {".pt", ".pth", ".safetensors", ".onnx", ".bin", ".ckpt",
+                  ".zip", ".whl", ".gz", ".bz2", ".xz", ".7z", ".png", ".jpg", ".jpeg", ".webp", ".mp4"}
 
 LAUNCHER = r"""@echo off
 rem SAM Mask Studio (portable). Everything it needs is in this folder.
@@ -98,11 +107,33 @@ def link_or_copy(src: Path, dst: Path) -> str:
         return "copied"
 
 
+def zip_folder(folder: Path, dest: Path, level: int = 1) -> int:
+    """``folder`` into ``dest`` under the folder's own name; weights / compressed files stored, the rest deflated.
+    Written to ``<dest>.part`` first, so a stopped run never leaves a zip that looks finished. Returns the file count."""
+    part = dest.with_name(dest.name + ".part")
+    files = sorted(p for p in folder.rglob("*") if p.is_file())
+    total = sum(p.stat().st_size for p in files) or 1
+    done, step, t0 = 0, total // 10, time.time()
+    with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED, compresslevel=level, allowZip64=True) as z:
+        for p in files:
+            arc = (Path(folder.name) / p.relative_to(folder)).as_posix()
+            if p.suffix.lower() in STORE_SUFFIXES:
+                z.write(p, arc, compress_type=zipfile.ZIP_STORED)
+            else:
+                z.write(p, arc)
+            before, done = done, done + p.stat().st_size
+            if step and before // step != done // step:
+                log(f"    zip {100 * done // total}% ({time.time() - t0:.0f}s)")
+    part.replace(dest)
+    return len(files)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("out", type=Path)
     ap.add_argument("--force", action="store_true", help="replace an existing output folder")
     ap.add_argument("--ref", default="HEAD", help="the git commit or tag to package (default HEAD)")
+    ap.add_argument("--zip", action="store_true", help="also write <out>-<version>-portable.zip next to the folder")
     args = ap.parse_args()
     out: Path = args.out
     if out.exists():
@@ -112,7 +143,7 @@ def main() -> int:
         shutil.rmtree(out)
 
     version = subprocess.run(
-        ["git", "-C", str(REPO), "describe", "--tags", "--always", args.ref], capture_output=True, text=True, check=True
+        ["git", "-C", str(REPO), "describe", "--tags", "--always", "--match", "v[0-9]*.[0-9]*.[0-9]*", args.ref], capture_output=True, text=True, check=True
     ).stdout.strip()
 
     log("1/6 Python")
@@ -166,6 +197,12 @@ def main() -> int:
         README.format(version=version, torch=torch_version).replace("\n", "\r\n"), encoding="utf-8-sig"
     )
     log(f"done: {out} ({version})")
+    if args.zip:
+        dest = out.with_name(f"{out.name}-{version}-portable.zip")
+        log(f"zip: {dest}")
+        t0 = time.time()
+        n = zip_folder(out, dest)
+        log(f"zip done: {n} files, {dest.stat().st_size / 1e9:.2f} GB in {time.time() - t0:.0f}s")
     return 0
 
 

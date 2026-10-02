@@ -389,6 +389,12 @@
   - 경고 자체: Export 창이 줄을 하나씩 보이고 숨길 때마다 Windows가 허용하는 것보다 작게 줄어들려 함 → 한꺼번에 바꾸고 한 번만 크기 맞춤(경고 0).
     배치 목록 칸 이름 `layout` → `view_layout`(QWidget의 `layout()`을 가리고 있었음, `p57`).
 
+### 60단계 · 버전 표시, 포터블 `--zip` (`v0.4-p60`, 2026-10-03)
+- 앱 어디에도 버전이 안 보였음 → **창 제목**(`SAM Mask Studio v0.5.1`)과 **Help > About SAM Mask Studio**(버전, 로그 파일 위치), 시작 로그 `app_started`에 `version`.
+  - 버전 정하는 순서(`src/version.py`): 포터블의 `VERSION` 파일 → git 체크아웃이면 릴리스 태그 기준 `git describe`(태그 위 `v0.5.1`, dev는 `v0.5.1-3-g1a2b3c4` = 그 뒤 커밋 3개) → `pyproject.toml`.
+  - 단계 태그(`v0.4-pN`)는 버전으로 쓰지 않음. 포터블의 `VERSION`도 같은 규칙.
+- `tools/make_portable.py --zip`: 폴더 옆에 `<폴더>-<버전>-portable.zip`. 모델 가중치(`.pt`, `.onnx` 등)와 이미 압축된 파일은 그대로 담고, 나머지는 빠른 압축 단계로. `.part`로 쓰고 끝나면 이름을 바꿈(중간에 멈추면 완성본처럼 보이지 않게).
+
 ## 진행 예정
 - 없음. 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 
