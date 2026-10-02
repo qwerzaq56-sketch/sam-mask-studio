@@ -6,7 +6,7 @@ Layout of the result (all paths inside are relative, so the folder can be copied
 
     SAM Mask Studio.bat     double-click to run
     python\\                 the project's standalone CPython + every package from .venv
-    app\\                    the program (git HEAD) and app\\checkpoints (SAM2 tiny, SAM3)
+    app\\                    the program (git HEAD, or --ref) and app\\checkpoints (SAM2 tiny, SAM3, Sky)
     README.txt
 
 Notes
@@ -65,12 +65,14 @@ README = """SAM Mask Studio {version} (portable)
 요구 사항
 - Windows 10 / 11 (64비트)
 - GPU로 실행: NVIDIA 그래픽카드 + CUDA 13을 지원하는 최신 드라이버 (PyTorch {torch})
-  GPU가 없거나 드라이버가 오래되면 CPU로 실행됩니다 (SAM3 디텍션·전파는 많이 느림)
+  GPU가 없거나 드라이버가 오래되면 SAM2(클릭, 전파)와 Sky는 CPU로 느리게 실행되고,
+  SAM3 글자 검출(Detect / Batch)은 쓸 수 없습니다 (+ New Object from Points로 대신)
 - VRAM 8GB 정도 권장
 
 폴더 구성
 - python\\            파이썬과 모든 패키지 (설치 불필요)
-- app\\               프로그램, app\\checkpoints\\ (SAM2 tiny, SAM3 모델)
+- app\\               프로그램, app\\checkpoints\\ (SAM2 tiny, SAM3, Sky 모델)
+- app\\docs\\manual\\  사용 설명서 (README.md부터)
 - app\\config.local.json   이 PC의 설정 (처음 실행 때 생성)
 
 작업 프로젝트(이미지 폴더 옆 <폴더명>.sms)는 설치판과 호환됩니다.
@@ -100,6 +102,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("out", type=Path)
     ap.add_argument("--force", action="store_true", help="replace an existing output folder")
+    ap.add_argument("--ref", default="HEAD", help="the git commit or tag to package (default HEAD)")
     args = ap.parse_args()
     out: Path = args.out
     if out.exists():
@@ -109,7 +112,7 @@ def main() -> int:
         shutil.rmtree(out)
 
     version = subprocess.run(
-        ["git", "-C", str(REPO), "describe", "--tags", "--always"], capture_output=True, text=True, check=True
+        ["git", "-C", str(REPO), "describe", "--tags", "--always", args.ref], capture_output=True, text=True, check=True
     ).stdout.strip()
 
     log("1/6 Python")
@@ -139,19 +142,22 @@ def main() -> int:
         if (system32 / dll).is_file() and not (out / "python" / dll).exists():
             shutil.copy2(system32 / dll, out / "python" / dll)
 
-    log("5/6 app (git HEAD)")
+    log(f"5/6 app (git {args.ref})")
     app = out / "app"
     app.mkdir(parents=True)
     with tempfile.TemporaryDirectory() as tmp:
         tar = Path(tmp) / "app.tar"
         paths = [p for p in ("src", "docs", "pyproject.toml", "README.md") if (REPO / p).exists()]
-        subprocess.run(["git", "-C", str(REPO), "archive", "-o", str(tar), "HEAD", *paths], check=True)
+        subprocess.run(["git", "-C", str(REPO), "archive", "-o", str(tar), args.ref, *paths], check=True)
         with tarfile.open(tar) as t:
             t.extractall(app, filter="data")
     (app / "VERSION").write_text(version + "\n", encoding="utf-8")
 
     log("6/6 checkpoints, launcher, README")
-    for rel in ("sam2/sam2.1_hiera_tiny.pt", "sam3/sam3.pt"):
+    for rel in ("sam2/sam2.1_hiera_tiny.pt", "sam3/sam3.pt", "sky/skyseg.onnx"):
+        if not (REPO / "checkpoints" / rel).is_file():
+            log(f"    {rel}: missing, skipped")
+            continue
         how = link_or_copy(REPO / "checkpoints" / rel, app / "checkpoints" / rel)
         log(f"    {rel}: {how}")
     (out / "SAM Mask Studio.bat").write_text(LAUNCHER.replace("\n", "\r\n"), encoding="ascii")

@@ -323,6 +323,11 @@ audit on a real 123-image folder (tags `v0.4-p1` … `v0.4-p7.1`; details in `PR
   empty states hidden; side docks start within ~55 % of a small window; natural-size dock title
   buttons, compact title when the Frame List is folded.
 
+**v0.5.1 hotfix** (2026-10-02): `v0.4-p59` only. Logging no longer blocks the GUI thread on a paused console
+(QuickEdit selection / Pause): a file log (`logs/sam-mask-studio.log`), the console through a dropping queue, Qt
+messages into the log once, QuickEdit off at startup; the Export dialog resizes once (no `setGeometry` warnings).
+Issue: https://github.com/qwerzaq56-sketch/sam-mask-studio/issues/2
+
 **v0.5.0 released** (2026-10-01): tags `v0.4-p8` … `v0.4-p58` (details in `docs/log/PROGRESS_v0.4.md`) and the
 user manual (`docs/manual/`, figures made on CPU from SAM2's `bedroom` demo).
 - Keys and menus: every key is a menu QAction; hover-aware `W A S D`; Edit's tools on keys (E points, D brush; auto
