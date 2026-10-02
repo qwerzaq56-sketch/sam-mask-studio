@@ -211,14 +211,14 @@ class ExportDialog(QDialog):
         self.yaws.setToolTip("Left / right angles in degrees (right is positive), one view each per pitch")
         self.pitches = QLineEdit("-35, 0, 35" if self._erp or fisheye else "0")
         self.pitches.setToolTip("Up / down angles in degrees (up is positive), one row of views each")
-        self.layout = QComboBox()  # 360 sources: the usual view layouts (docs/specs/08 P4), or the grid below
+        self.view_layout = QComboBox()  # 360 sources: the usual view layouts (docs/specs/08 P4), or the grid below
         for key, lay in VIEW_LAYOUTS.items():
-            self.layout.addItem(lay.label, key)
-            self.layout.setItemData(self.layout.count() - 1, lay.purpose, Qt.ItemDataRole.ToolTipRole)
-        self.layout.addItem("Custom", None)
-        self.layout.setItemData(self.layout.count() - 1, "사용자가 yaw × pitch를 직접 지정: 특수 촬영 환경이나 실험용",
+            self.view_layout.addItem(lay.label, key)
+            self.view_layout.setItemData(self.view_layout.count() - 1, lay.purpose, Qt.ItemDataRole.ToolTipRole)
+        self.view_layout.addItem("Custom", None)
+        self.view_layout.setItemData(self.view_layout.count() - 1, "사용자가 yaw × pitch를 직접 지정: 특수 촬영 환경이나 실험용",
                                 Qt.ItemDataRole.ToolTipRole)
-        self.layout.setToolTip("Where the pinhole views look (a layout, not a camera model). No layout has been shown "
+        self.view_layout.setToolTip("Where the pinhole views look (a layout, not a camera model). No layout has been shown "
                                "to train better; more views = more coverage / overlap and more images")
         # what the layout is for, how many views and how much they overlap, and a map of them
         self.layout_note = QLabel("")
@@ -232,7 +232,7 @@ class ExportDialog(QDialog):
             except (OSError, ValueError):
                 self._cameras = []
         if not self._erp:
-            self.layout.setCurrentIndex(self.layout.count() - 1)  # a fisheye looks one way: its own grid
+            self.view_layout.setCurrentIndex(self.view_layout.count() - 1)  # a fisheye looks one way: its own grid
         self.fov = QSpinBox()
         self.fov.setRange(30, 150)
         self.fov.setValue(90)
@@ -247,7 +247,7 @@ class ExportDialog(QDialog):
         prow = QHBoxLayout(self._pin_row)
         prow.setContentsMargins(0, 0, 0, 0)
         self._yaw_label, self._pitch_label = QLabel("yaw"), QLabel("pitch")
-        self._view_widgets = (self.layout, self._yaw_label, self.yaws, self._pitch_label, self.pitches, self.fov)
+        self._view_widgets = (self.view_layout, self._yaw_label, self.yaws, self._pitch_label, self.pitches, self.fov)
         for w in (self.convert,) + self._view_widgets + (self.side,):
             prow.addWidget(w)
         self.out = QLineEdit(str(default_dir))
@@ -296,7 +296,7 @@ class ExportDialog(QDialog):
         self.target.currentIndexChanged.connect(self._apply_target)
         self.to_new.toggled.connect(lambda _on: self._apply_target())
         self.convert.currentIndexChanged.connect(lambda _i: self._apply_target())
-        self.layout.currentIndexChanged.connect(lambda _i: self._apply_target())
+        self.view_layout.currentIndexChanged.connect(lambda _i: self._apply_target())
         for w in (self.fov, self.side):
             w.valueChanged.connect(lambda _v: self._run_check())
         self.fov.valueChanged.connect(lambda _v: self._apply_target())
@@ -361,7 +361,7 @@ class ExportDialog(QDialog):
         if not on:
             return
         v = Views(fov=float(self.fov.value()))
-        key = self.layout.currentData() if self._erp else None
+        key = self.view_layout.currentData() if self._erp else None
         pairs = VIEW_LAYOUTS[key].pairs() if key is not None else None
         if pairs is None:  # the typed grid
             def angles(field):
@@ -402,7 +402,7 @@ class ExportDialog(QDialog):
             except ValueError:
                 return ()
 
-        key = self.layout.currentData() if self._erp else None
+        key = self.view_layout.currentData() if self._erp else None
         if key is not None:
             return Views(fov=float(self.fov.value()), size=self.side.value(), layout=VIEW_LAYOUTS[key])
         return Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
@@ -434,6 +434,23 @@ class ExportDialog(QDialog):
         return preset(self.target.currentData())
 
     def _apply_target(self) -> None:
+        """Rows shown / hidden together, then the window sized once: one by one, every step resized the
+        window below what Windows allows (word-wrapped text) and Qt warned each time (2026-10-02)."""
+        lay = self.layout()
+        if lay is None:
+            self._apply_target_now()
+            return
+        lay.setEnabled(False)
+        try:
+            self._apply_target_now()
+        finally:
+            lay.setEnabled(True)
+            need = lay.totalHeightForWidth(self.width()) if lay.hasHeightForWidth() else lay.totalMinimumSize().height()
+            if need > self.height():
+                self.resize(self.width(), need)
+            lay.activate()
+
+    def _apply_target_now(self) -> None:
         """A preset fixes folder, names and colors (shown, grayed); Custom frees them again."""
         p = self.preset()
         if self.out.isEnabled():
@@ -446,10 +463,10 @@ class ExportDialog(QDialog):
         kind = self.convert.currentData()
         for w in self._view_widgets:
             w.setVisible(kind == "pinhole")
-        grid = kind == "pinhole" and (self.layout.currentData() is None or not self._erp)
+        grid = kind == "pinhole" and (self.view_layout.currentData() is None or not self._erp)
         for w in (self._yaw_label, self.yaws, self._pitch_label, self.pitches):
             w.setVisible(grid)
-        self.layout.setVisible(kind == "pinhole" and self._erp)
+        self.view_layout.setVisible(kind == "pinhole" and self._erp)
         self._show_layout(kind == "pinhole" and self._convertible and self.to_new.isChecked())
         self.side.setVisible(kind is not None)
         if p is None:

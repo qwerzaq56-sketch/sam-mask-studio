@@ -1092,13 +1092,13 @@ def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
     assert dlg.views() is None  # Keep the cameras: the dataset stays 360
     assert dlg.convert.findData("erp") < 0  # a 360 scene is not converted to 360
     dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
-    assert dlg.layout.currentData() == "colmap12" and len(dlg.views().pairs()) == 12  # p57: COLMAP's layout
+    assert dlg.view_layout.currentData() == "colmap12" and len(dlg.views().pairs()) == 12  # p57: COLMAP's layout
     assert "12 views" in dlg.layout_note.text() and len(dlg.view_preview._views) == 12  # p58: note + map
-    dlg.layout.setCurrentIndex(dlg.layout.findData("rings16"))
+    dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("rings16"))
     assert len(dlg.view_preview._views) == 16 and "overlap" in dlg.layout_note.text()
-    dlg.layout.setCurrentIndex(dlg.layout.findData("colmap12"))
+    dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("colmap12"))
     assert not dlg.yaws.isVisibleTo(dlg)
-    dlg.layout.setCurrentIndex(dlg.layout.findData(None))  # Custom: the yaw x pitch grid
+    dlg.view_layout.setCurrentIndex(dlg.view_layout.findData(None))  # Custom: the yaw x pitch grid
     assert dlg.yaws.isVisibleTo(dlg)
     dlg.yaws.setText("0, 60, 120, 180, 240, 300")
     dlg.pitches.setText("0")
