@@ -77,8 +77,10 @@ $env:SAM2_BUILD_CUDA = "0"                              # SAM2 CUDA 확장은 �
 > SAM3 가중치가 들어 있어 공개하지 않으니, 링크에서 **액세스 요청**을 보내 주세요(승인 후 다운로드, 개인 사용 목적만).
 
 ```powershell
-.venv\Scripts\python.exe tools\make_portable.py <출력 폴더> [--force]
+.venv\Scripts\python.exe tools\make_portable.py <출력 폴더> [--force] [--ref v0.5.1] [--zip]
 ```
+
+`--ref`는 묶을 태그(기본 HEAD), `--zip`은 폴더 옆에 `<폴더 이름>-<버전>-portable.zip`도 만듭니다(모델 가중치는 압축 없이 담아 빠름).
 
 대상 PC는 Windows 10/11 64비트면 되고, GPU로 돌리려면 NVIDIA + CUDA 13 지원 드라이버가 필요합니다. GPU가 없으면 SAM2(클릭, 전파)와 Sky는 CPU로 동작하지만, **SAM3 글자 검출(Detect / Batch)은 NVIDIA GPU가 있어야** 합니다.
 결과 폴더의 `SAM Mask Studio.bat`로 실행합니다. SAM3 가중치는 사용 조건상 개인 PC 간 사용 용도로만 옮기세요.
