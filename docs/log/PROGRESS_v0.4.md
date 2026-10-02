@@ -1,5 +1,7 @@
 # SAM Mask Studio v0.4 진행 현황
 
+**v0.5.1 핫픽스 (2026-10-02):** 59단계(`v0.4-p59`, "응답 없음" 멈춤)만 더한 수정판입니다. 콘솔 창이 일시정지(빠른 편집 선택, Pause)되면 화면 스레드의 로그 쓰기가 끝나지 않아 앱이 멈추던 문제를 고쳤습니다([이슈 #2](https://github.com/qwerzaq56-sketch/sam-mask-studio/issues/2)). 기능과 화면은 v0.5.0과 같고, 안정판 실행기와 포터블도 v0.5.1입니다.
+
 **v0.5.0 릴리스 (2026-10-01):** 8~58단계(`v0.4-p8` ~ `v0.4-p58`)와 사용 설명서(`docs/manual/`)가 `main`에 병합되고 `v0.5.0` 태그가 붙었습니다. 안정판 실행기와 포터블도 v0.5.0입니다. 릴리스 직전 수정: F1의 `D` 설명(오토 툴에서 Paint, 다시 = 전체 선택 / 해제), README · 설명서에 "SAM3 검출은 NVIDIA GPU 필요". [GitHub Release v0.5.0](https://github.com/qwerzaq56-sketch/sam-mask-studio/releases/tag/v0.5.0)은 노트만(포터블 약 7 GB는 2 GB 파일 한도로 첨부 안 함). 포터블 스크립트는 태그 뒤 `dev`에서 고침: Sky 모델 포함, `--ref v0.5.0`으로 태그를 묶음, README.txt의 GPU 안내.
 
 **v0.4.0 릴리스 (2026-09-29):** 아래 1~7단계(`v0.4-p1` ~ `v0.4-p7.1`)가 `main`에 병합되고 `v0.4.0` 태그가 붙었습니다. 안정판 실행기와 포터블(`H:\Dev\Masking\dist\SAMMaskStudio`)도 v0.4.0입니다.
