@@ -47,7 +47,27 @@ AUTO_PARAMS = {
     "grow": ("amount",),
     "shrink": ("amount",),
     "close_gaps": ("gap",),
+    "invert": (),
 }
+
+
+def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], settings: dict) -> np.ndarray:
+    """Auto tool *tool* on mask *base* everywhere (*image*: only Object Fill reads it)."""
+    if tool == "fill_holes":
+        return fill_holes(base, settings.get("fill_area", 200))
+    if tool == "remove_specks":
+        return remove_specks(base, settings.get("speck_area", 200))
+    if tool == "object_fill":
+        return grow_to_edges(image, base, settings.get("max_grow", 20), settings.get("sensitivity", 50))
+    if tool == "grow":
+        return grow_mask(base, settings.get("amount", 3))
+    if tool == "shrink":
+        return shrink_mask(base, settings.get("amount", 3))
+    if tool == "close_gaps":
+        return close_gaps(base, settings.get("gap", 10))
+    if tool == "invert":
+        return ~base
+    raise ValueError(f"Unknown auto tool: {tool}")
 
 
 class Engine(Protocol):
@@ -651,20 +671,7 @@ class Session:
         target = self.auto_cached(tool, base, settings)
         if target is not None:
             return target
-        if tool == "fill_holes":
-            target = fill_holes(base, settings.get("fill_area", 200))
-        elif tool == "remove_specks":
-            target = remove_specks(base, settings.get("speck_area", 200))
-        elif tool == "object_fill":
-            target = grow_to_edges(self.image, base, settings.get("max_grow", 20), settings.get("sensitivity", 50))
-        elif tool == "grow":
-            target = grow_mask(base, settings.get("amount", 3))
-        elif tool == "shrink":
-            target = shrink_mask(base, settings.get("amount", 3))
-        elif tool == "close_gaps":
-            target = close_gaps(base, settings.get("gap", 10))
-        else:
-            raise ValueError(f"Unknown auto tool: {tool}")
+        target = compute_tool(tool, base, self.image, settings)
         self._auto_cache = (self._auto_key(tool, settings), base, target)
         return target
 
@@ -740,6 +747,63 @@ class Session:
         if taken is None or fs is None or not taken.any():
             return False
         return self._set_target(freeze(np.where(taken, r[1], fs.mask)))
+
+    def auto_all_keys(self) -> List[str]:
+        """Apply to All Frames: the images where the edited Object has a mask (others stay empty)."""
+        o = self.project.get(self.editing) if self.editing is not None else None
+        if o is None:
+            return []
+        return [k for k in self.keys if o.mask(k) is not None]
+
+    def auto_targets(self, tool: str, settings: dict, keys: Sequence[str], progress=None,
+                     cancelled=None) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+        """*tool* with *settings* on the edited Object's mask on each of *keys*: {key: (that mask, the result
+        bit-packed)}. Safe off the UI thread (reads masks and images only)."""
+        o = self.project.get(self.editing) if self.editing is not None else None
+        out: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+        if o is None:
+            return out
+        for n, key in enumerate(keys):
+            if cancelled is not None and cancelled():
+                break
+            base = o.mask(key)
+            if base is not None:
+                image = None
+                if tool == "object_fill":
+                    image = self.image if key == self.key else self.working_image(key)
+                out[key] = (base, np.packbits(compute_tool(tool, base, image, settings), axis=None))
+            if progress:
+                progress(n + 1, len(keys))
+        return out
+
+    def apply_auto_all(self, results: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> Tuple[int, int]:
+        """Write *results* (from :meth:`auto_targets`) into the edited Object as one undo step, each into that
+        frame's edit layer like Fill does on one image, inside the region when there is one. A frame whose mask
+        changed meanwhile, or (with a region) of another size, is left alone. Returns (changed, skipped)."""
+        o = self.project.get(self.editing) if self.editing is not None else None
+        if o is None:
+            return 0, 0
+        per: Dict[str, FrameState] = {}
+        skipped = 0
+        for key, (base, packed) in results.items():
+            fs = o.frame(key)
+            if fs is None or fs.mask is not base:
+                skipped += 1
+                continue
+            target = np.unpackbits(packed, count=base.size).reshape(base.shape).astype(bool)
+            if self.region is not None:
+                if self.region.shape != base.shape:
+                    skipped += 1
+                    continue
+                target = np.where(self.region, target, base)
+            if (target == base).all():
+                continue
+            layer = EditLayer.between(fs.layered_mask, freeze(target))
+            per[key] = dataclasses.replace(fs, edit=layer, status=FrameStatus.MANUAL)
+        if per:
+            self.project.set_frames({o.id: per})
+            self.sync()
+        return len(per), skipped
 
     def close_auto(self, apply: bool) -> bool:
         """Leave the auto tool; with *apply*, write what it takes in first."""

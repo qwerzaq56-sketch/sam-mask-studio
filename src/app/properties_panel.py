@@ -51,7 +51,7 @@ MODE_STYLE = (  # the selected mode is shown by color only (no sunken "pressed" 
 # Direct brushes act as you paint; auto tools compute a result that is shown live
 # and either filled in at once (Fill mode) or painted in (Brush mode).
 DIRECT_TOOLS = ("paint", "restore")
-AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink", "close_gaps")
+AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink", "close_gaps", "invert")
 TOOL_TEXT = {
     "paint": ("Paint", "Drag = add, Alt+drag = subtract (D)"),
     "restore": ("Restore", "Drag to undo the edit layer's changes where you paint (see the box)"),
@@ -61,6 +61,7 @@ TOOL_TEXT = {
     "grow": ("Grow", "Widen the whole mask by the amount"),
     "shrink": ("Shrink", "Narrow the whole mask by the amount"),
     "close_gaps": ("Close Gaps", "Fill narrow gaps between parts of the mask and narrow notches cut into it"),
+    "invert": ("Invert", "Flip the mask: the object becomes the background and the background the object"),
 }
 RESTORE_MODES = (
     ("added", "Add"),  # undo what the edit layer added
@@ -167,6 +168,7 @@ class PropertiesPanel(QWidget):
     clear_region_requested = pyqtSignal()
     auto_apply_requested = pyqtSignal()  # write the auto tool's result in and leave the tool
     auto_recompute_requested = pyqtSignal()  # write it in, stay, compute the next one
+    auto_apply_all_requested = pyqtSignal()  # Fill mode: the tool on every frame of the Object
     apply_layer_requested = pyqtSignal()
     delete_layer_requested = pyqtSignal()
 
@@ -301,13 +303,22 @@ class PropertiesPanel(QWidget):
         self.recompute_btn.setToolTip("Write the result in and compute the next one (Enter)")
         self.recompute_btn.clicked.connect(self.auto_recompute_requested)
         self.recompute_btn.setEnabled(False)
+        self.apply_all_btn = QPushButton("Apply to All Frames")
+        self.apply_all_btn.setToolTip(
+            "Fill mode: this tool with these settings on every frame where the Object has a mask\n"
+            "(inside the region, if any). One undo step (Ctrl+Z)"
+        )
+        self.apply_all_btn.clicked.connect(self.auto_apply_all_requested)
+        self.apply_all_btn.setEnabled(False)
         abox = QGroupBox("Auto tools")
         av = QVBoxLayout(abox)
         rows = (
             (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
             (None, [tool_button("grow"), tool_button("shrink"), tool_button("close_gaps")]),
+            (None, [tool_button("invert")]),
             ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
             (" ", [self.recompute_btn, self.apply_auto_btn]),
+            (" ", [self.apply_all_btn]),
             (self.mode_hint, None),
             ("Region", [self.region_btn, self.clear_region_btn]),
             (self.scope_label, None),
@@ -367,6 +378,9 @@ class PropertiesPanel(QWidget):
         }
         self._pages["grow"] = self._pages["shrink"] = self.settings_stack.addWidget(page(
             (("Amount", self.amount),), "How many pixels Grow widens / Shrink narrows the mask (shared)."
+        ))
+        self._pages["invert"] = self.settings_stack.addWidget(page(
+            (), "No settings: inside the region (if any) the mask is flipped. Same as Ctrl+I, shown first."
         ))
         self._pages["close_gaps"] = self.settings_stack.addWidget(page(
             (("Max gap", self.gap),), "Gaps and notches up to this wide are filled; the mask never shrinks."
@@ -577,6 +591,7 @@ class PropertiesPanel(QWidget):
         self.settings_box.setVisible(auto)
         self.apply_auto_btn.setEnabled(auto)
         self.recompute_btn.setEnabled(auto)
+        self._show_apply_all()
         if auto:
             self.settings_stack.setCurrentIndex(self._pages[tool])
             for i in range(self.settings_stack.count()):  # size to the page in use, not the tallest
@@ -595,6 +610,8 @@ class PropertiesPanel(QWidget):
         self.mode = mode
         self.mode_fill_btn.setChecked(mode == "fill")
         self.mode_paint_btn.setChecked(mode == "paint")
+        if hasattr(self, "apply_all_btn"):
+            self._show_apply_all()
         self.mode_hint.setText(
             "Magenta = added, purple = removed. Enter applies · A: pick in Paint mode."
             if mode == "fill"
@@ -602,6 +619,12 @@ class PropertiesPanel(QWidget):
         )
         if emit:
             self.auto_mode_changed.emit(mode)
+
+    def _show_apply_all(self) -> None:
+        """Apply to All Frames: Fill mode only (Paint's picks belong to one image)."""
+        fill = self.mode == "fill"
+        self.apply_all_btn.setVisible(fill)
+        self.apply_all_btn.setEnabled(fill and self._tool in AUTO_TOOLS)
 
     def set_region_mode(self, on: bool) -> None:
         """Reflect the region-box mode without re-emitting."""

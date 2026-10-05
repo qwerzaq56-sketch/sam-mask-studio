@@ -1753,3 +1753,60 @@ def test_eye_is_the_first_column(qapp, win):
     assert eye.text() == "" and not eye.icon().isNull()  # drawn, not the color emoji
     assert tree.visualItemRect(item).left() <= eye.geometry().left() < 40
 
+
+
+# --- p61: Invert as an auto tool, Apply to All Frames (Fill mode) ------------------------------------------
+
+
+def test_invert_auto_tool_previews_then_flips(qapp, win):
+    ids = make_objects(win, 1)
+    s = win.session
+    win.toggle_edit(ids[0])
+    before = s.editing_frame().mask.copy()
+    p = win.properties_panel
+    p.tool_btns["invert"].click()
+    assert s.auto_tool == "invert" and "Invert" in p.settings_box.title()
+    added, removed = s.auto_changes()
+    assert (added == ~before).all() and (removed == before).all()
+    assert (s.editing_frame().mask == before).all()  # a preview until applied
+    win.apply_and_leave_tool()
+    assert (s.editing_frame().mask == ~before).all()
+    win.undo()
+    assert (s.editing_frame().mask == before).all()
+
+
+def test_apply_to_all_frames_in_fill_mode_only(qapp, win):
+    import numpy as np
+
+    from src.core.project import FrameState, FrameStatus
+    from tests.app.conftest import wait_until
+
+    ids = make_objects(win, 1)
+    s = win.session
+    p = s.project
+    k0, k2 = s.keys[0], s.keys[2]
+    p.set_frame(ids[0], k2, FrameState.from_mask(p.get(ids[0]).mask(k0), status=FrameStatus.PROPAGATED))
+    m0, m2 = p.get(ids[0]).mask(k0).copy(), p.get(ids[0]).mask(k2).copy()
+    win.toggle_edit(ids[0])
+    pp = win.properties_panel
+    assert pp.apply_all_btn.isHidden() or not pp.apply_all_btn.isEnabled()  # no auto tool yet
+    pp.tool_btns["invert"].click()
+    assert not pp.apply_all_btn.isHidden() and pp.apply_all_btn.isEnabled()
+    pp.mode_paint_btn.click()
+    assert pp.apply_all_btn.isHidden()  # Paint mode: picks are per image
+    pp.mode_fill_btn.click()
+    asked = []
+    win.ask = lambda title, text, ok: asked.append(text) or True
+    pp.apply_all_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    assert asked and "2 frame(s)" in asked[0]
+    o = p.get(ids[0])
+    assert (o.mask(k0) == ~m0).all() and (o.mask(k2) == ~m2).all()
+    assert o.mask(s.keys[1]) is None  # a frame without a mask stays empty
+    assert o.frame(k2).edit is not None and o.frame(k2).status == FrameStatus.MANUAL
+    win.undo()  # one undo step for all
+    o = p.get(ids[0])
+    assert (o.mask(k0) == m0).all() and (o.mask(k2) == m2).all()
+    assert s.auto_tool == "invert"  # the tool stays on, its preview recomputed for the restored mask
+    wait_until(qapp, lambda: s.auto_changes()[0] is not None and bool((s.auto_changes()[0] == ~m0).all()))
+    assert np.array_equal(s.editing_frame().mask, m0)

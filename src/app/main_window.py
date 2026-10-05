@@ -55,7 +55,7 @@ from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, Shortcu
 from src.app.images_panel import ImagesPanel
 from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
-from src.app.properties_panel import AUTO_TOOLS, PropertiesPanel
+from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, SKY, SkyModel, detect_lens_circle
 from src.app.session import Mode, Session
@@ -600,6 +600,7 @@ class MainWindow(QMainWindow):
         p.auto_mode_changed.connect(self.set_auto_mode)
         p.auto_apply_requested.connect(self.apply_and_leave_tool)
         p.auto_recompute_requested.connect(self.reapply_tool)
+        p.auto_apply_all_requested.connect(self.apply_tool_to_all)
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
         p.clear_region_requested.connect(lambda: self.on_region(None))
@@ -1509,6 +1510,51 @@ class MainWindow(QMainWindow):
             self.log(f"{tool.replace('_', ' ').title()} applied")
         self.properties_panel.set_brush_tool(self._tool)  # the button stays on
         self._auto_refresh()  # recompute from the new mask
+
+    def apply_tool_to_all(self) -> None:
+        """Fill mode's Apply to All Frames: the auto tool with these settings on every frame where the edited
+        Object has a mask (inside the region, if any), off the UI thread, then one undo step."""
+        s = self.session
+        tool = s.auto_tool
+        if tool is None or s.auto_mode != "fill" or self._busy or s.editing is None:
+            return
+        keys = s.auto_all_keys()
+        o = s.project.get(s.editing)
+        if not keys or o is None:
+            return
+        name = TOOL_TEXT[tool][0]
+        where = " inside the region" if s.region is not None else ""
+        if not self.ask("Apply to All Frames",
+                        f"{name} with these settings on all {len(keys)} frame(s) of “{o.name}”{where}?\n\n"
+                        "One undo step (Ctrl+Z undoes it).", "Apply"):
+            return
+        settings = self.properties_panel.tool_settings()
+        settings.pop("restore", None)
+        state, total = {"n": 0}, len(keys)
+        self._busy = f"{name}: 0 / {total}…"
+        timer = QTimer(self)
+        timer.setInterval(200)
+        timer.timeout.connect(lambda: self.mode_label.setText(f"{name}: {state['n']} / {total}…"))
+        timer.start()
+
+        def done(results):
+            timer.stop()
+            self._busy = None
+            changed, skipped = s.apply_auto_all(results)
+            note = f", {skipped} skipped (changed meanwhile or another image size)" if skipped else ""
+            self.log(f"{name} applied to {changed} of {total} frame(s){note} (Ctrl+Z undoes it)")
+            self.properties_panel.set_brush_tool(self._tool)  # the tool stays on
+            self._auto_refresh()
+
+        def failed(msg):
+            timer.stop()
+            self._busy = None
+            self.refresh()
+            self.warn(f"{name} on all frames failed: {msg}")
+
+        self._start(Task(lambda: s.auto_targets(tool, settings, keys,
+                                                progress=lambda n, t: state.update(n=n))), done, failed)
+        self.refresh()
 
     def brush_key(self, _on: bool = True) -> None:
         """D, Edit's brush tool (E is its points): not editing, edit the selected Object with the brush;
