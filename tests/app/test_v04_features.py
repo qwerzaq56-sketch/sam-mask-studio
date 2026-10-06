@@ -1943,7 +1943,9 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     p.bright_use.setChecked(True)
     p.bright_lo.spin.setValue(0)
     p.bright_hi.spin.setValue(255)  # every pixel
-    p.color_band.spin.setValue(0)
+    p.color_band.spin.setValue(5)
+    p.color_band_on.setChecked(False)  # off: the whole image (p74)
+    assert not p.color_band.isEnabled()
     p.color_action.setCurrentIndex(p.color_action.findData("remove"))
     p._settings_timer.timeout.emit()
     wait_until(qapp, lambda: s.auto_changes()[0] is not None)

@@ -51,7 +51,7 @@ AUTO_PARAMS = {
     "shrink": ("amount",),
     "close_gaps": ("gap",),
     "invert": (),
-    "by_color": ("color_basis", "color_balance", "color_band", "color_action", "color_samples", "color_tol",
+    "by_color": ("color_basis", "color_balance", "color_band", "color_band_on", "color_action", "color_samples", "color_tol",
                  "color_use", "bright_range", "bright_use"),
 }
 IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
@@ -74,8 +74,8 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
     if tool == "invert":
         return ~base
     if tool == "by_color":
-        band = settings.get("color_band", 30)
-        if settings.get("color_basis") == "range":  # the picked colors / a brightness range, near the edge
+        band = settings.get("color_band", 30) if settings.get("color_band_on", True) else 0  # 0: anywhere
+        if settings.get("color_basis") == "range":  # the picked colors / a brightness range
             sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
                                settings.get("bright_use", False))
