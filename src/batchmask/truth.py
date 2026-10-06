@@ -127,6 +127,8 @@ def make_set(images: Path, keys: Sequence[str], out: Path, draft: Callable[[np.n
 
 CUT = 0.6  # how much of a pixel must be sky (two-color mix) for it to count; mixed pixels go to the trees
 MAX_DE = 22.0  # Lab distance a sky pixel may have from the sky around it (twigs against clouds are farther)
+NEAR_DRAFT = 24  # px: sky only this close to the draft's sky
+SPECK, SPECK_GAP = 60, 16  # non-sky pieces up to SPECK px, all farther than SPECK_GAP px from the draft's trees: sky
 SIGMAS = (3, 8, 20, 60)  # px, how far to look for each side's colors (the smallest that finds any wins)
 
 
@@ -181,6 +183,8 @@ def matte_sky(bgr: np.ndarray, draft: np.ndarray, cut: float = CUT, max_de: floa
     - it is within *max_de* (Lab) of the sky around it (the closest within 3 px), so gray twig tips against a white cloud are not
       (deep in the trees, with no sky near to compare with, 2-3 times that).
     Then once more, the sky's colors taken only from the pixels found sky (not the twigs the draft took).
+    Last, the draft decides the big picture: nothing farther than NEAR_DRAFT px from its sky is sky (white
+    flowers, railings), and small non-sky specks well inside its sky are sky (cloud texture).
     """
     img = bgr[..., :3].astype(np.float32)
     d = draft.astype(bool)
@@ -213,6 +217,17 @@ def matte_sky(bgr: np.ndarray, draft: np.ndarray, cut: float = CUT, max_de: floa
         if not (sky_seed & m).any():
             break
         sky_seed = sky_seed & m  # twigs the draft called sky no longer tint the sky around them
+    # the draft (the sky model) has the big picture: no sky far from its sky (white flowers, railings),
+    # and no small non-sky specks deep inside its sky (cloud texture, blue patches between clouds)
+    m &= cv2.distanceTransform((~d).astype(np.uint8), cv2.DIST_L2, 5) <= NEAR_DRAFT
+    far_from_trees = cv2.distanceTransform(np.pad(d, 1, mode="edge").astype(np.uint8), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    n, labels, stats, _ = cv2.connectedComponentsWithStats((~m).astype(np.uint8), connectivity=8)
+    if n > 1:
+        nearest = np.full(n, np.inf)
+        np.minimum.at(nearest, labels.ravel(), -far_from_trees.ravel())
+        fill = (stats[:, cv2.CC_STAT_AREA] <= SPECK) & (-nearest > SPECK_GAP)
+        fill[0] = False
+        m |= fill[labels]
     return m
 
 
