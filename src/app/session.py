@@ -36,7 +36,7 @@ from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_m
 from src.core.refine import close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
-from src.engine.imageio import find_images, image_key, read_rgb, resize_mask, to_working, working_size
+from src.engine.imageio import find_images, image_key, original_size, read_rgb, resize_mask, to_working, working_size
 
 DEFAULT_MAX_SIDE = 1024
 # auto tool -> the settings it uses (Grow and Shrink share one amount)
@@ -94,19 +94,6 @@ class Mode(str, Enum):
     IDLE = "idle"  # clicks never create or change anything (except the very first Object)
     NEW_OBJECT = "new"  # the next click / box creates an Object
     EDIT = "edit"  # clicks add prompts to the Object being edited
-
-
-def original_size(path: Path) -> Tuple[int, int]:
-    """(height, width) of an image file, reading only its header when possible."""
-    try:
-        from PIL import Image
-
-        with Image.open(path) as im:
-            w, h = im.size
-        return h, w
-    except Exception:
-        h, w = read_rgb(path).shape[:2]
-        return h, w
 
 
 class Session:
