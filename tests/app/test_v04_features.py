@@ -1889,6 +1889,14 @@ def test_by_color_auto_tool_redraws_the_edge(qapp, win):
     assert p.tool_settings()["color_basis"] == "brightness"
 
 
+def image_array(q, h, w):
+    import numpy as np
+
+    ptr = q.constBits()
+    ptr.setsize(q.sizeInBytes())
+    return np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3)
+
+
 def test_preview_style_cuts_the_image_out(qapp, win):
     """p69: C cycles Mask Preview's look: the mask, the image inside it, the image outside it (rest a checkerboard)."""
     import numpy as np
@@ -1907,7 +1915,16 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     ptr = q.constBits()
     ptr.setsize(q.sizeInBytes())
     arr = np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3)
+    assert (arr[~final] == 0).all() and (arr[final] == c.image[final][:, :3]).all()  # p76: rest in mask black
+    win.act_cutout_checker.trigger()  # the option: a checkerboard instead
+    assert win.settings.cutout_fill == "checker" and c.cutout_fill == "checker"
+    arr = image_array(c._preview_image(h, w), h, w)
     assert (arr[~final] == checkerboard(h, w)[~final]).all() and (arr[final] == c.image[final][:, :3]).all()
+    win.act_cutout_checker.trigger()
+    c.set_preview_style("outside")
+    arr = image_array(c._preview_image(h, w), h, w)
+    assert (arr[final] == 255).all() and (arr[~final] == c.image[~final][:, :3]).all()  # mask white inside
+    c.set_preview_style("cutout")
     win.act_preview_style.trigger()
     assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()  # C: two states only
     win.act_cutout_side.trigger()  # Shift+C picks the side; in black and white it waits for C

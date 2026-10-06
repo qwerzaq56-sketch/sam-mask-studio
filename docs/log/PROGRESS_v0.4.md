@@ -520,6 +520,10 @@
 - 사용자 지적: Remove가 안 됨. 실제 앱 경로로 재현(00489 크롭, 후보 마스크, 회색·허용치 100): 계산은 설계대로였지만 **설계가 직관과 반대**였음. 'Remove only' = 선택으로 마스크를 바꿀 때 빠지는 변화만 → 잎 색을 고르고 Remove하면 잎이 아닌 쪽이 빠짐.
 - Range는 포토샵식으로: **Add selection**(고른 픽셀 더하기) / **Remove selection**(고른 픽셀 빼기) / **Replace with selection**(Near edge·Region 안을 선택으로). Auto 방식은 그대로 Add & Remove / Add only / Remove only(결과 변화 중 고르기). 콤보 글자가 By에 따라 바뀜.
 
+### 76단계 · 잘라보기 바깥을 마스크 색으로 (`v0.4-p76`, 2026-10-07)
+- 잘라보기(C)의 잘린 곳을 기본은 **그 자리 마스크 색**으로: 안쪽 보기면 검정(마스크 밖), 바깥 보기면 흰색(마스크 안). 흑백 마스크와 같은 색이라 바로 이어서 읽힘.
+- View > **Cut Out Background: Checkerboard** 체크로 예전 회색 체커보드. 설정(`cutout_fill`)에 저장.
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.
