@@ -1949,8 +1949,20 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     p.tool_btns["by_color"].click()
     p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
     assert p.range_box.isVisibleTo(p) and not p.balance_row.isVisibleTo(p)
-    p.pick_btn.setChecked(True)
-    assert c.color_pick_mode
+    assert p.pick_btn.isChecked() and c.color_pick_mode  # p77: Range turns the picker on by itself
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    points = list(s.editing_frame().points) if hasattr(s.editing_frame(), "points") else None
+    QTest.mouseClick(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, c.rect().center())
+    QTest.mouseDClick(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, c.rect().center())
+    if points is not None:
+        assert list(s.editing_frame().points) == points  # no SAM point
+    assert len(p.tool_settings()["color_samples"]) == 1
+    p.tool_btns["object_fill"].click()
+    assert not c.color_pick_mode
+    p.tool_btns["by_color"].click()
+    assert c.color_pick_mode  # back in Range: on again
     c.color_picked.emit((10, 20, 30), False)
     c.color_picked.emit((200, 200, 200), True)  # Shift: one more
     assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 200, 200))

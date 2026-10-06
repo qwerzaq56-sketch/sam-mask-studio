@@ -375,8 +375,8 @@ class PropertiesPanel(QWidget):
         self._samples: List[Tuple[int, int, int]] = []
         self.pick_btn = QPushButton("Pick Color")
         self.pick_btn.setCheckable(True)
-        self.pick_btn.setToolTip("Click the image to pick a color; Shift+click adds another (sky and cloud). "
-                                 "Click this again to stop picking")
+        self.pick_btn.setToolTip("On by itself in Range: clicking the image picks a color (no SAM point); Shift+click adds "
+                                 "another (sky and cloud). Turn it off to place SAM points")
         self.pick_btn.toggled.connect(self.color_pick_toggled)
         self.clear_colors_btn = QPushButton("Clear")
         self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
@@ -670,6 +670,8 @@ class PropertiesPanel(QWidget):
         auto = tool in AUTO_TOOLS
         if tool != "by_color" and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)  # the picker belongs to By Color
+        elif tool == "by_color" and self.color_basis.currentData() == "range":
+            self.pick_btn.setChecked(True)  # Range: clicks pick colors, not SAM points (p77)
         self.settings_box.setVisible(auto)
         self.apply_auto_btn.setEnabled(auto)
         self.recompute_btn.setEnabled(auto)
@@ -768,6 +770,8 @@ class PropertiesPanel(QWidget):
         self.range_box.setVisible(rng)
         if not rng and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)
+        elif rng and self._tool == "by_color":
+            self.pick_btn.setChecked(True)  # Range: clicks pick colors, not SAM points (p77)
         if emit:
             self._settings_timer.start()
 

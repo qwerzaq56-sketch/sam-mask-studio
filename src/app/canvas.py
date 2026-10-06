@@ -833,6 +833,8 @@ class Canvas(QWidget):
 
     def mouseDoubleClickEvent(self, event):
         """Double-clicking a point deletes it; anywhere else it is a second click."""
+        if self.color_pick_mode:
+            return  # picking colors: the first click picked; a second one would only start over
         if (
             self.image is not None
             and event.button() == Qt.MouseButton.LeftButton
