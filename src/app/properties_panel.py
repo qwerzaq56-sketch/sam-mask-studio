@@ -51,7 +51,7 @@ MODE_STYLE = (  # the selected mode is shown by color only (no sunken "pressed" 
 # Direct brushes act as you paint; auto tools compute a result that is shown live
 # and either filled in at once (Fill mode) or painted in (Brush mode).
 DIRECT_TOOLS = ("paint", "restore")
-AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink", "close_gaps", "invert")
+AUTO_TOOLS = ("object_fill", "fill_holes", "remove_specks", "grow", "shrink", "close_gaps", "invert", "by_color")
 TOOL_TEXT = {
     "paint": ("Paint", "Drag = add, Alt+drag = subtract (D)"),
     "restore": ("Restore", "Drag to undo the edit layer's changes where you paint (see the box)"),
@@ -62,6 +62,7 @@ TOOL_TEXT = {
     "shrink": ("Shrink", "Narrow the whole mask by the amount"),
     "close_gaps": ("Close Gaps", "Fill narrow gaps between parts of the mask and narrow notches cut into it"),
     "invert": ("Invert", "Flip the mask: the object becomes the background and the background the object"),
+    "by_color": ("By Color", "Redraw the mask's edge by brightness or color (skylines, leaves against the sky)"),
 }
 RESTORE_MODES = (
     ("added", "Add"),  # undo what the edit layer added
@@ -315,7 +316,7 @@ class PropertiesPanel(QWidget):
         rows = (
             (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
             (None, [tool_button("grow"), tool_button("shrink"), tool_button("close_gaps")]),
-            (None, [tool_button("invert")]),
+            (None, [tool_button("invert"), tool_button("by_color")]),
             ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
             (" ", [self.recompute_btn, self.apply_auto_btn]),
             (" ", [self.apply_all_btn]),
@@ -350,7 +351,16 @@ class PropertiesPanel(QWidget):
         self.sensitivity = SliderField(0, 100, 50)
         self.amount = SliderField(1, 100, 3, " px")
         self.gap = SliderField(1, 200, 10, " px")
-        for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount, self.gap):
+        self.color_basis = QComboBox()
+        self.color_basis.addItem("Color", "color")
+        self.color_basis.addItem("Brightness", "brightness")
+        self.color_basis.setToolTip("Color: the colors near the edge in groups; a group the mask mostly covers "
+                                    "is the mask's.\nBrightness: one gray-level threshold between the two sides.")
+        self.color_basis.currentIndexChanged.connect(lambda _i: self._settings_timer.start())
+        self.color_balance = SliderField(0, 100, 50)
+        self.color_band = SliderField(0, 300, 30, " px")
+        for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount, self.gap,
+                  self.color_balance, self.color_band):
             w.valueChanged.connect(lambda _v: self._settings_timer.start())
 
         def page(rows, text: str) -> QWidget:
@@ -384,6 +394,13 @@ class PropertiesPanel(QWidget):
         ))
         self._pages["close_gaps"] = self.settings_stack.addWidget(page(
             (("Max gap", self.gap),), "Gaps and notches up to this wide are filled; the mask never shrinks."
+        ))
+        self._pages["by_color"] = self.settings_stack.addWidget(page(
+            (("By", self.color_basis), ("Balance", self.color_balance), ("Near edge", self.color_band)),
+            "Pixels near the mask's edge are decided again: like what the mask covers there, or like "
+            "the outside. The mask only has to be roughly right. Balance: 50 = even, higher gives the "
+            "mask more. Near edge: how far from the edge pixels may change (0 = everywhere, "
+            "inside the region if any). Paint mode takes it only where you brush.",
         ))
         self.preview_label = note("")
         self.settings_box = CollapsibleBox("Settings")  # foldable: its state is kept in the settings
@@ -640,6 +657,9 @@ class PropertiesPanel(QWidget):
             "sensitivity": self.sensitivity.value(),
             "amount": self.amount.value(),
             "gap": self.gap.value(),
+            "color_basis": self.color_basis.currentData(),
+            "color_balance": self.color_balance.value(),
+            "color_band": self.color_band.value(),
             "restore": self.restore_mode.currentData(),
         }
 
