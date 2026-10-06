@@ -468,6 +468,13 @@
 - 실측: 0022 `probe --preset osmo360-selfie-stick --also "selfie stick;tripod" --frames 8 --reference masks --inside 90` 16장, SAM3 로드 13초 + 장당 약 2초. cam0 8장 IoU 0.878~0.971(p65와 같은 수준), "selfie stick" 5/8장·"tripod" 0장. 대화상자 경유(하위 프로세스) 같은 결과.
 - 창: Try Prompts(대조 시트 표시), Save as Preset, Run on the Folder, Stop, Copy Command. 실행 전에 이 창의 SAM 모델을 내려 GPU를 비우는 선택(닫으면 다시 올림).
 
+### 67단계 · 하늘 정답 세트 도구 `truth make / score` (`v0.4-p67`, 2026-10-07)
+- 하늘 수치(넘침 < 0.5 % 목표)를 잴 정답이 없어서. 3840² 어안 전체를 손으로 맞추는 건 비현실적이고 하늘 대부분은 쉬움 → **경계가 어려운 곳만 원본 해상도 크롭(768²)** 으로 정답을 만듦. 768이면 앱에서 축소 없이 편집.
+- `src/batchmask/truth.py`, 명령 `python -m src.cli truth make / score`:
+  - `make`: 프레임마다 초안 하늘(현재 sky 명령과 같은 방법)의 경계가 가장 긴 곳을 N곳(기본 2) 고름. 하늘 비율 20~80 %인 곳만(나무 속 잎 틈투성이 크롭은 손으로 못 그림, 처음 시험에서 그런 크롭이 뽑혀 조건 추가), 어안 원 90 % 안쪽만. `images/`, `drafts/`(흰색 = 하늘), `overview/`, `manifest.json`. 이미 세트가 있으면 아무것도 안 씀.
+  - `score`: 아무 방법의 전체 프레임 하늘 마스크를 같은 자리에서 잘라 IoU, 넘침·놓침(정답 하늘 대비), 경계 F(2 px, 8 px). 안 고친 크롭은 건너뛰고 목록.
+- 0022: `H:ðTo3DGS\OSMO_360Camera2	ruth\sky\`(새 폴더) 크롭 12장(00155, 00417, 00429, 00489, 00585, 00957 × 2). 모두 나무 꼭대기 실루엣. 고치는 법은 그 폴더 `README.md`. **사용자가 손으로 고쳐야 정답이 됨**(초안이 이 툴 결과라 경계를 직접 따라가며 고칠 것).
+
 ## 진행 예정
 - 정답 세트(경계까지 손으로 맞춘 원본 해상도 하늘 몇 장)를 만든 뒤 하늘 정량 평가. 그다음 제안서 S2(COLMAP 3D 점, 색 모델로 오검출 거르기). 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

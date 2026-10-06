@@ -548,6 +548,52 @@ def _preset_command(parser: argparse.ArgumentParser, args) -> int:
     return 0
 
 
+def _truth_command(parser: argparse.ArgumentParser, args) -> int:
+    from src.batchmask import truth as T
+    from src.batchmask.presets import split
+
+    if args.action == "make":
+        if not args.images.is_dir():
+            parser.error(f"not a folder: {args.images}")
+        if not args.model.is_file():
+            parser.error(f"sky model not found: {args.model}")
+        keys = split(args.frames)
+        missing = [k for k in keys if not (args.images / k).is_file()]
+        if missing:
+            parser.error(f"not in {args.images}: {', '.join(missing)}")
+        from src.core.sky_edges import sky_edges
+        from src.core.special import SKY, SkyModel, Special, sky_maps, sky_mask
+        from src.engine.imageio import to_working
+
+        model, sp = SkyModel(args.model), Special.new(SKY)
+
+        def draft(rgb):
+            _prob, refined = sky_maps(model, to_working(rgb, 1024))
+            return sky_edges(sky_mask(refined, sp), rgb)
+
+        try:
+            m = T.make_set(args.images, keys, args.out, draft, args.per_frame, args.size, args.inside,
+                           settings={"method": "cli sky defaults (skyseg, refine, full-resolution edges)",
+                                     "version": app_version()})
+        except FileExistsError as e:
+            raise SystemExit(str(e))
+        print(f"{len(m['crops'])} crop(s) in {args.out}: fix images/ in the app (drafts/ imports as an Object), "
+              "export white = sky to images_masks/, then 'truth score'.")
+        return 0
+    for p in (args.truth, args.masks):
+        if not p.is_dir():
+            parser.error(f"not a folder: {p}")
+    try:
+        r = T.score(args.truth, args.masks, args.truth_masks, args.invert, args.invert_truth)
+    except (FileNotFoundError, ValueError) as e:
+        raise SystemExit(str(e))
+    print(T.table(r))
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(r, indent=1, ensure_ascii=False), encoding="utf-8")
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.cli", description=f"SAM Mask Studio {app_version()}, "
                                      "no window (for batch pipelines)")
@@ -656,8 +702,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     run.add_argument("--report", type=Path, help="Write the run's report (JSON) here")
     run.add_argument("--sky-model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx (default {SKY_MODEL})")
     _gpu_options(run, "--sam3-model")
+    truth = sub.add_parser("truth", help="Sky ground truth: crops to fix by hand, and scores against them",
+                           description="'make' cuts full-resolution crops where the sky's edge is hardest (with "
+                                       "drafts to fix in this app); 'score' compares any method's full-frame sky "
+                                       "masks with the fixed crops (IoU, spill over tree tops, missed, edge F).")
+    t_sub = truth.add_subparsers(dest="action", required=True)
+    tm = t_sub.add_parser("make", help="Cut a truth set")
+    tm.add_argument("images", type=Path, help="Image folder")
+    tm.add_argument("--out", type=Path, required=True, help="New folder for the set (refused if it holds one)")
+    tm.add_argument("--frames", required=True, help="Images, ';'-separated keys as in the folder (00429.jpg; "
+                                                    "cam0/00429.jpg with sub-folders)")
+    tm.add_argument("--per-frame", type=int, default=2, help="Crops per frame (default 2)")
+    tm.add_argument("--size", type=int, default=768, help="Crop side in px (default 768: edited at full resolution)")
+    tm.add_argument("--inside", type=float, default=90.0, help="Crops stay inside this %% of the inscribed circle "
+                                                               "(default 90; 100+ for a non-fisheye)")
+    tm.add_argument("--model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx for the drafts (default {SKY_MODEL})")
+    ts = t_sub.add_parser("score", help="Score full-frame sky masks against a fixed truth set")
+    ts.add_argument("truth", type=Path, help="The truth set folder (manifest.json)")
+    ts.add_argument("masks", type=Path, help="Full-frame sky masks to score (white = sky; sub-folders as the images)")
+    ts.add_argument("--truth-masks", type=Path, help="The fixed crops (default: images_masks/ or masks/ in the set)")
+    ts.add_argument("--invert", action="store_true", help="The masks to score are black = sky")
+    ts.add_argument("--invert-truth", action="store_true", help="The fixed crops are black = sky")
+    ts.add_argument("--report", type=Path, help="Write the scores (JSON) here")
     args = parser.parse_args(argv)
 
+    if args.command == "truth":
+        return _truth_command(parser, args)
     if args.command == "preset":
         return _preset_command(parser, args)
     if not args.images.is_dir():
