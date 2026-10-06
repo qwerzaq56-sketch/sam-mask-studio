@@ -173,6 +173,7 @@ class Canvas(QWidget):
     tool_stroke = pyqtSignal(str, object, bool)  # tool, area the stroke covered, Alt (unpick)
     zoom_changed = pyqtSignal(float)
     brush_size_changed = pyqtSignal(int)
+    color_picked = pyqtSignal(object, bool)  # (r, g, b) under a click while picking colors, Shift (add a color)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -200,6 +201,7 @@ class Canvas(QWidget):
         self._final_q: Optional[QImage] = None
         self._final_label = "FINAL MASK"
         self.preview_style = "mask"
+        self.color_pick_mode = False  # a click samples the image's color (By Color's picker)
         self.final_preview = False
         self.mode = Mode.IDLE
         self.banner = ""
@@ -321,6 +323,20 @@ class Canvas(QWidget):
         self._final_label = label
         self._final_q = None  # built lazily when shown
         self.update()
+
+    def set_color_pick(self, on: bool) -> None:
+        """While on, a left click reports the image's color there (``color_picked``) and does nothing else."""
+        self.color_pick_mode = on
+        self._update_cursor()
+
+    def sample_color(self, x: float, y: float, r: int = 2) -> Optional[Tuple[int, int, int]]:
+        """The mean color around image pixel (x, y), (2r+1)² pixels."""
+        if self.image is None:
+            return None
+        h, w = self.image.shape[:2]
+        xi, yi = int(np.clip(x, 0, w - 1)), int(np.clip(y, 0, h - 1))
+        patch = self.image[max(0, yi - r): yi + r + 1, max(0, xi - r): xi + r + 1, :3].reshape(-1, 3)
+        return tuple(int(round(v)) for v in patch.mean(0))
 
     def set_preview_style(self, style: str) -> None:
         """How Mask Preview looks: ``mask`` (black and white), ``cutout`` (the image where the mask is, the rest
@@ -528,7 +544,7 @@ class Canvas(QWidget):
                 painter.setPen(QPen(QColor(255, 255, 255), 1.5))
                 painter.setBrush(QColor(40, 200, 60) if pt.positive else QColor(230, 40, 40))
                 painter.drawEllipse(q, POINT_RADIUS, POINT_RADIUS)
-        if self._mouse is not None and self._brush_on():
+        if self._mouse is not None and self._brush_on() and not self.color_pick_mode:
             # white on the photo; green over the black-and-white Final Mask, where white disappears;
             # red while Alt is held (the stroke subtracts / unpicks)
             if self._alt():
@@ -606,7 +622,9 @@ class Canvas(QWidget):
         return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier)
 
     def _update_cursor(self) -> None:
-        if self.mode == Mode.EDIT and self.brush_mode:
+        if self.color_pick_mode:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.mode == Mode.EDIT and self.brush_mode:
             self.setCursor(Qt.CursorShape.BlankCursor)  # the brush circle is the cursor
         elif self.mode in (Mode.NEW_OBJECT, Mode.EDIT):
             self.setCursor(Qt.CursorShape.CrossCursor)
@@ -625,6 +643,12 @@ class Canvas(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         mods = event.modifiers()
+        if self.color_pick_mode:
+            if btn == Qt.MouseButton.LeftButton:
+                color = self.sample_color(*self.to_image(pos))
+                if color is not None:
+                    self.color_picked.emit(color, bool(mods & Qt.KeyboardModifier.ShiftModifier))
+            return  # while picking colors, clicks do nothing else
         if (self.mode == Mode.EDIT and btn == Qt.MouseButton.RightButton
                 and mods & Qt.KeyboardModifier.AltModifier):
             self._size_drag = (pos.x(), self.brush_size, QPointF(pos))  # left / right: smaller / bigger

@@ -1911,3 +1911,41 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     assert c.preview_style == "outside"
     win.act_preview_style.trigger()
     assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()
+
+
+def test_by_color_range_with_picker_and_remove_only(qapp, win):
+    """p70: By Color > Range: colors picked on the image (Shift adds one) and / or a brightness range;
+    Changes: both ways, Add only, Remove only."""
+    from tests.app.conftest import wait_until
+
+    ids = make_objects(win, 1)
+    s, p, c = win.session, win.properties_panel, win.canvas
+    win.toggle_edit(ids[0])
+    before = s.editing_frame().mask.copy()
+    p.tool_btns["by_color"].click()
+    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
+    assert p.range_box.isVisibleTo(p) and not p.balance_row.isVisibleTo(p)
+    p.pick_btn.setChecked(True)
+    assert c.color_pick_mode
+    c.color_picked.emit((10, 20, 30), False)
+    c.color_picked.emit((200, 200, 200), True)  # Shift: one more
+    assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 200, 200))
+    c.color_picked.emit((50, 50, 50), False)  # a plain click starts over
+    assert p.tool_settings()["color_samples"] == ((50, 50, 50),)
+    p.color_use.setChecked(False)
+    p.bright_use.setChecked(True)
+    p.bright_lo.spin.setValue(0)
+    p.bright_hi.spin.setValue(255)  # every pixel
+    p.color_band.spin.setValue(0)
+    p.color_action.setCurrentIndex(p.color_action.findData("remove"))
+    p._settings_timer.timeout.emit()
+    wait_until(qapp, lambda: s.auto_changes()[0] is not None)
+    added, removed = s.auto_changes()
+    assert not added.any() and not removed.any()  # Remove only, and everything selected: nothing to take out
+    p.color_action.setCurrentIndex(p.color_action.findData("add"))
+    p._settings_timer.timeout.emit()
+    wait_until(qapp, lambda: s.auto_changes()[0] is not None and s.auto_changes()[0].any())
+    added, removed = s.auto_changes()
+    assert (added == ~before).all() and not removed.any()  # Add only: the rest of the image joins
+    p.tool_btns["paint"].click()  # another tool: the picker stops
+    assert not p.pick_btn.isChecked() and not c.color_pick_mode

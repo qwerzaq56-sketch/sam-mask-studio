@@ -614,6 +614,8 @@ class MainWindow(QMainWindow):
         p.auto_apply_all_requested.connect(self.apply_tool_to_all)
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
+        p.color_pick_toggled.connect(self.canvas.set_color_pick)
+        self.canvas.color_picked.connect(p.add_sample)
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
         p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))

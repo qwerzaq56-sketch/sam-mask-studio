@@ -7,7 +7,7 @@ removes exactly that point.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -15,6 +15,7 @@ from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGridLayout,
@@ -165,6 +166,7 @@ class PropertiesPanel(QWidget):
     brush_tool_selected = pyqtSignal(str)  # "" = no tool, else a DIRECT_TOOLS / AUTO_TOOLS name
     auto_mode_changed = pyqtSignal(str)  # "fill" | "paint"
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
+    color_pick_toggled = pyqtSignal(bool)  # By Color's picker: clicks on the image sample colors
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
     auto_apply_requested = pyqtSignal()  # write the auto tool's result in and leave the tool
@@ -352,15 +354,45 @@ class PropertiesPanel(QWidget):
         self.amount = SliderField(1, 100, 3, " px")
         self.gap = SliderField(1, 200, 10, " px")
         self.color_basis = QComboBox()
-        self.color_basis.addItem("Color", "color")
-        self.color_basis.addItem("Brightness", "brightness")
-        self.color_basis.setToolTip("Color: the colors near the edge in groups; a group the mask mostly covers "
-                                    "is the mask's.\nBrightness: one gray-level threshold between the two sides.")
-        self.color_basis.currentIndexChanged.connect(lambda _i: self._settings_timer.start())
+        self.color_basis.addItem("Auto: Color", "color")
+        self.color_basis.addItem("Auto: Brightness", "brightness")
+        self.color_basis.addItem("Range (picked colors / brightness)", "range")
+        self.color_basis.setToolTip(
+            "Auto: Color: the colors near the edge in groups; a group the mask mostly covers is the mask's.\n"
+            "Auto: Brightness: one gray-level threshold between the two sides.\n"
+            "Range: the pixels like the colors you pick and / or within a brightness range.")
+        self.color_basis.currentIndexChanged.connect(self._on_color_basis)
+        self.color_action = QComboBox()
+        for value, text in (("both", "Add && Remove"), ("add", "Add only"), ("remove", "Remove only")):
+            self.color_action.addItem(text, value)
+        self.color_action.setToolTip("What the result may change: both ways, only add to the mask, "
+                                     "or only take out of it")
+        self.color_action.currentIndexChanged.connect(lambda _i: self._settings_timer.start())
         self.color_balance = SliderField(0, 100, 50)
         self.color_band = SliderField(0, 300, 30, " px")
+        # Range: picked colors (hue and saturation, not brightness) and a brightness range
+        self._samples: List[Tuple[int, int, int]] = []
+        self.pick_btn = QPushButton("Pick Color")
+        self.pick_btn.setCheckable(True)
+        self.pick_btn.setToolTip("Click the image to pick a color; Shift+click adds another (sky and cloud). "
+                                 "Click this again to stop picking")
+        self.pick_btn.toggled.connect(self.color_pick_toggled)
+        self.clear_colors_btn = QPushButton("Clear")
+        self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
+        self.swatches = QLabel("No color picked")
+        self.swatches.setWordWrap(True)
+        self.color_use = QCheckBox("Color within")
+        self.color_use.setChecked(True)
+        self.color_tol = SliderField(1, 100, 20)
+        self.color_tol.setToolTip("How far (Lab a*b*: hue and saturation, brightness left out) "
+                                  "a pixel's color may be from a picked one")
+        self.bright_use = QCheckBox("Brightness from")
+        self.bright_lo = SliderField(0, 255, 0)
+        self.bright_hi = SliderField(0, 255, 255)
+        for c in (self.color_use, self.bright_use):
+            c.toggled.connect(lambda _on: self._settings_timer.start())
         for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount, self.gap,
-                  self.color_balance, self.color_band):
+                  self.color_balance, self.color_band, self.color_tol, self.bright_lo, self.bright_hi):
             w.valueChanged.connect(lambda _v: self._settings_timer.start())
 
         def page(rows, text: str) -> QWidget:
@@ -395,13 +427,37 @@ class PropertiesPanel(QWidget):
         self._pages["close_gaps"] = self.settings_stack.addWidget(page(
             (("Max gap", self.gap),), "Gaps and notches up to this wide are filled; the mask never shrinks."
         ))
-        self._pages["by_color"] = self.settings_stack.addWidget(page(
-            (("By", self.color_basis), ("Balance", self.color_balance), ("Near edge", self.color_band)),
-            "Pixels near the mask's edge are decided again: like what the mask covers there, or like "
-            "the outside. The mask only has to be roughly right. Balance: 50 = even, higher gives the "
-            "mask more. Near edge: how far from the edge pixels may change (0 = everywhere, "
-            "inside the region if any). Paint mode takes it only where you brush.",
-        ))
+        by_color = QWidget()
+        bf = QFormLayout(by_color)
+        bf.setContentsMargins(0, 0, 0, 0)
+        bf.addRow("By", self.color_basis)
+        bf.addRow("Changes", self.color_action)
+        bf.addRow("Near edge", self.color_band)
+        self.balance_row = QWidget()
+        brl = QFormLayout(self.balance_row)
+        brl.setContentsMargins(0, 0, 0, 0)
+        brl.addRow("Balance", self.color_balance)
+        bf.addRow(self.balance_row)
+        self.range_box = QWidget()
+        rl = QGridLayout(self.range_box)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.addWidget(self.pick_btn, 0, 0)
+        rl.addWidget(self.clear_colors_btn, 0, 1)
+        rl.addWidget(self.swatches, 1, 0, 1, 2)
+        rl.addWidget(self.color_use, 2, 0)
+        rl.addWidget(self.color_tol, 2, 1)
+        rl.addWidget(self.bright_use, 3, 0)
+        rl.addWidget(self.bright_lo, 3, 1)
+        rl.addWidget(QLabel("to"), 4, 0, Qt.AlignmentFlag.AlignRight)
+        rl.addWidget(self.bright_hi, 4, 1)
+        bf.addRow(self.range_box)
+        bf.addRow(note(
+            "Pixels near the mask's edge are decided again (Near edge: how far may change, 0 = everywhere; "
+            "inside the region if any). Auto: like what the mask covers there or like the outside; the mask only "
+            "has to be roughly right, Balance 50 = even, higher gives the mask more. Range: the pixels like "
+            "the picked colors and / or within the brightness range. Paint mode takes it only where you brush."))
+        self._pages["by_color"] = self.settings_stack.addWidget(by_color)
+        self._on_color_basis(emit=False)
         self.preview_label = note("")
         self.settings_box = CollapsibleBox("Settings")  # foldable: its state is kept in the settings
         sl = QVBoxLayout(self.settings_box.body)
@@ -605,6 +661,8 @@ class PropertiesPanel(QWidget):
             b.setChecked(name == tool)
             b.blockSignals(False)
         auto = tool in AUTO_TOOLS
+        if tool != "by_color" and self.pick_btn.isChecked():
+            self.pick_btn.setChecked(False)  # the picker belongs to By Color
         self.settings_box.setVisible(auto)
         self.apply_auto_btn.setEnabled(auto)
         self.recompute_btn.setEnabled(auto)
@@ -660,6 +718,12 @@ class PropertiesPanel(QWidget):
             "color_basis": self.color_basis.currentData(),
             "color_balance": self.color_balance.value(),
             "color_band": self.color_band.value(),
+            "color_action": self.color_action.currentData(),
+            "color_samples": tuple(self._samples),
+            "color_tol": self.color_tol.value(),
+            "color_use": self.color_use.isChecked(),
+            "bright_range": (self.bright_lo.value(), self.bright_hi.value()),
+            "bright_use": self.bright_use.isChecked(),
             "restore": self.restore_mode.currentData(),
         }
 
@@ -684,6 +748,31 @@ class PropertiesPanel(QWidget):
 
     def set_brush_size(self, px: int) -> None:
         self.brush_size.setText(f"size {px}px · Alt+right-drag or Ctrl+wheel to change")
+
+    def _on_color_basis(self, _i: int = 0, emit: bool = True) -> None:
+        """Balance is for the Auto ways, the picker and ranges for Range."""
+        rng = self.color_basis.currentData() == "range"
+        self.balance_row.setVisible(not rng)
+        self.range_box.setVisible(rng)
+        if not rng and self.pick_btn.isChecked():
+            self.pick_btn.setChecked(False)
+        if emit:
+            self._settings_timer.start()
+
+    def add_sample(self, color, add: bool = False) -> None:
+        """A color picked on the image: instead of the picked ones, or (*add*, Shift+click) one more."""
+        self.set_samples((self._samples if add else []) + [tuple(int(v) for v in color)])
+
+    def set_samples(self, colors) -> None:
+        self._samples = [tuple(c) for c in colors][-8:]
+        if self._samples:
+            boxes = "".join(
+                f'<span style="background-color: rgb{c}; color: rgb{c};">&nbsp;&nbsp;&nbsp;&nbsp;</span>&nbsp;'
+                for c in self._samples)
+            self.swatches.setText(boxes + f" {len(self._samples)} color(s)")
+        else:
+            self.swatches.setText("No color picked")
+        self._settings_timer.start()
 
     def _on_region_mode(self, on: bool) -> None:
         if on:
