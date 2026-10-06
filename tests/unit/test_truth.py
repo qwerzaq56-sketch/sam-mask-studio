@@ -86,23 +86,37 @@ def leafy(n=256):
     return img, sky
 
 
+def rough_draft(sky):
+    """Like the sky model's: spills 8 px over the trees, takes the twig, and the gaps blown up by 3 px."""
+    d = np.zeros_like(sky)
+    d[:136] = True
+    for y, x in ((170, 40), (200, 120), (180, 200)):
+        d[y - 3:y + 11, x - 3:x + 11] = True
+    return d
+
+
 def test_matte_sky_follows_colors_not_the_draft():
     img, sky = leafy()
-    draft = np.zeros_like(sky)
-    draft[:136] = True  # spills 8 px over the trees, misses the gaps, takes the twig
-    m = T.matte_sky(img, draft)
+    m = T.matte_sky(img, rough_draft(sky))
     assert (m != sky).mean() < 0.002
     assert not m[22, 190]  # the twig is no sky
     assert m[174, 44]  # a gap is
+
+
+def test_matte_sky_keeps_the_drafts_big_picture():
+    img, sky = leafy()
+    img[230:240, 60:70] = (245, 245, 245)  # a white flower down in the leaves: the draft says no sky
+    img[90:93, 30:33] = (150, 120, 100)  # a darker speck in open sky, far from the trees
+    m = T.matte_sky(img, rough_draft(sky))
+    assert not m[230:240, 60:70].any()
+    assert m[90:93, 30:33].all()
 
 
 def test_truth_auto_writes_candidates_once(tmp_path):
     img, sky = leafy()
     d = tmp_path / "set"
     T._write(d / "images" / "a_x0_y0.jpg", img, ".jpg", (cv2.IMWRITE_JPEG_QUALITY, 98))
-    draft = np.zeros_like(sky)
-    draft[:136] = True
-    T._write(d / "drafts" / "a_x0_y0.jpg.png", draft.astype(np.uint8) * 255, ".png")
+    T._write(d / "drafts" / "a_x0_y0.jpg.png", rough_draft(sky).astype(np.uint8) * 255, ".png")
     (d / "manifest.json").write_text(json.dumps({"kind": "sky", "crops": [{"name": "a_x0_y0"}]}), encoding="utf-8")
     assert cli.main(["truth", "auto", str(d)]) == 0
     got = T._read(d / "candidates" / "a_x0_y0.png")

@@ -23,7 +23,8 @@ depends on the mode the main window sets:
 Middle-drag or Space+drag pans and the wheel zooms at the cursor. Alt+right-drag left / right
 (as in Photoshop), Ctrl+wheel or Shift+wheel set the brush size while an Object is in Edit. The Final Mask
 preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
-editing keeps working in it.
+editing keeps working in it. ``set_preview_style`` picks how it looks: the mask in black and white, the
+image cut out by the mask, or the image outside it (the rest in CUTOUT_COLOR).
 """
 
 from __future__ import annotations
@@ -72,9 +73,12 @@ class Overlay:
 # Overlays are drawn as three cached images, so changing one group (checking a
 # candidate, a brush stroke) never re-blends the others.
 GROUPS = ("objects", "edit", "region", "candidates")
+STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
 UNPICK_STROKE_COLOR = (255, 60, 60)  # Alt: the stroke takes picks back out
+PREVIEW_STYLES = ("mask", "cutout", "outside")  # black and white | the image inside the mask | outside it
+CUTOUT_COLOR = (255, 0, 255)  # what the cut-out previews fill the rest with: magenta, unlike sky and leaves
 ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is held
 
 
@@ -195,6 +199,7 @@ class Canvas(QWidget):
         self._final: Optional[np.ndarray] = None
         self._final_q: Optional[QImage] = None
         self._final_label = "FINAL MASK"
+        self.preview_style = "mask"
         self.final_preview = False
         self.mode = Mode.IDLE
         self.banner = ""
@@ -234,6 +239,7 @@ class Canvas(QWidget):
             self._brush.cancel()
         self.image = image
         self._image_q = _qimage(image) if image is not None else None
+        self._final_q = None  # a cut-out preview shows this image
         self._layers.clear()
         self._stroke_mask = None
         self._region = None
@@ -315,6 +321,25 @@ class Canvas(QWidget):
         self._final_label = label
         self._final_q = None  # built lazily when shown
         self.update()
+
+    def set_preview_style(self, style: str) -> None:
+        """How Mask Preview looks: ``mask`` (black and white), ``cutout`` (the image where the mask is, the rest
+        filled), ``outside`` (the image where it is not)."""
+        if style not in PREVIEW_STYLES:
+            raise ValueError(f"Unknown preview style: {style}")
+        if style != self.preview_style:
+            self.preview_style = style
+            self._final_q = None
+            self.update()
+
+    def _preview_image(self, h: int, w: int) -> QImage:
+        final = self._final if self._final is not None and self._final.shape == (h, w) else np.zeros((h, w), bool)
+        if self.preview_style == "mask":
+            return _qimage(final.astype(np.uint8) * 255)
+        keep = final if self.preview_style == "cutout" else ~final
+        out = self.image[..., :3].copy()
+        out[~keep] = CUTOUT_COLOR
+        return _qimage(out)
 
     def set_final_preview(self, on: bool) -> None:
         self.final_preview = on
@@ -470,8 +495,7 @@ class Canvas(QWidget):
         if self.showing_final:
             # the Final Mask in black and white; editing still works on top of it
             if self._final_q is None:
-                final = self._final if self._final is not None else np.zeros((h, w), bool)
-                self._final_q = _qimage(final.astype(np.uint8) * 255)
+                self._final_q = self._preview_image(h, w)
             painter.drawImage(target, self._final_q)
             groups = ("edit", "region") if self._stroke_mask is not None else ("region",)
         else:
@@ -515,7 +539,7 @@ class Canvas(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
             painter.drawEllipse(self._mouse, r, r)
-        banner = "  ·  ".join(t for t in (f"MASK PREVIEW · {self._final_label}" if self.showing_final else "", self.banner) if t)
+        banner = "  ·  ".join(t for t in (f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else "", self.banner) if t)
         if banner:
             self._draw_banner(painter, banner)
 

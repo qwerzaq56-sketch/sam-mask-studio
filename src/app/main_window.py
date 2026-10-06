@@ -48,7 +48,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from src.app.canvas import Canvas, Overlay
+from src.app.canvas import PREVIEW_STYLES, Canvas, Overlay
 from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
@@ -408,6 +408,9 @@ class MainWindow(QMainWindow):
         # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
         self.act_preview_mode = self._action("Toggle Final / Object Mask", self.toggle_preview_mode, ["X"])
         self._show_preview_mode()
+        # how Mask Preview looks: the mask, or the image cut out by it (inside / outside)
+        self.act_preview_style = self._action("Cycle Preview Style", self.cycle_preview_style, ["C"])
+        self._show_preview_style()
         self.act_brush = self._action(
             "Brush",
             self.brush_key,
@@ -446,7 +449,7 @@ class MainWindow(QMainWindow):
             tip="No Object colors on the canvas, the Object in Edit included: the plain image "
                 "(a tool's preview still shows)", checkable=True,
         )
-        for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
+        for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_brush, self.act_outline, self.act_changes,
                   self.act_pick_all, self.act_leave_auto, self.act_auto_fill, self.act_apply_continue,
                   self.act_edit, self.act_new, self.act_solo,
                   self.act_hide_masks,
@@ -504,7 +507,7 @@ class MainWindow(QMainWindow):
                   self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames):
             objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
-        for a in (self.act_final, self.act_preview_mode):
+        for a in (self.act_final, self.act_preview_mode, self.act_preview_style):
             m.addAction(a)
         self._hint(m, "Peek at Mask Preview", "Z (hold)")
         for a in (self.act_outline, self.act_changes, None, self.act_solo, self.act_hide_masks):
@@ -537,6 +540,7 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         tb.addAction(self.act_final)
         tb.addAction(self.act_preview_mode)
+        tb.addAction(self.act_preview_style)
         tb.addAction(self.act_brush)
         tb.addSeparator()
         tb.addAction(self.act_outline)
@@ -2118,6 +2122,28 @@ class MainWindow(QMainWindow):
         self._show_preview_mode()
         self._update_preview_mask()
         self.canvas.update()
+
+    def cycle_preview_style(self) -> None:
+        """C: Mask Preview shows the mask -> the image inside it -> the image outside it (the rest magenta);
+        turns Mask Preview on if it is off."""
+        styles = PREVIEW_STYLES
+        cur = self.settings.preview_style if self.settings.preview_style in styles else "mask"
+        self.settings.preview_style = styles[(styles.index(cur) + 1) % len(styles)]
+        self.settings.save(self.settings_path)
+        self._show_preview_style()
+        if not self.act_final.isChecked():
+            self.act_final.setChecked(True)
+            self.toggle_final(True)
+
+    def _show_preview_style(self) -> None:
+        style = self.settings.preview_style if self.settings.preview_style in PREVIEW_STYLES else "mask"
+        self.canvas.set_preview_style(style)
+        self.act_preview_style.setIconText(
+            {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
+        self.act_preview_style.setToolTip(
+            "How Mask Preview looks (C cycles): the mask in black and white, the image cut out by the mask, "
+            "or the image outside it; the rest magenta. Cut Out shows what a mask holds (leaves in a sky mask), "
+            "Outside what it left (sky it missed)")
 
     def _show_preview_mode(self) -> None:
         """The toolbar button names the mode in use; the menu entry keeps its command name."""

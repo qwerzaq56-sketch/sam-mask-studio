@@ -1887,3 +1887,27 @@ def test_by_color_auto_tool_redraws_the_edge(qapp, win):
     wait_until(qapp, lambda: s.auto_changes()[0] is not None)  # computed off the UI thread (reads the image)
     assert (s.editing_frame().mask == before).all()  # a preview until applied
     assert p.tool_settings()["color_basis"] == "brightness"
+
+
+def test_preview_style_cuts_the_image_out(qapp, win):
+    """p69: C cycles Mask Preview's look: the mask, the image inside it, the image outside it (rest magenta)."""
+    import numpy as np
+
+    from src.app.canvas import CUTOUT_COLOR
+
+    make_objects(win, 1)
+    c = win.canvas
+    assert win.settings.preview_style == "mask"
+    win.act_preview_style.trigger()
+    assert win.settings.preview_style == "cutout" and c.preview_style == "cutout" and c.showing_final
+    final = win.session.project.final_mask(win.session.key)
+    h, w = final.shape
+    q = c._preview_image(h, w)
+    ptr = q.constBits()
+    ptr.setsize(q.sizeInBytes())
+    arr = np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3)
+    assert (arr[~final] == CUTOUT_COLOR).all() and (arr[final] == c.image[final][:, :3]).all()
+    win.act_preview_style.trigger()
+    assert c.preview_style == "outside"
+    win.act_preview_style.trigger()
+    assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()
