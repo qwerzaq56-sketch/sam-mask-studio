@@ -432,7 +432,12 @@ class PropertiesPanel(QWidget):
         bf.setContentsMargins(0, 0, 0, 0)
         bf.addRow("By", self.color_basis)
         bf.addRow("Changes", self.color_action)
-        bf.addRow("Near edge", self.color_band)
+        self.color_band_on = QCheckBox("Near edge")
+        self.color_band_on.setChecked(True)
+        self.color_band_on.setToolTip("On: only pixels this close to the mask's edge may change (a skyline). "
+                                      "Off: anywhere (inside the region if any)")
+        self.color_band_on.toggled.connect(self._on_band_on)
+        bf.addRow(self.color_band_on, self.color_band)
         self.balance_row = QWidget()
         brl = QFormLayout(self.balance_row)
         brl.setContentsMargins(0, 0, 0, 0)
@@ -452,10 +457,10 @@ class PropertiesPanel(QWidget):
         rl.addWidget(self.bright_hi, 4, 1)
         bf.addRow(self.range_box)
         bf.addRow(note(
-            "Pixels near the mask's edge are decided again (Near edge: how far may change, 0 = everywhere; "
-            "inside the region if any). Auto: like what the mask covers there or like the outside; the mask only "
-            "has to be roughly right, Balance 50 = even, higher gives the mask more. Range: the pixels like "
-            "the picked colors and / or within the brightness range. Paint mode takes it only where you brush."))
+            "Near edge (on): only pixels this close to the mask's edge may change; off: anywhere. Inside the "
+            "region if any; Paint mode takes it only where you brush. Auto: like what the mask covers there "
+            "or like the outside (the mask only has to be roughly right; Balance 50 = even, higher gives the "
+            "mask more). Range: the pixels like the picked colors and / or within the brightness range."))
         self._pages["by_color"] = self.settings_stack.addWidget(by_color)
         self._on_color_basis(emit=False)
         self.preview_label = note("")
@@ -718,6 +723,7 @@ class PropertiesPanel(QWidget):
             "color_basis": self.color_basis.currentData(),
             "color_balance": self.color_balance.value(),
             "color_band": self.color_band.value(),
+            "color_band_on": self.color_band_on.isChecked(),
             "color_action": self.color_action.currentData(),
             "color_samples": tuple(self._samples),
             "color_tol": self.color_tol.value(),
@@ -758,6 +764,10 @@ class PropertiesPanel(QWidget):
             self.pick_btn.setChecked(False)
         if emit:
             self._settings_timer.start()
+
+    def _on_band_on(self, on: bool) -> None:
+        self.color_band.setEnabled(on)
+        self._settings_timer.start()
 
     def add_sample(self, color, add: bool = False) -> None:
         """A color picked on the image: instead of the picked ones, or (*add*, Shift+click) one more."""
