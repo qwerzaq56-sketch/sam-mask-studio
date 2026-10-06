@@ -24,7 +24,7 @@ Middle-drag or Space+drag pans and the wheel zooms at the cursor. Alt+right-drag
 (as in Photoshop), Ctrl+wheel or Shift+wheel set the brush size while an Object is in Edit. The Final Mask
 preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
 editing keeps working in it. ``set_preview_style`` picks how it looks: the mask in black and white, the
-image cut out by the mask, or the image outside it (the rest in CUTOUT_COLOR).
+image cut out by the mask, or the image outside it (the rest a gray checkerboard, as transparency).
 """
 
 from __future__ import annotations
@@ -73,12 +73,20 @@ class Overlay:
 # Overlays are drawn as three cached images, so changing one group (checking a
 # candidate, a brush stroke) never re-blends the others.
 GROUPS = ("objects", "edit", "region", "candidates")
+def checkerboard(h: int, w: int) -> np.ndarray:
+    """A gray checkerboard (RGB) the size of the image, squares about 1/64 of its long side (at least 8 px)."""
+    cell = max(8, round(max(h, w) / 64))
+    yy, xx = np.indices((h, w))
+    g = np.where(((yy // cell) + (xx // cell)) % 2 == 0, *CUTOUT_GRAYS).astype(np.uint8)
+    return np.repeat(g[..., None], 3, axis=2)
+
+
 STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
 UNPICK_STROKE_COLOR = (255, 60, 60)  # Alt: the stroke takes picks back out
 PREVIEW_STYLES = ("mask", "cutout", "outside")  # black and white | the image inside the mask | outside it
-CUTOUT_COLOR = (255, 0, 255)  # what the cut-out previews fill the rest with: magenta, unlike sky and leaves
+CUTOUT_GRAYS = (102, 153)  # the cut-out previews' checkerboard: gray, unlike sky, leaves and the tool tints
 ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is held
 
 
@@ -354,7 +362,7 @@ class Canvas(QWidget):
             return _qimage(final.astype(np.uint8) * 255)
         keep = final if self.preview_style == "cutout" else ~final
         out = self.image[..., :3].copy()
-        out[~keep] = CUTOUT_COLOR
+        out[~keep] = checkerboard(h, w)[~keep]
         return _qimage(out)
 
     def set_final_preview(self, on: bool) -> None:
