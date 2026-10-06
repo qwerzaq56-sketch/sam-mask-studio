@@ -355,10 +355,10 @@ class Project:
 
     def final_mask(self, key: str, ids: Optional[Iterable[int]] = None) -> Optional[np.ndarray]:
         """Union of the included Objects' masks on image *key* (*ids*: those Objects instead, a mask set)."""
-        use = self._members(ids)
+        use = self.members(ids)
         return union(o.mask(key) for o in self.objects if use(o))
 
-    def _members(self, ids: Optional[Iterable[int]]):
+    def members(self, ids: Optional[Iterable[int]]):
         if ids is None:
             return lambda o: o.included
         wanted = set(ids)
@@ -367,7 +367,7 @@ class Project:
     def keys_with_masks(self, included_only: bool = True, ids: Optional[Iterable[int]] = None) -> List[str]:
         """Image keys (in sequence order) where at least one Object has a mask (*ids*: of those Objects)."""
         present = set()
-        use = self._members(ids) if included_only or ids is not None else (lambda o: True)
+        use = self.members(ids) if included_only or ids is not None else (lambda o: True)
         for o in self.objects:
             if not use(o):
                 continue

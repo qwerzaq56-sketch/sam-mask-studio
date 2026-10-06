@@ -67,7 +67,8 @@ from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
-from src.core.storage import check_export, default_export_dir, full_mask
+from src.core.storage import check_export, default_export_dir, full_mask, has_sky
+from src.engine.imageio import read_rgb
 from src.logging_config import get_logger, log_file
 from src.version import app_version
 
@@ -2537,6 +2538,8 @@ class MainWindow(QMainWindow):
             save_set=lambda name: project.set_mask_set(name, [o.id for o in project.objects if o.included]),
             delete_set=lambda name: project.set_mask_set(name, None),
             excluded=len(project.excluded),
+            sky=has_sky(project) or any(has_sky(project, ids) for ids in project.mask_sets.values()),
+            sky_edges=self.settings.export_sky_edges,
         )
         if dlg.exec() != ExportDialog.DialogCode.Accepted:
             if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
@@ -2545,7 +2548,9 @@ class MainWindow(QMainWindow):
             return
         if self.scene is not None:
             self.settings.export_target = dlg.target.currentData()
-            self.settings.save(self.settings_path)
+        if not dlg.sky_edges.isHidden():
+            self.settings.export_sky_edges = dlg.sky_edges.isChecked()
+        self.settings.save(self.settings_path)
         p = dlg.preset()
         if p is not None:
             self.log(f"Export for {p.label}: {p.note}")
@@ -2607,7 +2612,9 @@ class MainWindow(QMainWindow):
         def work():
             if views is not None:  # converted cameras: images, masks and model together (docs/specs/08)
                 masks = [MaskJob(o.out_dir, o.name_pattern, o.invert, o.include_empty,
-                                 lambda k, ids=o.object_ids: full_mask(s.project, k, s.original_size, ids))
+                                 lambda k, ids=o.object_ids, sky=o.sky_edges: full_mask(
+                                     s.project, k, s.original_size, ids,
+                                     (lambda key: read_rgb(s.image_dir / key)) if sky else None))
                          for o in jobs]
                 if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
                     groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]

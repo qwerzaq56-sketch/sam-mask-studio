@@ -148,7 +148,7 @@ class ExportDialog(QDialog):
     def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[..., ExportCheck]] = None,
                  scene=None, target: str = CUSTOM, sets: Optional[dict] = None,
                  save_set: Optional[Callable[[str], bool]] = None, delete_set: Optional[Callable[[str], None]] = None,
-                 excluded: int = 0):
+                 excluded: int = 0, sky: bool = False, sky_edges: bool = True):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
         self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
@@ -256,6 +256,14 @@ class ExportDialog(QDialog):
             self.pattern.addItem(label)
         self.invert = QCheckBox("Invert (object black, background white)")
         self.empty = QCheckBox("Also write empty masks for images without Objects")
+        self.sky_edges = QCheckBox("Sky edges at full resolution (slower: reads every image)")
+        self.sky_edges.setToolTip(
+            "Sky Objects: the edge is decided again on the full-size image, pixel by pixel, by colour,\n"
+            "instead of scaling the working mask up (blocky, over the outer leaves). Also finds the sky\n"
+            "between leaves near the edge. Other Objects are scaled up as always. About 1 s per 4K image."
+        )
+        self.sky_edges.setChecked(sky_edges)
+        self.sky_edges.setVisible(sky)
         form = QFormLayout(self)
         # the check: what gets written, and the images worth a look before exporting
         self.summary = QLabel()
@@ -286,6 +294,7 @@ class ExportDialog(QDialog):
         form.addRow("File names", self.pattern)
         form.addRow(self.invert)
         form.addRow(self.empty)
+        form.addRow(self.sky_edges)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export")
         buttons.accepted.connect(self.accept)
@@ -594,6 +603,7 @@ class ExportDialog(QDialog):
                 include_empty=self.empty.isChecked(),
                 backup=self.preset() is not None,
                 object_ids=None if name is None else list(self._sets[name]),
+                sky_edges=not self.sky_edges.isHidden() and self.sky_edges.isChecked(),
             )
             for name in self._chosen()
         ]

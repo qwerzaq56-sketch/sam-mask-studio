@@ -1810,3 +1810,18 @@ def test_apply_to_all_frames_in_fill_mode_only(qapp, win):
     assert s.auto_tool == "invert"  # the tool stays on, its preview recomputed for the restored mask
     wait_until(qapp, lambda: s.auto_changes()[0] is not None and bool((s.auto_changes()[0] == ~m0).all()))
     assert np.array_equal(s.editing_frame().mask, m0)
+
+
+# --- p62: Sky edges at full resolution on export ------------------------------------------------------------------
+
+
+def test_export_dialog_offers_sky_edges_only_with_a_sky(qapp, win, tmp_path):
+    from src.app.dialogs import ExportDialog
+
+    plain = ExportDialog(tmp_path / "out", win)
+    assert plain.sky_edges.isHidden() and not plain.options().sky_edges
+    dlg = ExportDialog(tmp_path / "out", win, sky=True, sky_edges=True)
+    assert not dlg.sky_edges.isHidden() and dlg.options().sky_edges
+    dlg.sky_edges.setChecked(False)
+    assert not dlg.options().sky_edges
+    assert win.settings.export_sky_edges  # on by default
