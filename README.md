@@ -64,6 +64,21 @@ python -m src.cli person <이미지 폴더> --out <사람 마스크 폴더> [--r
 - 장면의 `masks/` 한 번에: `person --out people` → `lens --and-with people --out masks`.
 - 그 밖의 옵션: `python -m src.cli <sky|lens|person> --help`.
 
+#### 마스킹 프리셋 (배치 툴용)
+
+```
+python -m src.cli run <이미지 폴더> --preset <이름 또는 .json> --out <장면 폴더> [--recursive]
+python -m src.cli probe <이미지 폴더> --out <시험 폴더> --preset <이름> [--also "selfie stick;tripod"] [--reference <손으로 확인한 masks>] [--inside 90]
+python -m src.cli preset list | show <이름> | save <새 이름> --from <이름> [--labels ...]
+```
+
+- 프리셋 = 어떤 단계(사람·렌즈·하늘)를 어떤 설정으로 할지. **SAM3 프롬프트가 핵심**: 0022에서 맞은 "black pole"이 다른 장비·장면에서도 맞는다는 보장은 없음. 그래서 프리셋마다 무엇으로 확인했는지(`checked_on`)를 적어 둠.
+- 내장: `osmo360-selfie-stick`(0022에서 확인), `people-only`(출발점, 확인 안 됨). 내 프리셋은 `mask_presets/`(또는 환경 변수 `SMS_MASK_PRESETS` 폴더), 어떤 `.json`이든 경로로 지정 가능.
+- `run`: 프리셋의 단계를 장면 폴더에 한 번에. `masks/`(사람 → 렌즈 곱, 사람만은 `people_masks/`에 남김), `sky_masks/`. 셋 중 어느 폴더에든 마스크가 이미 있으면 **아무것도 하지 않고** 멈춤.
+- `probe`: 전체를 돌리기 전에 카메라 폴더마다 몇 장(`--frames`)에서 프롬프트를 시험. 프롬프트별로 몇 장에서 잡혔는지, 점수, 면적, 기준 마스크가 있으면 덮은 비율·넘친 비율과 IoU. 대조 시트(`sheet_01.jpg`)에 사람 마스크는 빨강, 프롬프트마다 다른 색 윤곽, 기준은 초록. `--also`는 마스크에 넣지 않고 재기만 하는 후보. `--save-preset 이름`으로 시험한 설정을 저장.
+- `person`/`lens`/`sky`도 `--preset`을 받고, 따로 준 옵션이 프리셋 값을 바꿈.
+- 창에서는 **File > Batch Masking with Presets…**: 프리셋 고르기, 프롬프트 고치기, Try Prompts(대조 시트를 창에 표시), Save as Preset, Run on the Folder, Copy Command(배치 툴용 명령). 같은 명령줄을 별도 프로세스로 부르므로 결과가 배치와 같음.
+
 ## 설치 (Windows, 개발용)
 
 ```powershell

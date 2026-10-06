@@ -1825,3 +1825,48 @@ def test_export_dialog_offers_sky_edges_only_with_a_sky(qapp, win, tmp_path):
     dlg.sky_edges.setChecked(False)
     assert not dlg.options().sky_edges
     assert win.settings.export_sky_edges  # on by default
+
+
+# --- p66: batch masking with presets (src/app/batch_mask_dialog.py) ---------------------------
+
+
+def test_batch_mask_dialog_edits_a_preset_and_builds_the_commands(qapp, win, tmp_path, monkeypatch):
+    import json
+
+    from PyQt6.QtWidgets import QInputDialog
+
+    from src.app.batch_mask_dialog import BatchMaskDialog
+    from src.batchmask import presets as P
+
+    monkeypatch.setenv(P.ENV, str(tmp_path / "mine"))
+    assert win.act_batch_masks.text().startswith("&Batch Masking")
+    d = BatchMaskDialog(win.session.image_dir, tmp_path / "scene")
+    i = d.preset.findData("osmo360-selfie-stick")
+    d.preset.setCurrentIndex(i)
+    assert d.current() == P.find_preset("osmo360-selfie-stick") and d.current().checked_on
+    assert "black pole" in d.labels.text() and d.lens_box.isChecked() and d.sky_box.isChecked()
+
+    d.labels.setText("person, silver pole")
+    d.lens_box.setChecked(False)
+    p = d.current()
+    assert p.person.labels == ["person", "silver pole"] and p.lens is None and not p.checked_on  # edited: unchecked
+
+    args = d.run_args()
+    assert args[:2] == ["run", str(win.session.image_dir)] and "--out" in args
+    written = json.loads(open(args[args.index("--preset") + 1], encoding="utf-8").read())
+    assert written["person"]["labels"] == ["person", "silver pole"] and written["lens"] is None
+    d.also.setText("tripod")
+    d.reference.setText(str(tmp_path))
+    d.inside.setValue(90)
+    pa = d.probe_args()
+    assert pa[0] == "probe" and pa[pa.index("--also") + 1] == "tripod" and pa[pa.index("--inside") + 1] == "90"
+
+    answers = iter([("silver", True), ("scene Y: 8 frames looked at", True)])
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
+    path = d.save_as()
+    assert path == tmp_path / "mine" / "silver.json" and d.preset.currentData() == "silver"
+    saved = P.find_preset("silver")
+    assert saved.lens is None and saved.checked_on == ["scene Y: 8 frames looked at"]
+    tmp = d._tmp
+    d.done(0)
+    assert not tmp.exists()
