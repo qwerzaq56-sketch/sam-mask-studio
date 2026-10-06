@@ -24,7 +24,8 @@ Middle-drag or Space+drag pans and the wheel zooms at the cursor. Alt+right-drag
 (as in Photoshop), Ctrl+wheel or Shift+wheel set the brush size while an Object is in Edit. The Final Mask
 preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
 editing keeps working in it. ``set_preview_style`` picks how it looks: the mask in black and white, the
-image cut out by the mask, or the image outside it (the rest a gray checkerboard, as transparency).
+image cut out by the mask, or the image outside it; ``set_cutout_fill`` fills the rest with the mask's own
+color there (black outside the mask, white inside) or a gray checkerboard (as transparency).
 """
 
 from __future__ import annotations
@@ -86,6 +87,7 @@ REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
 UNPICK_STROKE_COLOR = (255, 60, 60)  # Alt: the stroke takes picks back out
 PREVIEW_STYLES = ("mask", "cutout", "outside")  # black and white | the image inside the mask | outside it
+CUTOUT_FILLS = ("mask", "checker")  # the cut-out previews' rest: the mask's color there | a checkerboard
 CUTOUT_GRAYS = (102, 153)  # the cut-out previews' checkerboard: gray, unlike sky, leaves and the tool tints
 ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is held
 
@@ -209,6 +211,7 @@ class Canvas(QWidget):
         self._final_q: Optional[QImage] = None
         self._final_label = "FINAL MASK"
         self.preview_style = "mask"
+        self.cutout_fill = "mask"
         self.color_pick_mode = False  # a click samples the image's color (By Color's picker)
         self.final_preview = False
         self.mode = Mode.IDLE
@@ -356,13 +359,25 @@ class Canvas(QWidget):
             self._final_q = None
             self.update()
 
+    def set_cutout_fill(self, fill: str) -> None:
+        """What the cut-out previews fill the rest with: ``mask`` (its black / white there) or ``checker``."""
+        if fill not in CUTOUT_FILLS:
+            raise ValueError(f"Unknown cut-out fill: {fill}")
+        if fill != self.cutout_fill:
+            self.cutout_fill = fill
+            self._final_q = None
+            self.update()
+
     def _preview_image(self, h: int, w: int) -> QImage:
         final = self._final if self._final is not None and self._final.shape == (h, w) else np.zeros((h, w), bool)
         if self.preview_style == "mask":
             return _qimage(final.astype(np.uint8) * 255)
         keep = final if self.preview_style == "cutout" else ~final
         out = self.image[..., :3].copy()
-        out[~keep] = checkerboard(h, w)[~keep]
+        if self.cutout_fill == "checker":
+            out[~keep] = checkerboard(h, w)[~keep]
+        else:  # the mask as it is there: black outside it (Cut Out), white inside it (Outside)
+            out[~keep] = 255 if self.preview_style == "outside" else 0
         return _qimage(out)
 
     def set_final_preview(self, on: bool) -> None:

@@ -48,7 +48,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from src.app.canvas import PREVIEW_STYLES, Canvas, Overlay
+from src.app.canvas import CUTOUT_FILLS, PREVIEW_STYLES, Canvas, Overlay
 from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
@@ -411,6 +411,11 @@ class MainWindow(QMainWindow):
         # how Mask Preview looks: the mask, or the image cut out by it (inside / outside)
         self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout, ["C"])
         self.act_cutout_side = self._action("Cut Out: Inside / Outside", self.toggle_cutout_side, ["Shift+C"])
+        self.act_cutout_checker = self._action(
+            "Cut Out Background: Checkerboard", self.toggle_cutout_checker,
+            tip="The cut-out previews fill the rest with a gray checkerboard (off: the mask's own color there, "
+                "black outside the mask, white inside)", checkable=True)
+        self.act_cutout_checker.setChecked(self.settings.cutout_fill == "checker")
         self._show_preview_style()
         self.act_brush = self._action(
             "Brush",
@@ -508,7 +513,8 @@ class MainWindow(QMainWindow):
                   self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames):
             objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
-        for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side):
+        for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side,
+                  self.act_cutout_checker):
             m.addAction(a)
         self._hint(m, "Peek at Mask Preview", "Z (hold)")
         for a in (self.act_outline, self.act_changes, None, self.act_solo, self.act_hide_masks):
@@ -2127,8 +2133,8 @@ class MainWindow(QMainWindow):
         self.canvas.update()
 
     def toggle_cutout(self) -> None:
-        """C: Mask Preview shows the mask in black and white <-> the image cut out by it (the rest a gray
-        checkerboard), on the side Shift+C picks. Only the style: V toggles the preview itself, Z peeks."""
+        """C: Mask Preview shows the mask in black and white <-> the image cut out by it (the rest the mask's
+        black / white, or a checkerboard), on the side Shift+C picks. Only the style: V toggles the preview itself, Z peeks."""
         cur = self.settings.preview_style
         self.settings.preview_style = self.settings.cutout_side if cur == "mask" else "mask"
         self._set_preview_style()
@@ -2141,6 +2147,12 @@ class MainWindow(QMainWindow):
             self.settings.preview_style = side
         self._set_preview_style()
 
+    def toggle_cutout_checker(self, on: bool) -> None:
+        """The cut-out previews' rest: a gray checkerboard, or (off) the mask's black / white there."""
+        self.settings.cutout_fill = "checker" if on else "mask"
+        self.settings.save(self.settings_path)
+        self._show_preview_style()
+
     def _set_preview_style(self) -> None:
         self.settings.save(self.settings_path)
         self._show_preview_style()
@@ -2150,11 +2162,12 @@ class MainWindow(QMainWindow):
     def _show_preview_style(self) -> None:
         style = self.settings.preview_style if self.settings.preview_style in PREVIEW_STYLES else "mask"
         self.canvas.set_preview_style(style)
+        self.canvas.set_cutout_fill(self.settings.cutout_fill if self.settings.cutout_fill in CUTOUT_FILLS else "mask")
         self.act_preview_style.setIconText(
             {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
         self.act_preview_style.setToolTip(
             "How Mask Preview (V, hold Z) looks. C: the mask in black and white <-> the image cut out by it "
-            "(the rest a gray checkerboard). Shift+C: cut out inside the mask (what it holds: leaves in a sky "
+            "(the rest black / white as in the mask, or a checkerboard: View menu). Shift+C: cut out inside the mask (what it holds: leaves in a sky "
             "mask) <-> outside it (what it left: sky it missed)")
 
     def _show_preview_mode(self) -> None:
