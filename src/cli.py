@@ -11,13 +11,22 @@ each camera folder's frames (cam0/ and cam1/ may differ), pulled in by a margin 
 
     python -m src.cli lens H:/scene/images --out H:/scene/masks --recursive [--and-with H:/scene/person_masks]
 
-Common to both:
+``person``: people and what they carry (the selfie stick, a bag) for every image, from SAM3's text
+prompts (src/core/people.py) — on the GPU, so never while a training runs.
+
+    python -m src.cli person H:/scene/images --out H:/scene/people_masks --recursive
+
+A scene's ``masks/`` (people and the lens edge, black = ignored): ``person`` to a folder, then ``lens``
+``--and-with`` it into ``masks/``.
+
+Common to all:
 
 - One PNG per image, named ``<image name>.png`` (``00011.jpg.png``; ``--names stem``: ``00011.png``),
   sub-folders kept (``cam0/``, ``cam1/``).
 - Files already in ``--out`` are never replaced unless asked: ``--skip-existing`` (carry on after a
   stop) or ``--overwrite``.
-- No GPU (sky: about 2-3 s per 3840² image on the CPU; lens: about 0.1 s).
+- sky and lens use no GPU (sky: about 2-3 s per 3840² image on the CPU; lens: about 0.1 s). person needs
+  about 4.5 GB of it (about 2 s per image) and refuses to start when less is free.
 - Exit code 0 when every image got a mask, 1 when some failed (listed), 2 for a wrong call.
 """
 
@@ -39,6 +48,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SKY_MODEL = ROOT / "checkpoints" / "sky" / "skyseg.onnx"
 LENS_MARGIN = 2.0  # % of the radius: the lens rim's glow, about 40 px on a 3840² OSMO 360 fisheye
 LENS_SAMPLES = 16  # frames per camera folder the circle is found in
+SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
+SAM2_MODEL = ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt"  # not loaded; the engine wants a path
+GPU_NEEDED = 5.0  # GB free before person starts (SAM3 at 1024 px peaked at 4.2 GB on 0022)
 
 
 def _write_png(path: Path, mask: np.ndarray) -> None:
@@ -205,13 +217,7 @@ def lens_folder(images: Path, out: Path, recursive: bool = False, names: str = "
             masks[cache] = ~lens_edge_mask(h, w, sp), [round(v, 1) for v in lens_circle(h, w, sp)]
         keep, circle_px = masks[cache]
         if and_with is not None:
-            other = _read_mask(and_with / b.name(key)) if (and_with / b.name(key)).exists() else None
-            if other is None:
-                missing.append(key)
-            else:
-                if other.shape != keep.shape:
-                    other = cv2.resize(other.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
-                keep = keep & other
+            keep = _multiply(keep, and_with, b.name(key), missing, key)
         return (~keep if invert else keep), {"kept": round(float(keep.mean()), 4), "circle_px": circle_px}
 
     report = b.run(make, lambda note: f"kept {100 * note['kept']:.1f}%")
@@ -219,6 +225,81 @@ def lens_folder(images: Path, out: Path, recursive: bool = False, names: str = "
         report["and_with_missing"] = missing
         if missing:
             log(f"{len(missing)} image(s) had no mask in {and_with}: the lens edge alone was written for them")
+    return report
+
+
+def _multiply(keep: np.ndarray, folder: Path, name: str, missing: List[str], key: str) -> np.ndarray:
+    """*keep* times the mask *name* in *folder* (white = keep); noted in *missing* when there is none."""
+    other = _read_mask(folder / name) if (folder / name).exists() else None
+    if other is None:
+        missing.append(key)
+        return keep
+    if other.shape != keep.shape:
+        other = cv2.resize(other.astype(np.uint8), (keep.shape[1], keep.shape[0]), interpolation=cv2.INTER_NEAREST) > 0
+    return keep & other
+
+
+def gpu_free_gb() -> Optional[float]:
+    """Free GPU memory in GB, None without CUDA."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return None
+    free, _total = torch.cuda.mem_get_info()
+    return free / 2**30
+
+
+def _engine(model: Path, device: str):
+    from src.engine.inference import InferenceEngine
+
+    eng = InferenceEngine(str(SAM2_MODEL), str(model), device=device)
+    eng.load_sam3()
+    return eng
+
+
+def person_folder(images: Path, out: Path, recursive: bool = False, names: str = "name", invert: bool = False,
+                  labels: Sequence[str] = (), attach: Sequence[str] = (), threshold: float = 0.4,
+                  grow: int = 2, max_side: int = 1024, model: Path = SAM3_MODEL, device: str = "cuda",
+                  and_with: Optional[Path] = None, existing: str = "stop", log=print) -> dict:
+    """The ``person`` command: black = people and what they carry (ignored in training), white = the rest
+    (``--invert``: white = people). Returns the report."""
+    from src.core.people import people_mask
+    from src.engine.imageio import read_rgb, resize_mask, to_working
+
+    b = Batch("person", images, out, recursive, names, existing, log=log, settings={
+        "labels": list(labels), "attach": list(attach), "threshold": threshold, "grow": grow,
+        "max_side": max_side, "invert": invert, "model": str(model), "device": device,
+        "and_with": str(and_with) if and_with else None})
+    missing: List[str] = []
+    if b.todo:
+        t = time.time()
+        eng = _engine(model, device)
+        log(f"SAM3 loaded on {eng.device} in {time.time() - t:.0f} s")
+    else:
+        eng = None
+
+    def make(key):
+        rgb = read_rgb(images / key)
+        work = to_working(rgb, max_side)
+        dets = eng.detect_many(work, list(labels) + list(attach))
+        found = resize_mask(people_mask(dets, work.shape[:2], labels, attach, threshold, grow=grow), rgb.shape[:2])
+        keep = ~found
+        if and_with is not None:
+            keep = _multiply(keep, and_with, b.name(key), missing, key)
+        counts: Dict[str, int] = {}
+        for d in dets:
+            if d.score >= threshold:
+                counts[d.label] = counts.get(d.label, 0) + 1
+        return (~keep if invert else keep), {"people": round(float(found.mean()), 4), "found": counts}
+
+    report = b.run(make, lambda note: f"masked {100 * note['people']:.1f}%  "
+                                      + (", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"))
+    if and_with is not None:
+        report["and_with_missing"] = missing
+        if missing:
+            log(f"{len(missing)} image(s) had no mask in {and_with}: the people alone were written for them")
+    if eng is not None and hasattr(eng, "release"):
+        eng.release()
     return report
 
 
@@ -265,11 +346,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     lens.add_argument("--cy", type=float, default=0.0, help="With --radius: center below the middle, %% (0)")
     lens.add_argument("--and-with", type=Path, help="Mask folder (white = keep, same names) to multiply in, "
                                                     "e.g. people masks: one masks/ folder comes out")
+
+    from src.core.people import ATTACH, GROW, LABELS, THRESHOLD
+
+    person = sub.add_parser("person", help="People and what they carry (selfie stick, bag), SAM3 on the GPU",
+                            description="Black = people, the selfie stick and their bags (what training ignores), "
+                                        "white = the rest: the masks/ convention.")
+    _common(person, "White = people, black = the rest")
+    person.add_argument("--labels", default=";".join(LABELS),
+                        help=f"SAM3 text prompts always masked, ';'-separated ({';'.join(LABELS)})")
+    person.add_argument("--attach", default=";".join(ATTACH),
+                        help=f"Prompts masked only where they touch the above ({';'.join(ATTACH)}; empty = none)")
+    person.add_argument("--threshold", type=float, default=THRESHOLD, help=f"Detection score to keep ({THRESHOLD})")
+    person.add_argument("--grow", type=int, default=GROW, help=f"Grow the mask by px at 1024 px ({GROW})")
+    person.add_argument("--max-side", type=int, default=1024, help="Working resolution's longer side (1024)")
+    person.add_argument("--model", type=Path, default=SAM3_MODEL, help=f"sam3.pt (default {SAM3_MODEL})")
+    person.add_argument("--cpu", action="store_true", help="Run on the CPU (very slow)")
+    person.add_argument("--gpu-anyway", action="store_true",
+                        help=f"Start even with less than {GPU_NEEDED:.0f} GB of GPU memory free")
+    person.add_argument("--and-with", type=Path, help="Mask folder (white = keep, same names) to multiply in, "
+                                                      "e.g. the lens edge: one masks/ folder comes out")
     args = parser.parse_args(argv)
 
     if not args.images.is_dir():
         parser.error(f"not a folder: {args.images}")
     existing = "skip" if args.skip_existing else "overwrite" if args.overwrite else "stop"
+    if getattr(args, "and_with", None) is not None:
+        if not args.and_with.is_dir():
+            parser.error(f"not a folder: {args.and_with}")
+        if args.and_with.resolve() == args.out.resolve():
+            parser.error("--and-with and --out must be different folders")
     if args.command == "sky":
         if not args.model.is_file():
             parser.error(f"sky model not found: {args.model} (download skyseg.onnx from "
@@ -280,14 +386,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             edges=not args.no_edges, max_side=args.max_side, model_path=args.model, existing=existing,
         )
     elif args.command == "lens":
-        if args.and_with is not None and not args.and_with.is_dir():
-            parser.error(f"not a folder: {args.and_with}")
-        if args.and_with is not None and args.and_with.resolve() == args.out.resolve():
-            parser.error("--and-with and --out must be different folders")
         circle = None if args.radius is None else {"radius": args.radius, "cx": args.cx, "cy": args.cy}
         report = lens_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             margin=args.margin, circle=circle, samples=args.samples, and_with=args.and_with, existing=existing,
+        )
+    elif args.command == "person":
+        if not args.model.is_file():
+            parser.error(f"SAM3 model not found: {args.model}")
+        device = "cpu" if args.cpu else "cuda"
+        if not args.cpu:
+            free = gpu_free_gb()
+            if free is None:
+                parser.error("no CUDA GPU (--cpu to run on the CPU, very slowly)")
+            if free < GPU_NEEDED and not args.gpu_anyway:
+                raise SystemExit(f"Only {free:.1f} GB of GPU memory is free ({GPU_NEEDED:.0f} needed): another GPU "
+                                 "job (a training?) is running. Nothing done. Wait for it, or --gpu-anyway.")
+
+        def split(text):
+            return [t.strip() for t in text.split(";") if t.strip()]
+
+        report = person_folder(
+            args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
+            labels=split(args.labels), attach=split(args.attach), threshold=args.threshold, grow=args.grow,
+            max_side=args.max_side, model=args.model, device=device, and_with=args.and_with, existing=existing,
         )
     else:
         return 2
