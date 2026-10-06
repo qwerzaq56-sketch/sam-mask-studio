@@ -72,16 +72,21 @@ def test_select_range_by_picked_colors_and_brightness():
 
     img, sky = skyline()  # RGB-ish: (150, 190, 240) sky, (30, 70, 25) trees, noise ±12
     sky_color, tree_color = (150, 190, 240), (30, 70, 25)
-    assert (select_range(img, [sky_color], 15) == sky).mean() > 0.99
-    assert (select_range(img, [tree_color], 15) == ~sky).mean() > 0.99
-    both = select_range(img, [sky_color, tree_color], 15)
+    assert (select_range(img, [sky_color], 25) == sky).mean() > 0.99
+    assert (select_range(img, [tree_color], 25) == ~sky).mean() > 0.99
+    both = select_range(img, [sky_color, tree_color], 25)
     assert both.mean() > 0.99
     bright = select_range(img, (), use_color=False, brightness=(120, 255), use_brightness=True)
     assert (bright == sky).mean() > 0.99
     # color and brightness together: the sky's color, but only its darker half
-    dark_sky = select_range(img, [sky_color], 15, brightness=(0, 178), use_brightness=True)
+    dark_sky = select_range(img, [sky_color], 25, brightness=(0, 178), use_brightness=True)
     assert dark_sky.sum() < sky.sum() * 0.8 and not (dark_sky & ~sky).any()
     assert not select_range(img).any()  # nothing picked, no range: nothing
+    # p78: lightness counts: a white sky does not take a dark gray leaf
+    gray = np.zeros((2, 2, 3), np.uint8)
+    gray[0] = 235
+    gray[1] = (60, 66, 58)
+    assert (select_range(gray, [(235, 235, 235)], 30) == [[True, True], [False, False]]).all()
 
 
 def test_take_add_or_remove_only():

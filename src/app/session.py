@@ -79,14 +79,16 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
             sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
                                settings.get("bright_use", False))
-            # Photoshop-like: add the selected pixels, take them out, or make the mask the selection
-            sel &= near_edge(base, band)
+            # Photoshop-like: keep only the selected pixels, add them, take them out, or make the mask the selection
+            area = near_edge(base, band)
             action = settings.get("color_action", "both")
+            if action == "keep":  # pick the sky's colors and paint over leaves: they leave the sky mask (p78)
+                return base & (sel | ~area)
             if action == "add":
-                return base | sel
+                return base | (sel & area)
             if action == "remove":
-                return base & ~sel
-            return np.where(near_edge(base, band), sel, base)
+                return base & ~(sel & area)
+            return np.where(area, sel, base)
         else:
             result = split_by_color(image, base, settings.get("color_basis", "color"),
                                     settings.get("color_balance", 50), band)

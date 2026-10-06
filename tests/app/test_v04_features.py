@@ -1911,6 +1911,7 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     assert not c.showing_final  # C only picks the style; V / Z show the preview
     final = win.session.project.final_mask(win.session.key)
     h, w = final.shape
+    c._final = final  # what the canvas shows (it follows the project asynchronously)
     q = c._preview_image(h, w)
     ptr = q.constBits()
     ptr.setsize(q.sizeInBytes())
@@ -1981,6 +1982,16 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     added, removed = s.auto_changes()
     assert not added.any() and (removed == before).all()  # Remove selection: every pixel selected, all go (p75)
     assert p.color_action.currentText() == "Remove selection"
+    p.color_action.setCurrentIndex(p.color_action.findData("keep"))  # p78: keep only the selected pixels
+    p.bright_lo.spin.setValue(256 // 2)
+    p._settings_timer.timeout.emit()
+    wait_until(qapp, lambda: s.auto_changes()[1] is not None and s.auto_changes()[1].any())
+    added, removed = s.auto_changes()
+    import numpy as np
+
+    gray = np.asarray(s.image[..., :3], float) @ [0.299, 0.587, 0.114]
+    assert not added.any() and not (removed & (gray > 136)).any()  # the bright (selected) part stays
+    p.bright_lo.spin.setValue(0)
     p.color_action.setCurrentIndex(p.color_action.findData("add"))
     p._settings_timer.timeout.emit()
     wait_until(qapp, lambda: s.auto_changes()[0] is not None and s.auto_changes()[0].any())
