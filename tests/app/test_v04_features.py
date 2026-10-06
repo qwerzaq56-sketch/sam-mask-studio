@@ -1870,3 +1870,20 @@ def test_batch_mask_dialog_edits_a_preset_and_builds_the_commands(qapp, win, tmp
     tmp = d._tmp
     d.done(0)
     assert not tmp.exists()
+
+
+def test_by_color_auto_tool_redraws_the_edge(qapp, win):
+    """p68: By Color decides the pixels near the mask's edge again by the image's colors (a preview first)."""
+    ids = make_objects(win, 1)
+    s = win.session
+    win.toggle_edit(ids[0])
+    before = s.editing_frame().mask.copy()
+    p = win.properties_panel
+    p.color_basis.setCurrentIndex(p.color_basis.findData("brightness"))
+    p.tool_btns["by_color"].click()
+    assert s.auto_tool == "by_color" and "By Color" in p.settings_box.title()
+    from tests.app.conftest import wait_until
+
+    wait_until(qapp, lambda: s.auto_changes()[0] is not None)  # computed off the UI thread (reads the image)
+    assert (s.editing_frame().mask == before).all()  # a preview until applied
+    assert p.tool_settings()["color_basis"] == "brightness"

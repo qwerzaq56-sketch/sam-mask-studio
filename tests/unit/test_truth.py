@@ -66,3 +66,47 @@ def test_truth_make_and_score(tmp_path, monkeypatch):
     assert cli.main(["truth", "score", str(out), str(masks), "--report", str(rep)]) == 0
     r = json.loads(rep.read_text(encoding="utf-8"))
     assert r["scored"] == 2 and r["summary"]["iou_min"] < 1 and r["rows"][m["crops"][0]["name"]]["iou"] == 1
+
+
+def leafy(n=256):
+    """Blue sky over dark green leaves with a few sky gaps, gray twigs against a white cloud; the true sky."""
+    rng = np.random.default_rng(2)
+    img = np.empty((n, n, 3), np.uint8)
+    img[:] = (235, 190, 150)  # BGR: blue sky
+    img[:60, 140:] = (245, 245, 245)  # a white cloud
+    sky = np.ones((n, n), bool)
+    sky[128:] = False
+    img[128:] = (40, 80, 50)  # leaves
+    for y, x in ((170, 40), (200, 120), (180, 200)):  # sky between the leaves
+        img[y:y + 8, x:x + 8] = (235, 190, 150)
+        sky[y:y + 8, x:x + 8] = True
+    img[20:24, 160:220] = (150, 150, 145)  # a gray twig in front of the cloud
+    sky[20:24, 160:220] = False
+    img = np.clip(img.astype(int) + rng.integers(-6, 7, img.shape), 0, 255).astype(np.uint8)
+    return img, sky
+
+
+def test_matte_sky_follows_colors_not_the_draft():
+    img, sky = leafy()
+    draft = np.zeros_like(sky)
+    draft[:136] = True  # spills 8 px over the trees, misses the gaps, takes the twig
+    m = T.matte_sky(img, draft)
+    assert (m != sky).mean() < 0.002
+    assert not m[22, 190]  # the twig is no sky
+    assert m[174, 44]  # a gap is
+
+
+def test_truth_auto_writes_candidates_once(tmp_path):
+    img, sky = leafy()
+    d = tmp_path / "set"
+    T._write(d / "images" / "a_x0_y0.jpg", img, ".jpg", (cv2.IMWRITE_JPEG_QUALITY, 98))
+    draft = np.zeros_like(sky)
+    draft[:136] = True
+    T._write(d / "drafts" / "a_x0_y0.jpg.png", draft.astype(np.uint8) * 255, ".png")
+    (d / "manifest.json").write_text(json.dumps({"kind": "sky", "crops": [{"name": "a_x0_y0"}]}), encoding="utf-8")
+    assert cli.main(["truth", "auto", str(d)]) == 0
+    got = T._read(d / "candidates" / "a_x0_y0.png")
+    assert (got != sky).mean() < 0.01 and (d / "review" / "a_x0_y0.jpg").is_file()
+    assert json.loads((d / "manifest.json").read_text(encoding="utf-8"))["candidates"]["candidates"]["crops"]
+    with pytest.raises(SystemExit):
+        cli.main(["truth", "auto", str(d)])  # never over masks already there

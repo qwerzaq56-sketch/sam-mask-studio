@@ -161,6 +161,12 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   (`refine.within`); without one they act on the whole mask. The region is UI state (`Session.region`): not saved, not undone,
   cleared when leaving Edit or changing image.
 
+- **By Color** (`core/refine.split_by_color`, v0.4-p68): pixels within N px of the mask's edge are
+  decided again. Brightness: an Otsu gray threshold there (a bright mask takes the brighter side). Color:
+  the colors there in 8 Lab k-means groups; a group the mask mostly covers is the mask's, so a draft that
+  is wrong in places still teaches the right sides. Balance shifts either line. Reads the image: computed
+  in a Task like Object Fill (`session.IMAGE_TOOLS`).
+
 **P2.1 — feedback on P2** (`v0.3-p2.1`)
 - Merge names the result after the first Object selected (the panel keeps selection order).
 - Properties: Mask / Edit Layer tabs, each scrollable; the how-to shows only with nothing selected.

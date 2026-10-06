@@ -580,6 +580,16 @@ def _truth_command(parser: argparse.ArgumentParser, args) -> int:
         print(f"{len(m['crops'])} crop(s) in {args.out}: fix images/ in the app (drafts/ imports as an Object), "
               "export white = sky to images_masks/, then 'truth score'.")
         return 0
+    if args.action == "auto":
+        if not (args.truth / "manifest.json").is_file():
+            parser.error(f"not a truth set (no manifest.json): {args.truth}")
+        try:
+            T.auto_set(args.truth, args.out, args.cut, args.max_de, app_version())
+        except FileExistsError as e:
+            raise SystemExit(str(e))
+        print(f"Masks in {args.truth / args.out}, side by side in {args.truth / 'review'}: check them; fix the "
+              "wrong ones in the app (import the folder as an Object) and export white = sky to images_masks/.")
+        return 0
     for p in (args.truth, args.masks):
         if not p.is_dir():
             parser.error(f"not a folder: {p}")
@@ -704,7 +714,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _gpu_options(run, "--sam3-model")
     truth = sub.add_parser("truth", help="Sky ground truth: crops to fix by hand, and scores against them",
                            description="'make' cuts full-resolution crops where the sky's edge is hardest (with "
-                                       "drafts to fix in this app); 'score' compares any method's full-frame sky "
+                                       "drafts to fix in this app); 'auto' makes careful masks of them from "
+                                       "their colors to check by hand; 'score' compares any method's full-frame sky "
                                        "masks with the fixed crops (IoU, spill over tree tops, missed, edge F).")
     t_sub = truth.add_subparsers(dest="action", required=True)
     tm = t_sub.add_parser("make", help="Cut a truth set")
@@ -717,6 +728,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     tm.add_argument("--inside", type=float, default=90.0, help="Crops stay inside this %% of the inscribed circle "
                                                                "(default 90; 100+ for a non-fisheye)")
     tm.add_argument("--model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx for the drafts (default {SKY_MODEL})")
+    ta = t_sub.add_parser("auto", help="Careful sky masks of the crops from their colors, to check by hand")
+    ta.add_argument("truth", type=Path, help="The truth set folder (manifest.json)")
+    ta.add_argument("--out", default="candidates", help="Sub-folder for the masks (default candidates; "
+                                                         "refused if it holds masks)")
+    ta.add_argument("--cut", type=float, default=0.6, help="How much of a pixel must be sky (0-1, default 0.6: "
+                                                           "mixed edge pixels go to the trees)")
+    ta.add_argument("--max-de", type=float, default=22.0, help="Lab distance a sky pixel may have from the sky "
+                                                               "around it (default 22; lower keeps more twigs)")
     ts = t_sub.add_parser("score", help="Score full-frame sky masks against a fixed truth set")
     ts.add_argument("truth", type=Path, help="The truth set folder (manifest.json)")
     ts.add_argument("masks", type=Path, help="Full-frame sky masks to score (white = sky; sub-folders as the images)")

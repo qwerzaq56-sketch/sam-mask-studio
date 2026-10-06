@@ -123,6 +123,141 @@ def make_set(images: Path, keys: Sequence[str], out: Path, draft: Callable[[np.n
     return manifest
 
 
+# --- candidates: a careful sky mask per crop from the image's colors, for a person to check ---------------
+
+CUT = 0.6  # how much of a pixel must be sky (two-color mix) for it to count; mixed pixels go to the trees
+MAX_DE = 22.0  # Lab distance a sky pixel may have from the sky around it (twigs against clouds are farther)
+SIGMAS = (3, 8, 20, 60)  # px, how far to look for each side's colors (the smallest that finds any wins)
+
+
+def _local_color(img: np.ndarray, seed: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Each pixel's color of the *seed* pixels around it (normalized convolution at the smallest of SIGMAS
+    that finds any) and which scale that was (len(SIGMAS): none near, the seeds' mean)."""
+    out = np.zeros(img.shape, np.float32)
+    level = np.full(seed.shape, len(SIGMAS), np.uint8)
+    w0 = seed.astype(np.float32)
+    x0 = img * w0[..., None]
+    for i, s in enumerate(SIGMAS):
+        w = cv2.GaussianBlur(w0, (0, 0), s)
+        x = cv2.GaussianBlur(x0, (0, 0), s)
+        ok = (w > 0.02) & (level == len(SIGMAS))
+        out[ok] = x[ok] / w[ok, None]
+        level[ok] = i
+    rest = level == len(SIGMAS)
+    if rest.any() and seed.any():
+        out[rest] = img[seed].mean(0)
+    return out, level
+
+
+def _nearest_de(lab: np.ndarray, ref: np.ndarray, r: int) -> np.ndarray:
+    """Per pixel, the Lab distance to the closest of *ref*'s colors within *r* px (3x3 samples), so a pixel
+    where a cloud meets blue sky is compared with either side, not with their blend."""
+    pad = np.pad(ref, ((r, r), (r, r), (0, 0)), mode="edge")
+    h, w = lab.shape[:2]
+    best = None
+    for dy in (0, r, 2 * r):
+        for dx in (0, r, 2 * r):
+            d = ((lab - pad[dy:dy + h, dx:dx + w]) ** 2).sum(-1)
+            best = d if best is None else np.minimum(best, d)
+    return np.sqrt(best)
+
+
+def _drop_specks(mask: np.ndarray, max_px: int) -> np.ndarray:
+    """*mask* without separate pieces of at most *max_px* pixels (single noisy pixels)."""
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+    keep = stats[:, cv2.CC_STAT_AREA] > max_px
+    keep[0] = False
+    return keep[labels]
+
+
+def matte_sky(bgr: np.ndarray, draft: np.ndarray, cut: float = CUT, max_de: float = MAX_DE) -> np.ndarray:
+    """A careful sky mask of a crop, decided pixel by pixel from colors (not by the sky model).
+
+    The *draft* only gives sure samples: its sky and its trees, each shrunk by 5 px, the sky brighter and the
+    trees darker than halfway between them (a draft spilling over the trees teaches no tree colors as sky). Every pixel then gets the sky color and the tree color around it, and is sky
+    when all of these hold:
+    - as a mix of those two colors it is at least *cut* sky (mixed edge pixels go to the trees);
+    - it is blue or neutral (sky, clouds) rather than green (sunlit leaves);
+    - it is within *max_de* (Lab) of the sky around it (the closest within 3 px), so gray twig tips against a white cloud are not
+      (deep in the trees, with no sky near to compare with, 2-3 times that).
+    Then once more, the sky's colors taken only from the pixels found sky (not the twigs the draft took).
+    """
+    img = bgr[..., :3].astype(np.float32)
+    d = draft.astype(bool)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+    src = np.ascontiguousarray(bgr[..., :3])
+    gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+    sky_seed = cv2.erode(d.astype(np.uint8), k) > 0
+    tree_seed = cv2.erode((~d).astype(np.uint8), k) > 0
+    if not sky_seed.any() or not tree_seed.any():
+        return d.copy()  # one side only: nothing to learn from
+    middle = (np.median(gray[sky_seed]) + np.median(gray[tree_seed])) / 2
+    sky_seed &= gray > middle  # where the draft spills over the trees
+    tree_seed &= gray < min(middle, np.percentile(gray[sky_seed], 2) if sky_seed.any() else middle)
+    if not sky_seed.any() or not tree_seed.any():
+        return d.copy()
+    lab = cv2.cvtColor(src, cv2.COLOR_BGR2LAB).astype(np.float32)
+    b, g, r = (img[..., i] for i in range(3))
+    bluish = (b >= r - 12) & (b >= g - 18)  # a slight green tint from JPEG next to leaves is allowed
+    tree, _ = _local_color(img, tree_seed)
+    m = d
+    for _ in range(2):  # the second time the sky's colors come only from pixels the first found sky
+        sky, near = _local_color(img, sky_seed)
+        diff = sky - tree
+        alpha = ((img - tree) * diff).sum(-1) / np.maximum((diff * diff).sum(-1), 1.0)
+        sky_lab = cv2.cvtColor(np.clip(sky, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+        de = _nearest_de(lab, sky_lab, 3)
+        limit = np.array([1, 1, 2, 3, 3], np.float32)[near] * max_de
+        m = (alpha >= cut) & bluish & (de < limit)
+        m = _drop_specks(m, 3)
+        if not (sky_seed & m).any():
+            break
+        sky_seed = sky_seed & m  # twigs the draft called sky no longer tint the sky around them
+    return m
+
+
+def review_image(bgr: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """The crop, and beside it the sky tinted blue with its edge in red, for a quick look."""
+    over = bgr.copy()
+    over[mask] = (0.55 * over[mask] + 0.45 * np.array([255, 120, 0])).astype(np.uint8)
+    e = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_GRADIENT, np.ones((2, 2), np.uint8)) > 0
+    over[e] = (0, 0, 255)
+    return np.hstack([bgr, np.full((bgr.shape[0], 8, 3), 255, np.uint8), over])
+
+
+def auto_set(truth_dir: Path, out: str = "candidates", cut: float = CUT, max_de: float = MAX_DE,
+             version: str = "", log: Callable[[str], None] = print) -> dict:
+    """:func:`matte_sky` on every crop of the set (from its draft) into *truth_dir*/*out* (white = sky), and
+    side-by-side JPGs into ``review/``. A person checks them; the good ones become the truth
+    (``images_masks/``). Never writes over an *out* folder that holds masks."""
+    manifest = json.loads((truth_dir / "manifest.json").read_text(encoding="utf-8"))
+    folder = truth_dir / out
+    if folder.is_dir() and any(folder.glob("*.png")):
+        raise FileExistsError(f"{folder} already holds masks: nothing written")
+    rows = []
+    for c in manifest["crops"]:
+        name = c["name"]
+        data = np.fromfile(str(truth_dir / "images" / f"{name}.jpg"), np.uint8)
+        bgr = cv2.imdecode(data, cv2.IMREAD_COLOR) if data.size else None
+        draft = _read(truth_dir / "drafts" / f"{name}.jpg.png") if (truth_dir / "drafts" / f"{name}.jpg.png").is_file() else None
+        if bgr is None or draft is None:
+            log(f"{name}: image or draft missing, skipped")
+            continue
+        m = matte_sky(bgr, draft, cut, max_de)
+        _write(folder / f"{name}.png", m.astype(np.uint8) * 255, ".png")
+        _write(truth_dir / "review" / f"{name}.jpg", review_image(bgr, m), ".jpg", (cv2.IMWRITE_JPEG_QUALITY, 92))
+        row = {"name": name, "sky": round(float(m.mean()), 4),
+               "vs_draft_added": round(float((m & ~draft).mean()), 4),
+               "vs_draft_removed": round(float((draft & ~m).mean()), 4)}
+        rows.append(row)
+        log(f"{name}: sky {row['sky']:.1%} (vs draft +{row['vs_draft_added']:.2%} / -{row['vs_draft_removed']:.2%})")
+    manifest.setdefault("candidates", {})[out] = {
+        "method": "matte_sky: two-color mix from shrunk draft seeds, blue or neutral, near the local sky color",
+        "cut": cut, "max_de": max_de, "version": version, "crops": rows}
+    (truth_dir / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False), encoding="utf-8")
+    return manifest["candidates"][out]
+
+
 def _read(path: Path) -> Optional[np.ndarray]:
     data = np.fromfile(str(path), np.uint8)
     m = cv2.imdecode(data, cv2.IMREAD_GRAYSCALE) if data.size else None

@@ -1,4 +1,4 @@
-"""Mask clean-up for the edit layer: fill holes, remove specks, grow to the object's edges."""
+"""Mask clean-up for the edit layer: fill holes, remove specks, grow to the object's edges, split by color."""
 
 from __future__ import annotations
 
@@ -169,3 +169,80 @@ def close_gaps(mask: np.ndarray, gap: int) -> np.ndarray:
     closed = shrink_mask(grown, r)[pad:-pad, pad:-pad]
     return m | closed
 
+
+
+COLOR_BASES = ("brightness", "color")
+
+
+def near_edge(mask: np.ndarray, band: int) -> np.ndarray:
+    """Pixels within *band* px of the mask's edge, on either side (everything when *band* <= 0)."""
+    m = mask.astype(bool)
+    if band <= 0:
+        return np.ones(m.shape, bool)
+    outside = cv2.distanceTransform((~m).astype(np.uint8), cv2.DIST_L2, 5)
+    inside = cv2.distanceTransform(np.pad(m, 1, mode="edge").astype(np.uint8), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    return np.where(m, inside, outside) <= band
+
+
+def _centers(pixels: np.ndarray, k: int) -> np.ndarray:
+    """*k* typical colors of *pixels* (k-means on at most 20k of them, seeded: same input, same answer)."""
+    rng = np.random.default_rng(0)
+    if len(pixels) > 20_000:
+        pixels = pixels[rng.choice(len(pixels), 20_000, replace=False)]
+    k = max(1, min(k, len(pixels)))
+    cv2.setRNGSeed(0)
+    crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.5)
+    _, _, centers = cv2.kmeans(pixels.astype(np.float32), k, None, crit, 2, cv2.KMEANS_PP_CENTERS)
+    return centers
+
+
+def _nearest_index(pixels: np.ndarray, centers: np.ndarray) -> np.ndarray:
+    d = ((pixels[:, None, :] - centers[None, :, :]) ** 2).sum(-1)
+    return d.argmin(1)
+
+
+def split_by_color(
+    image: np.ndarray, mask: np.ndarray, basis: str = "color", balance: int = 50, band: int = 30
+) -> np.ndarray:
+    """Redraw the mask's edge by the image's brightness or color (for skylines, leaves against the sky).
+
+    Near the edge (within *band* px; 0 = everywhere) every pixel is decided again: it belongs to the
+    mask when it looks like what the mask covers there rather than what lies outside it. The mask
+    only has to be roughly right; what it covers near the edge teaches the colors.
+
+    ``brightness``: one threshold on gray level, set between the mask's and the outside's brightness
+    (Otsu); a bright mask takes the brighter pixels, a dark mask the darker ones.
+    ``color``: the colors there in a few groups (Lab); a group goes to the mask when the mask
+    mostly covers it, so the draft may be wrong in places.
+    *balance* (0-100, 50 = the split above) moves the line: higher gives the mask more pixels.
+    Farther from the edge than *band* the mask stays as it is.
+    """
+    m = mask.astype(bool)
+    near = near_edge(m, band)
+    fg, bg = near & m, near & ~m
+    if not fg.any() or not bg.any():  # one side only: nothing to tell apart
+        return m.copy()
+    shift = (int(balance) - 50) / 50.0  # -1 .. 1
+    img = np.ascontiguousarray(image[..., :3])
+    if basis == "brightness":
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        values = gray[near].reshape(-1, 1)
+        level, _ = cv2.threshold(values, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        bright = gray[fg].mean() >= gray[bg].mean()
+        level = level - shift * 100 if bright else level + shift * 100
+        take = gray > level if bright else gray <= level
+    elif basis == "color":
+        # the colors near the edge in a few groups; a group is the mask's when the draft mostly
+        # covers it there, so a draft that is wrong in places still teaches the right sides
+        lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB).astype(np.float32)
+        px = lab[near]
+        centers = _centers(px, 8)
+        group = _nearest_index(px, centers)
+        inside = m[near]
+        count = np.bincount(group, minlength=len(centers))
+        share = np.bincount(group, weights=inside, minlength=len(centers)) / np.maximum(count, 1)
+        take = np.zeros(m.shape, bool)
+        take[near] = share[group] > 0.5 - shift * 0.45
+    else:
+        raise ValueError(f"Unknown basis: {basis} (one of {', '.join(COLOR_BASES)})")
+    return np.where(near, take, m)

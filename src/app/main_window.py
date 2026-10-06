@@ -58,7 +58,7 @@ from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, SKY, SkyModel, detect_lens_circle
-from src.app.session import Mode, Session
+from src.app.session import IMAGE_TOOLS, Mode, Session
 from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
@@ -1668,7 +1668,7 @@ class MainWindow(QMainWindow):
         self._auto_gen += 1
         gen = self._auto_gen
         target = s.auto_cached(tool, base, settings)
-        if target is None and tool != "object_fill":
+        if target is None and tool not in IMAGE_TOOLS:
             target = s.auto_compute(tool, base, **settings)  # fast enough to stay on the UI thread
         if target is not None:
             self._auto_done(gen, base, target, redraw)

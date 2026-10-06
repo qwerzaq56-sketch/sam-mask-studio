@@ -33,7 +33,9 @@ from src.core.project import (
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
-from src.core.refine import close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
+from src.core.refine import (
+    close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, split_by_color, within,
+)
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
 from src.engine.imageio import find_images, image_key, original_size, read_rgb, resize_mask, to_working, working_size
@@ -48,11 +50,13 @@ AUTO_PARAMS = {
     "shrink": ("amount",),
     "close_gaps": ("gap",),
     "invert": (),
+    "by_color": ("color_basis", "color_balance", "color_band"),
 }
+IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
 
 
 def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], settings: dict) -> np.ndarray:
-    """Auto tool *tool* on mask *base* everywhere (*image*: only Object Fill reads it)."""
+    """Auto tool *tool* on mask *base* everywhere (*image*: only the IMAGE_TOOLS read it)."""
     if tool == "fill_holes":
         return fill_holes(base, settings.get("fill_area", 200))
     if tool == "remove_specks":
@@ -67,6 +71,9 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
         return close_gaps(base, settings.get("gap", 10))
     if tool == "invert":
         return ~base
+    if tool == "by_color":
+        return split_by_color(image, base, settings.get("color_basis", "color"),
+                              settings.get("color_balance", 50), settings.get("color_band", 30))
     raise ValueError(f"Unknown auto tool: {tool}")
 
 
@@ -756,7 +763,7 @@ class Session:
             base = o.mask(key)
             if base is not None:
                 image = None
-                if tool == "object_fill":
+                if tool in IMAGE_TOOLS:
                     image = self.image if key == self.key else self.working_image(key)
                 out[key] = (base, np.packbits(compute_tool(tool, base, image, settings), axis=None))
             if progress:
