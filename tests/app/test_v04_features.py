@@ -1899,7 +1899,8 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     c = win.canvas
     assert win.settings.preview_style == "mask"
     win.act_preview_style.trigger()
-    assert win.settings.preview_style == "cutout" and c.preview_style == "cutout" and c.showing_final
+    assert win.settings.preview_style == "cutout" and c.preview_style == "cutout"
+    assert not c.showing_final  # C only picks the style; V / Z show the preview
     final = win.session.project.final_mask(win.session.key)
     h, w = final.shape
     q = c._preview_image(h, w)
