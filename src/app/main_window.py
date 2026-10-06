@@ -312,6 +312,11 @@ class MainWindow(QMainWindow):
             "&Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
         )
         self.act_export = self._action("&Export Final Masks…", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
+        self.act_batch_masks = self._action(
+            "&Batch Masking with Presets…", self.batch_masking,
+            tip="People, lens edge and sky for a whole folder from a preset, as the batch tool does it "
+                "(python -m src.cli run)",
+        )
         self.act_settings = self._action("Se&ttings…", self.show_settings, tip="Checkpoints, working resolution")
         self.act_quit = self._action("&Quit", self.close)  # no key: too easy to hit next to Ctrl+Z / Ctrl+A
         self.act_undo = self._action("&Undo", self.undo, ["Ctrl+Z"])
@@ -474,7 +479,8 @@ class MainWindow(QMainWindow):
         # --- the menu bar: every command, with its key -----------------------------------
         mb = self.menuBar()
         m = mb.addMenu("&File")
-        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, None, self.act_settings, None,
+        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, self.act_batch_masks, None,
+                  self.act_settings, None,
                   self.act_quit):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Edit")
@@ -1255,6 +1261,27 @@ class MainWindow(QMainWindow):
         task.finished.connect(cleanup)
         task.start()
         return task
+
+    def batch_masking(self) -> None:
+        """File > Batch Masking with Presets (src/app/batch_mask_dialog.py): runs in its own process."""
+        from src.app.batch_mask_dialog import BatchMaskDialog
+
+        s = self.session
+        scene = self.scene.root if self.scene else (s.image_dir.parent if s.image_dir else None)
+        freed = []
+
+        def free_models() -> bool:
+            eng = s.engine
+            if eng is None or self._busy or self._loading_models or not hasattr(eng, "release"):
+                return False
+            eng.release()
+            s.engine = None
+            freed.append(True)
+            return True
+
+        BatchMaskDialog(s.image_dir, scene, free_models, self).exec()
+        if freed and s.image_dir is not None:
+            self.ensure_models()
 
     def ensure_models(self) -> None:
         """Create the engine and load SAM2 in the background (SAM3 loads on first Detect)."""

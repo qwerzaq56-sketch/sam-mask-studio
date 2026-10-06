@@ -19,6 +19,17 @@ prompts (src/core/people.py) — on the GPU, so never while a training runs.
 A scene's ``masks/`` (people and the lens edge, black = ignored): ``person`` to a folder, then ``lens``
 ``--and-with`` it into ``masks/``.
 
+Presets (src/batchmask/): which steps a scene gets and with what settings — above all the SAM3 prompts,
+which fit the rig and scenes a preset was checked on and maybe nothing else.
+
+    python -m src.cli run H:/scene/images --preset osmo360-selfie-stick --out H:/scene --recursive
+    python -m src.cli probe H:/scene/images --out H:/tmp/probe --recursive --preset people-only --also "black pole;bag"
+    python -m src.cli preset list | show NAME | save NAME --from NAME --labels "person;silver pole"
+
+``run`` writes ``masks/`` and ``sky_masks/`` into the scene folder, all of a preset's steps; ``probe`` tries
+prompts on a few frames (a table, contact sheets, scores against hand-checked masks) before a whole run;
+``sky``, ``lens`` and ``person`` take ``--preset`` too, their own options changing it.
+
 Common to all:
 
 - One PNG per image, named ``<image name>.png`` (``00011.jpg.png``; ``--names stem``: ``00011.png``),
@@ -259,7 +270,7 @@ def _engine(model: Path, device: str):
 
 def person_folder(images: Path, out: Path, recursive: bool = False, names: str = "name", invert: bool = False,
                   labels: Sequence[str] = (), attach: Sequence[str] = (), threshold: float = 0.4,
-                  grow: int = 2, max_side: int = 1024, model: Path = SAM3_MODEL, device: str = "cuda",
+                  grow: int = 2, max_side: int = 1024, touch: int = 16, model: Path = SAM3_MODEL, device: str = "cuda",
                   and_with: Optional[Path] = None, existing: str = "stop", log=print) -> dict:
     """The ``person`` command: black = people and what they carry (ignored in training), white = the rest
     (``--invert``: white = people). Returns the report."""
@@ -267,7 +278,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
     b = Batch("person", images, out, recursive, names, existing, log=log, settings={
-        "labels": list(labels), "attach": list(attach), "threshold": threshold, "grow": grow,
+        "labels": list(labels), "attach": list(attach), "threshold": threshold, "touch": touch, "grow": grow,
         "max_side": max_side, "invert": invert, "model": str(model), "device": device,
         "and_with": str(and_with) if and_with else None})
     missing: List[str] = []
@@ -282,7 +293,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         rgb = read_rgb(images / key)
         work = to_working(rgb, max_side)
         dets = eng.detect_many(work, list(labels) + list(attach))
-        found = resize_mask(people_mask(dets, work.shape[:2], labels, attach, threshold, grow=grow), rgb.shape[:2])
+        found = resize_mask(people_mask(dets, work.shape[:2], labels, attach, threshold, touch, grow), rgb.shape[:2])
         keep = ~found
         if and_with is not None:
             keep = _multiply(keep, and_with, b.name(key), missing, key)
@@ -303,6 +314,100 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
     return report
 
 
+def probe_folder(images: Path, out: Path, person, recursive: bool = False, also: Sequence[str] = (),
+                 frames: int = 8, reference: Optional[Path] = None, inside: Optional[float] = None,
+                 model: Path = SAM3_MODEL, device: str = "cuda", log=print) -> dict:
+    """The ``probe`` command: *person*'s prompts (a :class:`PersonStep`) and *also* tried on *frames* frames
+    per camera folder; contact sheets and ``probe.json`` go to *out*. Returns the report."""
+    from src.batchmask.probe import pick_frames, probe
+    from src.engine.imageio import find_images, image_key
+
+    paths = find_images(images, recursive=recursive)
+    if not paths:
+        raise SystemExit(f"No images in {images}" + ("" if recursive else " (sub-folders: --recursive)"))
+    keys = pick_frames([image_key(images, p) for p in paths], frames)
+    t = time.time()
+    eng = _engine(model, device)
+    log(f"SAM3 loaded on {eng.device} in {time.time() - t:.0f} s; trying {len(keys)} frame(s)")
+    try:
+        report = probe(images, keys, eng.detect_many, person, also, reference, out, inside, log)
+    finally:
+        if hasattr(eng, "release"):
+            eng.release()
+    report.update(command="probe", version=app_version(), images=str(images),
+                  reference=str(reference) if reference else None, seconds=round(time.time() - t, 1))
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "probe.json").write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
+    return report
+
+
+RUN_FOLDERS = {"people": "people_masks", "masks": "masks", "sky": "sky_masks"}
+
+
+def run_folders(preset, out: Path) -> Dict[str, Path]:
+    """Where ``run`` writes: ``masks/`` (people and the lens edge, black = ignored; with both, the people
+    first go to ``people_masks/``) and ``sky_masks/`` (white = sky)."""
+    f: Dict[str, Path] = {}
+    if preset.person is not None:
+        f["person"] = out / RUN_FOLDERS["people" if preset.lens is not None else "masks"]
+    if preset.lens is not None:
+        f["lens"] = out / RUN_FOLDERS["masks"]
+    if preset.sky is not None:
+        f["sky"] = out / RUN_FOLDERS["sky"]
+    return f
+
+
+def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: str = "name",
+               existing: str = "stop", sam3_model: Path = SAM3_MODEL, sky_model: Path = SKY_MODEL,
+               device: str = "cuda", log=print) -> dict:
+    """The ``run`` command: every step of *preset* (a :class:`MaskPreset`) into the scene folder *out*.
+    Masks already in any of its folders stop it before anything runs (unless *existing* says otherwise)."""
+    folders = run_folders(preset, out)
+    if not folders:
+        raise SystemExit(f"Preset {preset.name} has no steps (person, lens, sky): nothing to do.")
+    if existing == "stop":
+        full = [f"{p} ({sum(1 for _ in p.rglob('*.png'))} PNG)" for p in dict.fromkeys(folders.values())
+                if p.is_dir() and any(p.rglob("*.png"))]
+        if full:
+            raise SystemExit("Masks already there: " + ", ".join(full) + ". Nothing done. "
+                             "--skip-existing to carry on, --overwrite to replace them, or another --out.")
+    log(f"Preset {preset.name}" + (f" ({preset.title})" if preset.title else ""))
+    for line in preset.summary().splitlines():
+        log("  " + line)
+    if preset.checked_on:
+        log("  checked on: " + " | ".join(preset.checked_on))
+    else:
+        log("  not checked on any data yet: look at the results (or probe first)")
+    t = time.time()
+    steps: Dict[str, dict] = {}
+    common = dict(recursive=recursive, names=names, existing=existing, log=log)
+    if preset.person is not None:
+        p = preset.person
+        log(f"--- person -> {folders['person']}")
+        steps["person"] = person_folder(images, folders["person"], labels=p.labels, attach=p.attach,
+                                        threshold=p.threshold, grow=p.grow, max_side=p.max_side, touch=p.touch,
+                                        model=sam3_model, device=device, **common)
+    if preset.lens is not None:
+        c = preset.lens
+        log(f"--- lens -> {folders['lens']}" + (f" (with {folders['person'].name}/)" if "person" in folders else ""))
+        steps["lens"] = lens_folder(images, folders["lens"], margin=c.margin, samples=c.samples,
+                                    circle=None if c.radius is None else {"radius": c.radius, "cx": c.cx, "cy": c.cy},
+                                    and_with=folders.get("person"), **common)
+    if preset.sky is not None:
+        s = preset.sky
+        log(f"--- sky -> {folders['sky']}")
+        steps["sky"] = sky_folder(images, folders["sky"], threshold=s.threshold, grow=s.grow, top_only=s.top_only,
+                                  refine=s.refine, edges=s.edges, max_side=s.max_side, model_path=sky_model, **common)
+    return {
+        "command": "run", "version": app_version(), "images": str(images), "out": str(out),
+        "preset": preset.to_dict(), "folders": {k: str(v) for k, v in folders.items()}, "steps": steps,
+        "written": sum(r["written"] for r in steps.values()),
+        "skipped_existing": sum(r["skipped_existing"] for r in steps.values()),
+        "failed": [dict(f, step=s) for s, r in steps.items() for f in r["failed"]],
+        "seconds": round(time.time() - t, 1),
+    }
+
+
 def _common(p: argparse.ArgumentParser, what: str) -> None:
     p.add_argument("images", type=Path, help="Image folder")
     p.add_argument("--out", type=Path, required=True, help="Mask folder (made if missing)")
@@ -316,6 +421,133 @@ def _common(p: argparse.ArgumentParser, what: str) -> None:
     p.add_argument("--report", type=Path, help="Write the run's report (JSON) here")
 
 
+def _preset_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--preset", help="A masking preset by name ('preset list') or a .json file: its settings for this "
+                                    "step, the options given here changing them")
+
+
+def _person_options(p: argparse.ArgumentParser) -> None:
+    from src.core.people import ATTACH, GROW, LABELS, THRESHOLD, TOUCH
+
+    p.add_argument("--labels", help=f"SAM3 text prompts always masked, ';'-separated (default {';'.join(LABELS)})")
+    p.add_argument("--attach", help=f"Prompts masked only where they touch the above (default {';'.join(ATTACH)}; "
+                                    "\"\" = none)")
+    p.add_argument("--threshold", type=float, help=f"Detection score to keep (default {THRESHOLD})")
+    p.add_argument("--touch", type=int, help=f"How near (px at 1024) an --attach find must be (default {TOUCH})")
+    p.add_argument("--grow", type=int, help=f"Grow the mask by px at 1024 px (default {GROW})")
+    p.add_argument("--max-side", type=int, help="Working resolution's longer side (default 1024)")
+
+
+def _gpu_options(p: argparse.ArgumentParser, model: str = "--model") -> None:
+    p.add_argument(model, dest="sam3_model", type=Path, default=SAM3_MODEL, help=f"sam3.pt (default {SAM3_MODEL})")
+    p.add_argument("--cpu", action="store_true", help="Run SAM3 on the CPU (very slow)")
+    p.add_argument("--gpu-anyway", action="store_true",
+                   help=f"Start even with less than {GPU_NEEDED:.0f} GB of GPU memory free")
+
+
+# what the default steps are when no preset is given: the measured defaults of src/core/people.py
+def _default_person():
+    from src.batchmask.presets import PersonStep
+    from src.core.people import ATTACH, GROW, LABELS, THRESHOLD, TOUCH
+
+    return PersonStep(labels=list(LABELS), attach=list(ATTACH), threshold=THRESHOLD, touch=TOUCH, grow=GROW)
+
+
+def _settings(parser: argparse.ArgumentParser, args, step: str):
+    """(*step*'s settings: the preset's, else the defaults, changed by the options given; the preset or None)."""
+    from dataclasses import asdict
+
+    from src.batchmask.presets import STEPS, find_preset, split
+
+    preset = None
+    if getattr(args, "preset", None):
+        try:
+            preset = find_preset(args.preset)
+        except ValueError as e:
+            parser.error(str(e))
+    base = getattr(preset, step, None) if preset is not None else None
+    if base is None:
+        base = _default_person() if step == "person" else STEPS[step]()
+        if preset is not None:
+            print(f"Preset {preset.name} has no {step} step: the defaults, changed by the options given")
+    values = asdict(base)
+    for k in values:
+        v = getattr(args, k, None)
+        if v is not None:
+            values[k] = split(v) if k in ("labels", "attach") else v
+    return STEPS[step](**values), preset
+
+
+def _device(parser: argparse.ArgumentParser, args) -> str:
+    """cuda, or cpu with --cpu; refuses when another job (a training) holds the GPU."""
+    if not args.sam3_model.is_file():
+        parser.error(f"SAM3 model not found: {args.sam3_model}")
+    if args.cpu:
+        return "cpu"
+    free = gpu_free_gb()
+    if free is None:
+        parser.error("no CUDA GPU (--cpu to run on the CPU, very slowly)")
+    if free < GPU_NEEDED and not args.gpu_anyway:
+        raise SystemExit(f"Only {free:.1f} GB of GPU memory is free ({GPU_NEEDED:.0f} needed): another GPU "
+                         "job (a training?) is running. Nothing done. Wait for it, or --gpu-anyway.")
+    return "cuda"
+
+
+def _preset_command(parser: argparse.ArgumentParser, args) -> int:
+    from dataclasses import asdict
+
+    from src.batchmask.presets import (MaskPreset, PersonStep, broken_presets, find_preset, list_presets, save_preset,
+                                       split, user_dir, with_changes)
+
+    try:
+        if args.action == "list":
+            for pr in list_presets():
+                where = "built-in" if pr.builtin else str(pr.path)
+                print(f"{pr.name:<28} {', '.join(pr.steps) or '-':<18} {'checked' if pr.checked_on else 'NOT CHECKED':<12} "
+                      f"{pr.title}  [{where}]")
+            for bad in broken_presets():
+                print(f"(unreadable) {bad}")
+            print(f"Your presets: {user_dir()}")
+            return 0
+        if args.action == "show":
+            pr = find_preset(args.name)
+            if args.json:
+                print(json.dumps(pr.to_dict(), indent=2, ensure_ascii=False))
+                return 0
+            print(f"{pr.name}: {pr.title}" + (f"\n{pr.description}" if pr.description else ""))
+            print(pr.summary())
+            print("Checked on: " + ("\n  " + "\n  ".join(pr.checked_on) if pr.checked_on else
+                                    "nothing yet: probe it on your frames"))
+            print(f"File: {pr.path}" + (" (built-in)" if pr.builtin else ""))
+            return 0
+        # save
+        base = find_preset(args.base) if args.base else MaskPreset(name=args.name, person=PersonStep())
+        person = {k: (split(v) if k in ("labels", "attach") else v)
+                  for k in asdict(PersonStep()) if (v := getattr(args, k, None)) is not None}
+        changes = {"person": person if person else (asdict(base.person) if base.person else None)}
+        if args.margin is not None or args.radius is not None:
+            changes["lens"] = {k: v for k, v in (("margin", args.margin), ("radius", args.radius)) if v is not None}
+        if args.sky_threshold is not None:
+            changes["sky"] = {"threshold": args.sky_threshold}
+        for step in ("person", "lens", "sky"):
+            if getattr(args, f"no_{step}"):
+                changes[step] = None
+        pr = with_changes(base, name=args.name, **changes)
+        pr.title = args.title if args.title is not None else (f"{base.title} (changed)" if args.base else "")
+        if args.description is not None:
+            pr.description = args.description
+        elif args.base:
+            pr.description = f"From {base.name}. " + base.description
+        pr.checked_on = list(args.checked_on or [])  # what the base was checked on is not this one's
+        path = save_preset(pr, args.to, overwrite=args.overwrite)
+    except (ValueError, FileExistsError) as e:
+        parser.error(str(e))
+    print(f"Saved {path}\n{pr.summary()}")
+    if not pr.checked_on:
+        print("Not checked on any data: probe it (--reference with hand-checked masks), then --checked-on to note it.")
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.cli", description=f"SAM Mask Studio {app_version()}, "
                                      "no window (for batch pipelines)")
@@ -323,53 +555,151 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sky = sub.add_parser("sky", help="Sky masks for a folder, at full resolution",
                          description="A sky mask per image (white = sky), its edge decided on the full-size image.")
     _common(sky, "Black = sky, white = the rest")
-    sky.add_argument("--threshold", type=float, default=50.0, help="Sky above this %% of the model's map (50)")
-    sky.add_argument("--grow", type=int, default=0, help="Grow (+) / shrink (-) the sky by px at 1024 px (0)")
-    sky.add_argument("--top-only", action="store_true", help="Only sky touching the image's top edge")
-    sky.add_argument("--no-refine", action="store_true", help="The model's map without its edge refinement")
-    sky.add_argument("--no-edges", action="store_true",
+    _preset_option(sky)
+    sky.add_argument("--threshold", type=float, help="Sky above this %% of the model's map (default 50)")
+    sky.add_argument("--grow", type=int, help="Grow (+) / shrink (-) the sky by px at 1024 px (default 0)")
+    sky.add_argument("--top-only", dest="top_only", action="store_const", const=True,
+                     help="Only sky touching the image's top edge")
+    sky.add_argument("--no-refine", dest="refine", action="store_const", const=False,
+                     help="The model's map without its edge refinement")
+    sky.add_argument("--no-edges", dest="edges", action="store_const", const=False,
                      help="Scale the working mask up (nearest) instead of deciding the edge at full resolution")
-    sky.add_argument("--max-side", type=int, default=1024, help="Working resolution's longer side (1024)")
+    sky.add_argument("--max-side", type=int, help="Working resolution's longer side (default 1024)")
     sky.add_argument("--model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx (default {SKY_MODEL})")
 
     lens = sub.add_parser("lens", help="Fisheye lens edge masks for a folder",
                           description="White = inside the image circle (trained on), black = outside it and its "
                                       "rim. The circle is found per camera folder.")
     _common(lens, "White = outside the circle (the edge to ignore), black = inside")
-    lens.add_argument("--margin", type=float, default=LENS_MARGIN,
-                      help=f"Pull the circle in by this %% of its radius, over the rim's glow ({LENS_MARGIN})")
-    lens.add_argument("--samples", type=int, default=LENS_SAMPLES,
-                      help=f"Frames per camera folder the circle is found in ({LENS_SAMPLES})")
+    _preset_option(lens)
+    lens.add_argument("--margin", type=float,
+                      help=f"Pull the circle in by this %% of its radius, over the rim's glow (default {LENS_MARGIN})")
+    lens.add_argument("--samples", type=int,
+                      help=f"Frames per camera folder the circle is found in (default {LENS_SAMPLES})")
     lens.add_argument("--radius", type=float, help="Set the circle instead of finding it: radius in %% of the "
                                                     "inscribed circle (100 = touches the shorter sides)")
-    lens.add_argument("--cx", type=float, default=0.0, help="With --radius: center right of the middle, %% (0)")
-    lens.add_argument("--cy", type=float, default=0.0, help="With --radius: center below the middle, %% (0)")
+    lens.add_argument("--cx", type=float, help="With --radius: center right of the middle, %% (default 0)")
+    lens.add_argument("--cy", type=float, help="With --radius: center below the middle, %% (default 0)")
     lens.add_argument("--and-with", type=Path, help="Mask folder (white = keep, same names) to multiply in, "
                                                     "e.g. people masks: one masks/ folder comes out")
 
-    from src.core.people import ATTACH, GROW, LABELS, THRESHOLD
-
     person = sub.add_parser("person", help="People and what they carry (selfie stick, bag), SAM3 on the GPU",
                             description="Black = people, the selfie stick and their bags (what training ignores), "
-                                        "white = the rest: the masks/ convention.")
+                                        "white = the rest: the masks/ convention. The prompts that fit one rig may "
+                                        "not fit another: see 'probe'.")
     _common(person, "White = people, black = the rest")
-    person.add_argument("--labels", default=";".join(LABELS),
-                        help=f"SAM3 text prompts always masked, ';'-separated ({';'.join(LABELS)})")
-    person.add_argument("--attach", default=";".join(ATTACH),
-                        help=f"Prompts masked only where they touch the above ({';'.join(ATTACH)}; empty = none)")
-    person.add_argument("--threshold", type=float, default=THRESHOLD, help=f"Detection score to keep ({THRESHOLD})")
-    person.add_argument("--grow", type=int, default=GROW, help=f"Grow the mask by px at 1024 px ({GROW})")
-    person.add_argument("--max-side", type=int, default=1024, help="Working resolution's longer side (1024)")
-    person.add_argument("--model", type=Path, default=SAM3_MODEL, help=f"sam3.pt (default {SAM3_MODEL})")
-    person.add_argument("--cpu", action="store_true", help="Run on the CPU (very slow)")
-    person.add_argument("--gpu-anyway", action="store_true",
-                        help=f"Start even with less than {GPU_NEEDED:.0f} GB of GPU memory free")
+    _preset_option(person)
+    _person_options(person)
+    _gpu_options(person)
     person.add_argument("--and-with", type=Path, help="Mask folder (white = keep, same names) to multiply in, "
                                                       "e.g. the lens edge: one masks/ folder comes out")
+
+    probe = sub.add_parser("probe", help="Try SAM3 prompts on a few frames before a run (contact sheets, a table)",
+                           description="What each prompt finds on a few frames per camera folder: in how many "
+                                       "frames, how sure, how much; with --reference (hand-checked masks/, people "
+                                       "only) how well it matches. Look at the sheets, change the prompts, try "
+                                       "again; --save-preset keeps them.")
+    probe.add_argument("images", type=Path, help="Image folder")
+    probe.add_argument("--out", type=Path, required=True, help="Folder for the contact sheets and probe.json")
+    probe.add_argument("--recursive", action="store_true", help="Also the sub-folders (cam0/, cam1/)")
+    _preset_option(probe)
+    _person_options(probe)
+    probe.add_argument("--also", default="", help="More prompts to measure, not put in the mask: candidates, "
+                                                  "';'-separated (e.g. \"selfie stick;tripod;backpack\")")
+    probe.add_argument("--frames", type=int, default=8, help="Frames per camera folder (default 8)")
+    probe.add_argument("--reference", type=Path, help="Masks checked by hand (masks/ convention: black = people), "
+                                                      "same names as the images")
+    probe.add_argument("--inside", type=float, help="Compare with --reference only inside a centred circle of this "
+                                                    "radius (%% of the inscribed circle), e.g. 90 when the reference "
+                                                    "also blacks out the lens edge")
+    probe.add_argument("--save-preset", metavar="NAME", help="Save the tried settings as your preset NAME (on top "
+                                                              "of --preset), noting the --reference score")
+    probe.add_argument("--overwrite-preset", action="store_true", help="With --save-preset: replace NAME")
+    _gpu_options(probe)
+
+    pre = sub.add_parser("preset", help="List, show or save masking presets",
+                         description="Presets keep the prompts and settings a rig needs. Built-in ones ship with "
+                                     "the app; yours go to mask_presets/ (or $SMS_MASK_PRESETS).")
+    pre_sub = pre.add_subparsers(dest="action", required=True)
+    pre_sub.add_parser("list", help="Every preset, yours first")
+    show = pre_sub.add_parser("show", help="One preset's settings and what it was checked on")
+    show.add_argument("name", help="Name or .json file")
+    show.add_argument("--json", action="store_true", help="As JSON")
+    save = pre_sub.add_parser("save", help="Save a preset of your own (from another one, changed)")
+    save.add_argument("name", help="New preset's name (a file name)")
+    save.add_argument("--from", dest="base", help="Start from this preset (name or .json)")
+    _person_options(save)
+    save.add_argument("--margin", type=float, help="Lens: rim margin, %% of the radius (adds a lens step)")
+    save.add_argument("--radius", type=float, help="Lens: a fixed circle radius, %% (adds a lens step)")
+    save.add_argument("--sky-threshold", type=float, help="Sky: threshold, %% (adds a sky step)")
+    for step in ("person", "lens", "sky"):
+        save.add_argument(f"--no-{step}", action="store_true", help=f"No {step} step")
+    save.add_argument("--title", help="One line saying what it is for")
+    save.add_argument("--description", help="Longer notes")
+    save.add_argument("--checked-on", action="append", help="What it was checked on, with the result (repeatable)")
+    save.add_argument("--to", type=Path, help="Folder to save in (default: your preset folder)")
+    save.add_argument("--overwrite", action="store_true", help="Replace a preset of yours with this name")
+
+    run = sub.add_parser("run", help="Every step of a preset into a scene folder (masks/, sky_masks/)",
+                         description="People, lens edge and sky as a preset says, into --out: masks/ (black = "
+                                     "ignored; people then the lens edge, the people kept in people_masks/) and "
+                                     "sky_masks/ (white = sky). Masks already there stop it before anything runs.")
+    run.add_argument("images", type=Path, help="Image folder")
+    run.add_argument("--preset", required=True, help="Preset name ('preset list') or .json file")
+    run.add_argument("--out", type=Path, required=True, help="Scene folder: masks/, sky_masks/ go in it")
+    run.add_argument("--recursive", action="store_true", help="Also the sub-folders (cam0/, cam1/), kept")
+    run.add_argument("--names", choices=("name", "stem"), default="name",
+                     help="name: 00011.jpg.png (COLMAP, default); stem: 00011.png")
+    how = run.add_mutually_exclusive_group()
+    how.add_argument("--skip-existing", action="store_true", help="Leave masks already there, make the rest")
+    how.add_argument("--overwrite", action="store_true", help="Replace masks already there")
+    run.add_argument("--report", type=Path, help="Write the run's report (JSON) here")
+    run.add_argument("--sky-model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx (default {SKY_MODEL})")
+    _gpu_options(run, "--sam3-model")
     args = parser.parse_args(argv)
 
+    if args.command == "preset":
+        return _preset_command(parser, args)
     if not args.images.is_dir():
         parser.error(f"not a folder: {args.images}")
+    if args.command == "probe":
+        step, preset = _settings(parser, args, "person")
+        if args.reference is not None and not args.reference.is_dir():
+            parser.error(f"not a folder: {args.reference}")
+        if args.save_preset:
+            from src.batchmask.presets import check_name
+
+            try:
+                check_name(args.save_preset)
+            except ValueError as e:
+                parser.error(str(e))
+        device = _device(parser, args)
+        from src.batchmask.presets import split
+        from src.batchmask.probe import table
+
+        report = probe_folder(args.images, args.out, step, recursive=args.recursive, also=split(args.also),
+                              frames=args.frames, reference=args.reference, inside=args.inside,
+                              model=args.sam3_model, device=device)
+        print(table(report))
+        print(f"Contact sheets: {args.out} ({', '.join(report['sheets'])})")
+        if args.save_preset:
+            from dataclasses import asdict
+
+            from src.batchmask.presets import MaskPreset, save_preset, with_changes
+
+            base = preset or MaskPreset(name=args.save_preset)
+            pr = with_changes(base, name=args.save_preset, person=asdict(step))
+            pr.title = (f"{base.title} (changed)" if preset else "") or f"From probe on {args.images.name}"
+            r = report.get("against_reference")
+            pr.checked_on = [f"{args.images} ({r['frames']} frames, probe): IoU {r['iou_mean']:.3f}, lowest "
+                             f"{r['iou_min']:.3f}, missed {100 * r['missed_mean']:.1f} %"] if r else []
+            try:
+                path = save_preset(pr, overwrite=args.overwrite_preset)
+            except (ValueError, FileExistsError) as e:
+                print(f"Preset not saved: {e}")
+                return 1
+            print(f"Saved preset {pr.name}: {path}")
+        return 0
     existing = "skip" if args.skip_existing else "overwrite" if args.overwrite else "stop"
     if getattr(args, "and_with", None) is not None:
         if not args.and_with.is_dir():
@@ -377,40 +707,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.and_with.resolve() == args.out.resolve():
             parser.error("--and-with and --out must be different folders")
     if args.command == "sky":
+        s, _ = _settings(parser, args, "sky")
         if not args.model.is_file():
             parser.error(f"sky model not found: {args.model} (download skyseg.onnx from "
                          "https://huggingface.co/JianyuanWang/skyseg into checkpoints/sky/)")
         report = sky_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
-            threshold=args.threshold, grow=args.grow, top_only=args.top_only, refine=not args.no_refine,
-            edges=not args.no_edges, max_side=args.max_side, model_path=args.model, existing=existing,
+            threshold=s.threshold, grow=s.grow, top_only=s.top_only, refine=s.refine,
+            edges=s.edges, max_side=s.max_side, model_path=args.model, existing=existing,
         )
     elif args.command == "lens":
-        circle = None if args.radius is None else {"radius": args.radius, "cx": args.cx, "cy": args.cy}
+        c, _ = _settings(parser, args, "lens")
+        circle = None if c.radius is None else {"radius": c.radius, "cx": c.cx, "cy": c.cy}
         report = lens_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
-            margin=args.margin, circle=circle, samples=args.samples, and_with=args.and_with, existing=existing,
+            margin=c.margin, circle=circle, samples=c.samples, and_with=args.and_with, existing=existing,
         )
     elif args.command == "person":
-        if not args.model.is_file():
-            parser.error(f"SAM3 model not found: {args.model}")
-        device = "cpu" if args.cpu else "cuda"
-        if not args.cpu:
-            free = gpu_free_gb()
-            if free is None:
-                parser.error("no CUDA GPU (--cpu to run on the CPU, very slowly)")
-            if free < GPU_NEEDED and not args.gpu_anyway:
-                raise SystemExit(f"Only {free:.1f} GB of GPU memory is free ({GPU_NEEDED:.0f} needed): another GPU "
-                                 "job (a training?) is running. Nothing done. Wait for it, or --gpu-anyway.")
-
-        def split(text):
-            return [t.strip() for t in text.split(";") if t.strip()]
-
+        p, _ = _settings(parser, args, "person")
+        device = _device(parser, args)
         report = person_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
-            labels=split(args.labels), attach=split(args.attach), threshold=args.threshold, grow=args.grow,
-            max_side=args.max_side, model=args.model, device=device, and_with=args.and_with, existing=existing,
+            labels=p.labels, attach=p.attach, threshold=p.threshold, grow=p.grow, max_side=p.max_side,
+            touch=p.touch, model=args.sam3_model, device=device, and_with=args.and_with, existing=existing,
         )
+    elif args.command == "run":
+        from src.batchmask.presets import find_preset
+
+        try:
+            preset = find_preset(args.preset)
+        except ValueError as e:
+            parser.error(str(e))
+        device = "cpu"
+        if preset.person is not None:
+            device = _device(parser, args)
+        if preset.sky is not None and not args.sky_model.is_file():
+            parser.error(f"sky model not found: {args.sky_model}")
+        report = run_folder(args.images, args.out, preset, recursive=args.recursive, names=args.names,
+                            existing=existing, sam3_model=args.sam3_model, sky_model=args.sky_model, device=device)
     else:
         return 2
     print(f"{report['written']} mask(s) written to {args.out}, {report['skipped_existing']} left as they were, "

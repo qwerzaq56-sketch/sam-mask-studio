@@ -1,0 +1,30 @@
+{
+  "name": "osmo360-selfie-stick",
+  "title": "OSMO 360 dual fisheye on a black selfie stick",
+  "description": "Walking scenes shot with a DJI OSMO 360 (cam0 / cam1 fisheye folders) held on a black selfie stick, a crossbody bag worn. \"black pole\" is how SAM3 finds this stick: \"selfie stick\" was found in 18 of 94 frames, \"stick\", \"monopod\", \"handle\" and \"tripod\" in none. Another rig's stick may need other words: probe first.",
+  "checked_on": [
+    "0022 cam0 94 frames (people): IoU 0.943, lowest 0.875, missed 0.3 % against the scene's hand-checked masks (v0.4-p65)",
+    "0022 cam0 / cam1 (lens): radius 105.3 / 105.7 %, 16-frame circles steady to 0.13 % (v0.4-p64)",
+    "0022 cam0 (sky): looked at, no hand-made sky masks to score against yet (v0.4-p63)"
+  ],
+  "person": {
+    "labels": ["person", "black pole"],
+    "attach": ["bag"],
+    "threshold": 0.4,
+    "touch": 16,
+    "grow": 2,
+    "max_side": 1024
+  },
+  "lens": {
+    "margin": 2.0,
+    "samples": 16
+  },
+  "sky": {
+    "threshold": 50.0,
+    "grow": 0,
+    "top_only": false,
+    "refine": true,
+    "edges": true,
+    "max_side": 1024
+  }
+}

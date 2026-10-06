@@ -452,6 +452,22 @@
   - 어려운 프레임: 01113 0.969(Spirula 0.531), 01125 0.971(0.607), 00635 0.875(0.760; 1 px로 넓히면 0.90).
   - cam1(뒤 렌즈, 셀카봉이 지워진 쪽): 기준 마스크가 거의 비어 있는데, 멀리 지나가는 행인을 7장에서 잡음(기준에서 빠져 있던 것).
 
+### 66단계 · 마스킹 프리셋과 프롬프트 시험 (`v0.4-p66`, 2026-10-07)
+- 배경: 0022에서 맞은 프롬프트("black pole" 등)가 다른 데이터셋·장비에서도 맞는다는 보장이 없음. 여기서는 Claude Code가 기준 마스크로 검증했지만, 다른 환경에서는 프리셋을 만드는 일 자체가 어려움 → 프롬프트를 프리셋으로 관리하고, 손으로 하나씩 시험·조정할 수 있는 길을 함께 둠.
+- 이 툴의 핵심 기능이 아니라 **배치 마스킹(외부 사용)이 주 목적**. 그래서 따로 묶음:
+  - `src/batchmask/`(Qt 없음): `presets.py`(프리셋 읽기·저장·찾기), `probe.py`(프롬프트 시험), `builtin/*.json`(내장 프리셋).
+  - 앱 연결은 메뉴 한 줄(File > Batch Masking with Presets…)과 `src/app/batch_mask_dialog.py`. 대화상자는 `python -m src.cli`를 별도 프로세스로 부르므로 창에서 만든 결과 = 배치 결과.
+- 프리셋(JSON): `person`(labels, attach, threshold, touch, grow, max_side), `lens`(margin, samples, radius, cx, cy), `sky`(threshold, grow, top_only, refine, edges, max_side). 빠진 단계는 안 함. `checked_on`에 무엇으로 확인했는지와 결과를 적음. 고치면 확인 기록은 비워짐(원래 프리셋의 확인이 고친 설정에는 해당되지 않으므로).
+  - 내장: `osmo360-selfie-stick`(0022 확인 수치 기록), `people-only`(확인 안 됨, 출발점). 내장 이름으로는 저장 불가(복사해서 새 이름으로).
+  - 내 프리셋: `mask_presets/`(git 제외) 또는 `SMS_MASK_PRESETS` 폴더. `.json` 경로로도 지정.
+- 명령줄:
+  - `run`: 프리셋의 모든 단계를 장면 폴더로(`masks/` = 사람 × 렌즈, 사람만은 `people_masks/`, `sky_masks/`). 결과 폴더 중 하나라도 마스크가 있으면 시작 전에 멈춤. 사람 단계가 있으면 GPU 확인도 시작 전에.
+  - `probe`: 카메라 폴더마다 N장(기본 8)에서 프롬프트별 검출 장수·점수·면적, `--reference`(손으로 확인한 `masks/`)가 있으면 덮은 비율·넘친 비율·IoU, `--inside 90`(기준에 렌즈 테두리가 들어 있을 때 원 안만 비교). 대조 시트 `sheet_NN.jpg`, `probe.json`. `--also`는 재기만 하는 후보. `--save-preset`으로 저장(IoU를 확인 기록에).
+  - `preset list / show / save`.
+  - `sky` / `lens` / `person`도 `--preset`을 받고, 따로 준 옵션이 프리셋 값을 바꿈.
+- 실측: 0022 `probe --preset osmo360-selfie-stick --also "selfie stick;tripod" --frames 8 --reference masks --inside 90` 16장, SAM3 로드 13초 + 장당 약 2초. cam0 8장 IoU 0.878~0.971(p65와 같은 수준), "selfie stick" 5/8장·"tripod" 0장. 대화상자 경유(하위 프로세스) 같은 결과.
+- 창: Try Prompts(대조 시트 표시), Save as Preset, Run on the Folder, Stop, Copy Command. 실행 전에 이 창의 SAM 모델을 내려 GPU를 비우는 선택(닫으면 다시 올림).
+
 ## 진행 예정
 - 정답 세트(경계까지 손으로 맞춘 원본 해상도 하늘 몇 장)를 만든 뒤 하늘 정량 평가. 그다음 제안서 S2(COLMAP 3D 점, 색 모델로 오검출 거르기). 다음 후보는 [`ideas.md`](../backlog/ideas.md) 참고.
 

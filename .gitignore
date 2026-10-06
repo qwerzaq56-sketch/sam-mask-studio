@@ -14,3 +14,6 @@ logs/
 
 # Office lock files (a doc open in Word)
 ~$*
+
+# your own masking presets (src/batchmask)
+mask_presets/
