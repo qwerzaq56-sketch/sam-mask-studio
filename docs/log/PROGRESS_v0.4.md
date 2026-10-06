@@ -495,6 +495,15 @@
 - **Mask Preview 스타일**(View > Cycle Preview Style, 단축키 C, 툴바 'Style: …'): Mask(흑백) → Cut Out(마스크 안 이미지만, 나머지 마젠타) → Outside(마스크 밖만). 하늘 마스크에 섞인 잎은 Cut Out, 빠진 하늘은 Outside에서 바로 보임. C를 누르면 Mask Preview가 켜짐. 설정에 저장.
 - 테스트 254개 통과(+2).
 
+### 70단계 · By Color: Range(컬러피커·밝기 범위), Add / Remove (`v0.4-p70`, 2026-10-07)
+- 사용자 요청: 색조 외에 밝기 기준, 컬러피커, Add 말고 Remove도.
+- **By** 콤보: Auto: Color / Auto: Brightness(기존 자동 판정) / **Range**.
+  - Range(`refine.select_range`): Pick Color를 켜고 이미지를 클릭하면 그 색(5×5 평균), Shift+클릭이면 색 추가(최대 8, 하늘+구름 등). 견본 표시, Clear.
+  - 'Color within' N: 고른 색 중 하나와 Lab a*b*(색조·채도, 밝기 제외) 거리 N 이내. 'Brightness from A to B': 회색값 범위. 둘 다 켜면 둘 다 만족하는 픽셀.
+- **Changes**(`refine.take`, 모든 By에 적용): Add & Remove / Add only(마스크에 더하기만) / Remove only(빼기만).
+- Near edge(0 = 전체·Region 안), Fill / Paint 모드, Apply to All Frames 그대로. 다른 도구로 바꾸면 피커 꺼짐.
+- 테스트 257개 통과(+3).
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.

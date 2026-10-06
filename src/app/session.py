@@ -34,7 +34,8 @@ from src.core.propagation import Direction, PropagationPlan, existing_targets, g
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import (
-    close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, split_by_color, within,
+    close_gaps, fill_holes, grow_mask, grow_to_edges, near_edge, remove_specks, select_range, shrink_mask,
+    split_by_color, take, within,
 )
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
@@ -50,7 +51,8 @@ AUTO_PARAMS = {
     "shrink": ("amount",),
     "close_gaps": ("gap",),
     "invert": (),
-    "by_color": ("color_basis", "color_balance", "color_band"),
+    "by_color": ("color_basis", "color_balance", "color_band", "color_action", "color_samples", "color_tol",
+                 "color_use", "bright_range", "bright_use"),
 }
 IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
 
@@ -72,8 +74,16 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
     if tool == "invert":
         return ~base
     if tool == "by_color":
-        return split_by_color(image, base, settings.get("color_basis", "color"),
-                              settings.get("color_balance", 50), settings.get("color_band", 30))
+        band = settings.get("color_band", 30)
+        if settings.get("color_basis") == "range":  # the picked colors / a brightness range, near the edge
+            sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
+                               settings.get("color_use", True), settings.get("bright_range", (0, 255)),
+                               settings.get("bright_use", False))
+            result = np.where(near_edge(base, band), sel, base)
+        else:
+            result = split_by_color(image, base, settings.get("color_basis", "color"),
+                                    settings.get("color_balance", 50), band)
+        return take(base, result, settings.get("color_action", "both"))
     raise ValueError(f"Unknown auto tool: {tool}")
 
 

@@ -166,6 +166,9 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   the colors there in 8 Lab k-means groups; a group the mask mostly covers is the mask's, so a draft that
   is wrong in places still teaches the right sides. Balance shifts either line. Reads the image: computed
   in a Task like Object Fill (`session.IMAGE_TOOLS`).
+  p70: **Range** (`refine.select_range`): picked colors (canvas `color_pick_mode`, Shift adds; Lab a*b*
+  within a tolerance, brightness left out) and / or a gray-level range, near the edge. **Changes**
+  (`refine.take`): both / add only / remove only, for every By.
 
 **P2.1 — feedback on P2** (`v0.3-p2.1`)
 - Merge names the result after the first Object selected (the panel keeps selection order).

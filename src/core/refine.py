@@ -246,3 +246,52 @@ def split_by_color(
     else:
         raise ValueError(f"Unknown basis: {basis} (one of {', '.join(COLOR_BASES)})")
     return np.where(near, take, m)
+
+
+COLOR_ACTIONS = ("both", "add", "remove")
+
+
+def select_range(
+    image: np.ndarray,
+    samples=(),
+    tolerance: float = 20,
+    use_color: bool = True,
+    brightness: tuple = (0, 255),
+    use_brightness: bool = False,
+) -> np.ndarray:
+    """Pixels like the picked colors (Photoshop's Color Range, roughly), on either or both of:
+
+    - color: hue and saturation only (Lab a*b*, brightness left out) within *tolerance* of any of the
+      *samples* (RGB); white cloud and blue sky are different colors, a lit and a shaded leaf the same one.
+    - brightness: gray level within *brightness* (lo, hi), 0-255.
+
+    Neither in use (or color with no samples): nothing is selected.
+    """
+    img = np.ascontiguousarray(image[..., :3])
+    color_on = use_color and len(samples) > 0
+    if not color_on and not use_brightness:
+        return np.zeros(img.shape[:2], bool)
+    sel = np.ones(img.shape[:2], bool)
+    if color_on:
+        ab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)[..., 1:].astype(np.float32)
+        refs = cv2.cvtColor(np.array([samples], np.uint8), cv2.COLOR_RGB2LAB)[0, :, 1:].astype(np.float32)
+        near = np.zeros(sel.shape, bool)
+        for ref in refs:
+            near |= ((ab - ref) ** 2).sum(-1) <= float(tolerance) ** 2
+        sel &= near
+    if use_brightness:
+        lo, hi = sorted(brightness)
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        sel &= (gray >= lo) & (gray <= hi)
+    return sel
+
+
+def take(base: np.ndarray, result: np.ndarray, action: str = "both") -> np.ndarray:
+    """Of the change from *base* to *result*: ``both``, only what it ``add``s, or only what it ``remove``s."""
+    if action == "add":
+        return base | result
+    if action == "remove":
+        return base & result
+    if action == "both":
+        return result
+    raise ValueError(f"Unknown action: {action} (one of {', '.join(COLOR_ACTIONS)})")

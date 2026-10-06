@@ -65,3 +65,32 @@ def test_nothing_to_learn_from():
     assert not split_by_color(img, m).any()
     with pytest.raises(ValueError):
         split_by_color(img, np.eye(200, dtype=bool), "hue")
+
+
+def test_select_range_by_picked_colors_and_brightness():
+    from src.core.refine import select_range
+
+    img, sky = skyline()  # RGB-ish: (150, 190, 240) sky, (30, 70, 25) trees, noise ±12
+    sky_color, tree_color = (150, 190, 240), (30, 70, 25)
+    assert (select_range(img, [sky_color], 15) == sky).mean() > 0.99
+    assert (select_range(img, [tree_color], 15) == ~sky).mean() > 0.99
+    both = select_range(img, [sky_color, tree_color], 15)
+    assert both.mean() > 0.99
+    bright = select_range(img, (), use_color=False, brightness=(120, 255), use_brightness=True)
+    assert (bright == sky).mean() > 0.99
+    # color and brightness together: the sky's color, but only its darker half
+    dark_sky = select_range(img, [sky_color], 15, brightness=(0, 178), use_brightness=True)
+    assert dark_sky.sum() < sky.sum() * 0.8 and not (dark_sky & ~sky).any()
+    assert not select_range(img).any()  # nothing picked, no range: nothing
+
+
+def test_take_add_or_remove_only():
+    from src.core.refine import take
+
+    base = np.array([True, True, False, False])
+    result = np.array([True, False, True, False])
+    assert take(base, result, "both").tolist() == result.tolist()
+    assert take(base, result, "add").tolist() == [True, True, True, False]
+    assert take(base, result, "remove").tolist() == [True, False, False, False]
+    with pytest.raises(ValueError):
+        take(base, result, "flip")
