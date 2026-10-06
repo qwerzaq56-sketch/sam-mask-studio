@@ -48,6 +48,19 @@ def read_rgb(path: Path) -> np.ndarray:
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+def original_size(path: Path) -> Tuple[int, int]:
+    """(height, width) of an image file, reading only its header when possible."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            w, h = im.size
+        return h, w
+    except Exception:
+        h, w = read_rgb(path).shape[:2]
+        return h, w
+
+
 def image_size(path: Path) -> Tuple[int, int]:
     """(height, width) of an image file."""
     h, w = read_rgb(path).shape[:2]

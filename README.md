@@ -51,13 +51,15 @@ Object를 만들고 → **Points** (`E`) · **Brush** (`D`) · 오토 툴로 다
 
 ```
 python -m src.cli sky <이미지 폴더> --out <마스크 폴더> [--recursive]
+python -m src.cli lens <이미지 폴더> --out <마스크 폴더> [--recursive] [--and-with <사람 마스크 폴더>]
 ```
 
 - `sky`: 폴더의 모든 이미지에 하늘 마스크(흰색 = 하늘, `--invert`면 검정). 원본 해상도로, 경계는 원본 이미지에서 다시 판정(Export의 "Sky edges at full resolution"과 같음).
 - 파일 이름 `00011.jpg.png`(`--names stem`이면 `00011.png`), `cam0/` 같은 하위 폴더 유지(`--recursive`).
 - `--out`에 이미 있는 마스크는 바꾸지 않음. 이어서 하려면 `--skip-existing`, 바꾸려면 `--overwrite`.
 - GPU를 쓰지 않음(CPU). 3840² 어안 한 장에 약 2.6초. `--report run.json`으로 장별 하늘 비율과 시간.
-- 그 밖의 옵션: `python -m src.cli sky --help`.
+- `lens`: 피시아이 원 밖을 검정(무시), 안을 흰색으로. 원은 카메라 폴더(`cam0/`, `cam1/`)마다 16장에서 찾고, 렌즈 테두리의 번진 띠를 덮도록 반경의 2%만큼 안으로 당김(`--margin`). `--radius`/`--cx`/`--cy`로 직접 지정, `--and-with`로 사람 마스크(흰색 = 학습)와 곱해서 `masks/` 한 폴더로. 188장에 18초.
+- 그 밖의 옵션: `python -m src.cli sky --help`, `python -m src.cli lens --help`.
 
 ## 설치 (Windows, 개발용)
 
