@@ -1890,10 +1890,10 @@ def test_by_color_auto_tool_redraws_the_edge(qapp, win):
 
 
 def test_preview_style_cuts_the_image_out(qapp, win):
-    """p69: C cycles Mask Preview's look: the mask, the image inside it, the image outside it (rest magenta)."""
+    """p69: C cycles Mask Preview's look: the mask, the image inside it, the image outside it (rest a checkerboard)."""
     import numpy as np
 
-    from src.app.canvas import CUTOUT_COLOR
+    from src.app.canvas import checkerboard
 
     make_objects(win, 1)
     c = win.canvas
@@ -1907,7 +1907,7 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     ptr = q.constBits()
     ptr.setsize(q.sizeInBytes())
     arr = np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3)
-    assert (arr[~final] == CUTOUT_COLOR).all() and (arr[final] == c.image[final][:, :3]).all()
+    assert (arr[~final] == checkerboard(h, w)[~final]).all() and (arr[final] == c.image[final][:, :3]).all()
     win.act_preview_style.trigger()
     assert c.preview_style == "outside"
     win.act_preview_style.trigger()

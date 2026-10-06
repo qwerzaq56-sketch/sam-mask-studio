@@ -2126,7 +2126,7 @@ class MainWindow(QMainWindow):
         self.canvas.update()
 
     def cycle_preview_style(self) -> None:
-        """C: Mask Preview shows the mask -> the image inside it -> the image outside it (the rest magenta).
+        """C: Mask Preview shows the mask -> the image inside it -> the image outside it (the rest a gray checkerboard).
         Only the style: Mask Preview itself stays as it is (V toggles it, Z peeks)."""
         styles = PREVIEW_STYLES
         cur = self.settings.preview_style if self.settings.preview_style in styles else "mask"
@@ -2143,7 +2143,7 @@ class MainWindow(QMainWindow):
             {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
         self.act_preview_style.setToolTip(
             "How Mask Preview (V, hold Z) looks; C cycles: the mask in black and white, the image cut out by the mask, "
-            "or the image outside it; the rest magenta. Cut Out shows what a mask holds (leaves in a sky mask), "
+            "or the image outside it; the rest a gray checkerboard. Cut Out shows what a mask holds (leaves in a sky mask), "
             "Outside what it left (sky it missed)")
 
     def _show_preview_mode(self) -> None:
