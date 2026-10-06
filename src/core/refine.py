@@ -261,8 +261,9 @@ def select_range(
 ) -> np.ndarray:
     """Pixels like the picked colors (Photoshop's Color Range, roughly), on either or both of:
 
-    - color: hue and saturation only (Lab a*b*, brightness left out) within *tolerance* of any of the
-      *samples* (RGB); white cloud and blue sky are different colors, a lit and a shaded leaf the same one.
+    - color: Lab distance (lightness, hue and saturation) within *tolerance* of any of the *samples* (RGB).
+      Lightness counts (p78): with it left out, white sky and dark gray-green leaves were both "colorless"
+      and 40-50 % of the tree matched a whitish sky at 20.
     - brightness: gray level within *brightness* (lo, hi), 0-255.
 
     Neither in use (or color with no samples): nothing is selected.
@@ -273,11 +274,13 @@ def select_range(
         return np.zeros(img.shape[:2], bool)
     sel = np.ones(img.shape[:2], bool)
     if color_on:
-        ab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)[..., 1:].astype(np.float32)
-        refs = cv2.cvtColor(np.array([samples], np.uint8), cv2.COLOR_RGB2LAB)[0, :, 1:].astype(np.float32)
+        lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB).astype(np.float32)
+        lab[..., 0] *= 100 / 255  # L* in 0-100 like a*, b* (OpenCV scales it to 0-255)
+        refs = cv2.cvtColor(np.array([samples], np.uint8), cv2.COLOR_RGB2LAB)[0].astype(np.float32)
+        refs[:, 0] *= 100 / 255
         near = np.zeros(sel.shape, bool)
         for ref in refs:
-            near |= ((ab - ref) ** 2).sum(-1) <= float(tolerance) ** 2
+            near |= ((lab - ref) ** 2).sum(-1) <= float(tolerance) ** 2
         sel &= near
     if use_brightness:
         lo, hi = sorted(brightness)
