@@ -1909,9 +1909,15 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     arr = np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3)
     assert (arr[~final] == checkerboard(h, w)[~final]).all() and (arr[final] == c.image[final][:, :3]).all()
     win.act_preview_style.trigger()
-    assert c.preview_style == "outside"
+    assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()  # C: two states only
+    win.act_cutout_side.trigger()  # Shift+C picks the side; in black and white it waits for C
+    assert c.preview_style == "mask" and win.settings.cutout_side == "outside"
     win.act_preview_style.trigger()
-    assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()
+    assert c.preview_style == "outside"
+    win.act_cutout_side.trigger()
+    assert c.preview_style == "cutout"
+    win.act_preview_style.trigger()
+    assert c.preview_style == "mask"
 
 
 def test_by_color_range_with_picker_and_remove_only(qapp, win):
