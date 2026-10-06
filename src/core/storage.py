@@ -26,9 +26,11 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from src.engine.imageio import key_stem
-from src.core.special import Special
-from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, PromptLayer, Source, Variant, freeze
+from src.engine.imageio import key_stem, read_rgb
+from src.core.sky_edges import sky_edges
+from src.core.special import LABELS, SKY, Special
+from src.core.project import (EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, PromptLayer, Source, Variant,
+                              freeze, union)
 
 FORMAT_VERSION = 1
 
@@ -323,6 +325,7 @@ class ExportOptions:
     include_empty: bool = False  # also write masks for images with no object
     backup: bool = False  # files about to be overwritten are moved to <folder>_backup_<time>/ first (a scene)
     object_ids: Optional[List[int]] = None  # a mask set's Objects; None = the Final Mask (the checked ones)
+    sky_edges: bool = False  # Sky Objects' edges decided again on the full-resolution image (src/core/sky_edges.py)
 
 
 NAME_STYLES = ("{stem}.png", "{name}.png")  # a.png, a.jpg.png: the two ways a mask pairs with a.jpg
@@ -399,16 +402,43 @@ class ExportCheck:
     keys: List[str] = field(default_factory=list, repr=False)  # every image, in sequence order
 
 
+def is_sky(o: MaskObject) -> bool:
+    """A Sky special Object, or one applied from it (still named "Sky …")."""
+    if o.special is not None:
+        return o.special.kind == SKY
+    return o.source == Source.SPECIAL and o.name.startswith(LABELS[SKY])
+
+
+def has_sky(project: Project, ids: Optional[List[int]] = None) -> bool:
+    use = project.members(ids)
+    return any(use(o) and is_sky(o) for o in project.objects)
+
+
 def full_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]],
-              ids: Optional[List[int]] = None) -> Optional[np.ndarray]:
-    """The Final Mask (*ids*: a mask set's) of *key* at the image's original resolution (bool); None = no mask."""
-    m = project.final_mask(key, ids)
-    if m is None:
-        return None
+              ids: Optional[List[int]] = None,
+              image: Optional[Callable[[str], np.ndarray]] = None) -> Optional[np.ndarray]:
+    """The Final Mask (*ids*: a mask set's) of *key* at the image's original resolution (bool); None = no mask.
+
+    *image*: key -> the full-resolution RGB image; given, the Sky Objects' edges are decided again on it
+    (:func:`sky_edges`) instead of being scaled up, the other Objects are scaled up as always."""
     h0, w0 = original_size(key)
-    if m.shape != (h0, w0):
-        m = cv2.resize(m.astype(np.uint8), (w0, h0), interpolation=cv2.INTER_NEAREST) > 0
-    return m
+
+    def up(m: np.ndarray) -> np.ndarray:
+        if m.shape != (h0, w0):
+            m = cv2.resize(m.astype(np.uint8), (w0, h0), interpolation=cv2.INTER_NEAREST) > 0
+        return m
+
+    use = project.members(ids)
+    sky = union(o.mask(key) for o in project.objects if use(o) and is_sky(o)) if image is not None else None
+    if sky is None or not sky.any():
+        m = project.final_mask(key, ids)
+        return None if m is None else up(m)
+    rgb = image(key)
+    out = sky_edges(sky, rgb) if rgb.shape[:2] == (h0, w0) else up(sky)
+    rest = union(o.mask(key) for o in project.objects if use(o) and not is_sky(o))
+    if rest is not None:
+        out = out | up(rest)
+    return out
 
 
 def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Optional[List[int]] = None) -> ExportCheck:
@@ -451,17 +481,16 @@ def export_final_masks(
     if options.backup:
         backup_existing(options.out_dir, export_names(project, options, keys), keys)
     written = []
+    image = (lambda k: read_rgb(image_dir / k)) if options.sky_edges else None
     for i, key in enumerate(keys):
         h0, w0 = original_size(key)
-        m = project.final_mask(key, options.object_ids)
+        m = full_mask(project, key, original_size, options.object_ids, image)
         if m is None:
             if not options.include_empty:
                 continue
             full = np.zeros((h0, w0), dtype=np.uint8)
         else:
             full = m.astype(np.uint8) * 255
-            if full.shape != (h0, w0):
-                full = cv2.resize(full, (w0, h0), interpolation=cv2.INTER_NEAREST)
         if options.invert:
             full = 255 - full
         stem = key_stem(key)
