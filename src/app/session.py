@@ -79,7 +79,14 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
             sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
                                settings.get("bright_use", False))
-            result = np.where(near_edge(base, band), sel, base)
+            # Photoshop-like: add the selected pixels, take them out, or make the mask the selection
+            sel &= near_edge(base, band)
+            action = settings.get("color_action", "both")
+            if action == "add":
+                return base | sel
+            if action == "remove":
+                return base & ~sel
+            return np.where(near_edge(base, band), sel, base)
         else:
             result = split_by_color(image, base, settings.get("color_basis", "color"),
                                     settings.get("color_balance", 50), band)

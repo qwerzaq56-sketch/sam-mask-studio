@@ -365,8 +365,9 @@ class PropertiesPanel(QWidget):
         self.color_action = QComboBox()
         for value, text in (("both", "Add && Remove"), ("add", "Add only"), ("remove", "Remove only")):
             self.color_action.addItem(text, value)
-        self.color_action.setToolTip("What the result may change: both ways, only add to the mask, "
-                                     "or only take out of it")
+        self.color_action.setToolTip("Auto: what the result may change: both ways, only add to the mask, or only "
+                                     "take out of it.\nRange: add the selected pixels, remove them from the mask, "
+                                     "or replace the mask with the selection")
         self.color_action.currentIndexChanged.connect(lambda _i: self._settings_timer.start())
         self.color_balance = SliderField(0, 100, 50)
         self.color_band = SliderField(0, 300, 30, " px")
@@ -460,7 +461,8 @@ class PropertiesPanel(QWidget):
             "Near edge (on): only pixels this close to the mask's edge may change; off: anywhere. Inside the "
             "region if any; Paint mode takes it only where you brush. Auto: like what the mask covers there "
             "or like the outside (the mask only has to be roughly right; Balance 50 = even, higher gives the "
-            "mask more). Range: the pixels like the picked colors and / or within the brightness range."))
+            "mask more). Range: the pixels like the picked colors and / or within the brightness range, added to the "
+            "mask, removed from it, or replacing it."))
         self._pages["by_color"] = self.settings_stack.addWidget(by_color)
         self._on_color_basis(emit=False)
         self.preview_label = note("")
@@ -759,6 +761,10 @@ class PropertiesPanel(QWidget):
         """Balance is for the Auto ways, the picker and ranges for Range."""
         rng = self.color_basis.currentData() == "range"
         self.balance_row.setVisible(not rng)
+        texts = ({"both": "Replace with selection", "add": "Add selection", "remove": "Remove selection"} if rng
+                 else {"both": "Add && Remove", "add": "Add only", "remove": "Remove only"})
+        for i in range(self.color_action.count()):
+            self.color_action.setItemText(i, texts[self.color_action.itemData(i)])
         self.range_box.setVisible(rng)
         if not rng and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)

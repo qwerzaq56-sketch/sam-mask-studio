@@ -516,6 +516,10 @@
 ### 74단계 · By Color Near edge 켜고 끄기 (`v0.4-p74`, 2026-10-07)
 - 사용자 지적: Color within 최대(100)인데 잎이 안 잡힘. 원인은 허용치가 아니라 Near edge(30 px): 경계에서 30 px 밖은 후보에서 빠짐(화면의 둥근 마젠타 끝선). → 사용자 의견대로 Near edge는 두되 **체크박스로 켜고 끔**(끄면 이미지 전체, Region 안으로 제한). Auto·Range 모두 적용, 기본 켬(하늘 경계 편집용).
 
+### 75단계 · By Color Range의 Remove를 '고른 픽셀 빼기'로 (`v0.4-p75`, 2026-10-07)
+- 사용자 지적: Remove가 안 됨. 실제 앱 경로로 재현(00489 크롭, 후보 마스크, 회색·허용치 100): 계산은 설계대로였지만 **설계가 직관과 반대**였음. 'Remove only' = 선택으로 마스크를 바꿀 때 빠지는 변화만 → 잎 색을 고르고 Remove하면 잎이 아닌 쪽이 빠짐.
+- Range는 포토샵식으로: **Add selection**(고른 픽셀 더하기) / **Remove selection**(고른 픽셀 빼기) / **Replace with selection**(Near edge·Region 안을 선택으로). Auto 방식은 그대로 Add & Remove / Add only / Remove only(결과 변화 중 고르기). 콤보 글자가 By에 따라 바뀜.
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.

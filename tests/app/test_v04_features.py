@@ -1921,8 +1921,8 @@ def test_preview_style_cuts_the_image_out(qapp, win):
 
 
 def test_by_color_range_with_picker_and_remove_only(qapp, win):
-    """p70: By Color > Range: colors picked on the image (Shift adds one) and / or a brightness range;
-    Changes: both ways, Add only, Remove only."""
+    """p70/p75: By Color > Range: colors picked on the image (Shift adds one) and / or a brightness range;
+    the selection added, removed or replacing the mask."""
     from tests.app.conftest import wait_until
 
     ids = make_objects(win, 1)
@@ -1950,11 +1950,21 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     p._settings_timer.timeout.emit()
     wait_until(qapp, lambda: s.auto_changes()[0] is not None)
     added, removed = s.auto_changes()
-    assert not added.any() and not removed.any()  # Remove only, and everything selected: nothing to take out
+    assert not added.any() and (removed == before).all()  # Remove selection: every pixel selected, all go (p75)
+    assert p.color_action.currentText() == "Remove selection"
     p.color_action.setCurrentIndex(p.color_action.findData("add"))
     p._settings_timer.timeout.emit()
     wait_until(qapp, lambda: s.auto_changes()[0] is not None and s.auto_changes()[0].any())
     added, removed = s.auto_changes()
-    assert (added == ~before).all() and not removed.any()  # Add only: the rest of the image joins
+    assert (added == ~before).all() and not removed.any()  # Add selection: the rest of the image joins
+    p.bright_lo.spin.setValue(256 // 2)  # only the brighter half: Remove takes only that out
+    p.color_action.setCurrentIndex(p.color_action.findData("remove"))
+    p._settings_timer.timeout.emit()
+    wait_until(qapp, lambda: s.auto_changes()[1] is not None and not s.auto_changes()[0].any())
+    import numpy as np
+
+    gray = np.asarray(s.image[..., :3], float) @ [0.299, 0.587, 0.114]
+    added, removed = s.auto_changes()
+    assert not (removed & (gray < 120)).any()  # darker pixels stay
     p.tool_btns["paint"].click()  # another tool: the picker stops
     assert not p.pick_btn.isChecked() and not c.color_pick_mode
