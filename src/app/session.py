@@ -52,7 +52,7 @@ AUTO_PARAMS = {
     "close_gaps": ("gap",),
     "invert": (),
     "by_color": ("color_band", "color_band_on", "color_action", "color_samples", "color_tol", "color_use", "color_not",
-                 "color_samples_out", "color_tol_out", "bright_range", "bright_use", "bright_not", "color_invert"),
+                 "color_samples_out", "color_tol_out", "bright_range", "bright_use", "bright_not", "range_join", "color_invert"),
 }
 IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
 
@@ -89,17 +89,18 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
 
 
 RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "color_samples_out", "color_tol_out",
-              "bright_range", "bright_use", "bright_not", "color_invert")
+              "bright_range", "bright_use", "bright_not", "range_join", "color_invert")
 
 
 def range_selection(image: np.ndarray, settings: dict, with_parts: bool = False):
     """By Color's A: the picked colors (less the left-out ones, the nearer wins) and / or the brightness range,
-    each maybe turned around (Not), then Swap. *with_parts*: ``(A, overlap, color)``, see ``select_range``."""
+    each maybe turned around (Not), joined by Or (default) / And (p101), less the left-out colors, then Swap. *with_parts*: ``(A, overlap, color)``, see ``select_range``."""
     sel, overlap, color = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
                                 settings.get("color_use", True), settings.get("bright_range", (0, 255)),
                                 settings.get("bright_use", False), settings.get("color_not", False),
                                 settings.get("bright_not", False), settings.get("color_samples_out", ()),
-                                settings.get("color_tol_out"), with_parts=True)
+                                settings.get("color_tol_out"), with_parts=True,
+                                join=settings.get("range_join", "or"))
     if settings.get("color_invert", False):  # Swap A / B
         sel = ~sel
     return (sel, overlap, color) if with_parts else sel
