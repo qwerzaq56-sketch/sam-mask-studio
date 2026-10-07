@@ -6,13 +6,13 @@
   ([`manual/04-reference.md`](../manual/04-reference.md) D8)를 같이 고칩니다.
 - 새 단축키 아이디어는 맨 아래 "제안"에 적습니다. 결정되면 "현재 키맵"으로 옮깁니다.
 - 모든 키는 메뉴 바(File / Edit / View / Go / Help)에도 항목 오른쪽에 표시됩니다: [`menu-design.md`](menu-design.md).
-- 기준: `v0.5.0` (2026-10-01).
+- 기준: `v0.5.0` (2026-10-01), 이후 변경은 표에 단계 번호로. 보기 좋은 전체 목록: 기획서 아티팩트의 `keymap.html`(SAM Mask Studio 아래).
 
 ## 한눈에 보기 (글자 키)
 
 ```text
  Q  W  E  R  T  Y  U  I  O  P  [  ]
- Q  ·  E  R  ·  ·  ·  ·  O  ·  [  ]        Q Solo   E 포인트 편집   R Show Changes   O Outline   [ ] 문제 프레임
+ Q  ·  E  R  T  ·  ·  ·  O  ·  [  ]        Q Solo   E 포인트 편집   R Show Changes   T Original(누르고 있기)   O Outline   [ ] 문제 프레임
 
   A  S  D  F  G  H  J  K  L  ;  '
   A  S  D  F  G  H  ·  ·  ·  ·  ·          오토 툴: A 취소  S Fill  D Paint  F Apply & Close  G Apply & Continue
@@ -22,7 +22,7 @@
    Z  X  C  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X 흑백(Final↔Object)   C 잘라보기(안↔밖)   V Mask Preview   N New Object   , . 키프레임
 ```
 
-`·` = 비어 있음. 비어 있는 글자: **W T Y U I P J K L B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
+`·` = 비어 있음. 비어 있는 글자: **W Y U I P J K L B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
 (`S` `G`는 오토 툴이 켜져 있을 때만. `W` `S`는 마우스가 목록이나 캔버스 위에 있을 때 이동 키: 아래 "이동". 목록 위에서는 `A` `D`도 이동으로 바뀝니다.
 Shift+A = 오토 툴 전체 선택 / 해제.)
 
