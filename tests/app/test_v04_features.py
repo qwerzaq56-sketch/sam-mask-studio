@@ -2135,7 +2135,7 @@ def test_brush_down_to_one_pixel_and_ctrl_drag_sizes(qapp, win):
 
 def test_toolbar_preview_buttons_follow_x_c_and_overlay_opacity(qapp, win):
     """p87: the toolbar's preview buttons are X (black and white: Final / Object) and C (cut out: inside / outside),
-    the one for the look in use checked; the checkerboard background and the overlay opacity are on it too."""
+    the one for the look in use checked; the checkerboard background and the overlay opacity (a slider) are on it too."""
     from PyQt6.QtWidgets import QToolBar
 
     from src.app.canvas import Overlay, compose
@@ -2167,5 +2167,8 @@ def test_toolbar_preview_buttons_follow_x_c_and_overlay_opacity(qapp, win):
     full = compose([Overlay(m, (255, 0, 0), "edit")], (4, 4))[0, 0, 3]
     win.overlay_opacity.setValue(50)
     assert win.settings.overlay_opacity == 50 and c.overlay_opacity == 0.5
+    from PyQt6.QtWidgets import QSlider
+
+    assert isinstance(win.overlay_opacity, QSlider) and win.overlay_label.text() == "Overlay 50 %"  # a slider
     assert compose([Overlay(m, (255, 0, 0), "edit")], (4, 4), opacity=c.overlay_opacity)[0, 0, 3] == round(full * 0.5)
     win.overlay_opacity.setValue(100)
