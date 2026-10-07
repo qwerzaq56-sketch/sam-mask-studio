@@ -58,6 +58,7 @@ ALPHA = {
     "region": 70,  # where the edit-layer tools act
     "auto_add": 150,  # an auto tool's result: pixels it adds
     "auto_sub": 130,  # ...and removes
+    "area": 45,  # where By Color decides pixels again (Near edge): faint, under the mask colors
     "guide": 210,  # an auto tool's result, not picked yet (Paint mode): dark and dense to stand out
 }
 
@@ -82,6 +83,7 @@ def checkerboard(h: int, w: int) -> np.ndarray:
     return np.repeat(g[..., None], 3, axis=2)
 
 
+PICK_BANNER = "PICK COLOR · click: pick · Shift+click: add · Esc / the Pick button: stop"
 STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
@@ -338,6 +340,7 @@ class Canvas(QWidget):
     def set_color_pick(self, on: bool) -> None:
         """While on, a left click reports the image's color there (``color_picked``) and does nothing else."""
         self.color_pick_mode = on
+        self.update()  # the banner
         self._update_cursor()
 
     def sample_color(self, x: float, y: float, r: int = 2) -> Optional[Tuple[int, int, int]]:
@@ -578,7 +581,8 @@ class Canvas(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = self.brush_size / 2
             painter.drawEllipse(self._mouse, r, r)
-        banner = "  ·  ".join(t for t in (f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else "", self.banner) if t)
+        pick = PICK_BANNER if self.color_pick_mode else ""
+        banner = "  ·  ".join(t for t in (f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else "", pick, self.banner) if t)
         if banner:
             self._draw_banner(painter, banner)
 

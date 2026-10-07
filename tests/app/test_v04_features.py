@@ -1951,6 +1951,11 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
     assert p.range_box.isVisibleTo(p) and not p.balance_row.isVisibleTo(p)
     assert p.pick_btn.isChecked() and c.color_pick_mode  # p77: Range turns the picker on by itself
+    assert "Esc" in p.pick_btn.text()  # p79: the button says it is picking and how to stop
+    win.act_escape.trigger()  # the first Esc only stops picking
+    assert not c.color_pick_mode and not p.pick_btn.isChecked() and p.pick_btn.text() == "Pick Color"
+    assert s.editing is not None and p.tool_btns["by_color"].isChecked()
+    p.pick_btn.setChecked(True)
     from PyQt6.QtCore import Qt
     from PyQt6.QtTest import QTest
 
@@ -1991,6 +1996,14 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
 
     gray = np.asarray(s.image[..., :3], float) @ [0.299, 0.587, 0.114]
     assert not added.any() and not (removed & (gray > 136)).any()  # the bright (selected) part stays
+    p.color_invert.setChecked(True)  # p79: Invert: the darker part is the selection, kept; the bright one goes
+    p._settings_timer.timeout.emit()
+    import cv2
+
+    g8 = cv2.cvtColor(np.ascontiguousarray(s.image[..., :3]), cv2.COLOR_RGB2GRAY)
+    wait_until(qapp, lambda: s.auto_changes()[1] is not None
+               and (s.auto_changes()[1] == (before & (g8 >= 128))).all())  # only the bright part goes
+    p.color_invert.setChecked(False)
     p.bright_lo.spin.setValue(0)
     p.color_action.setCurrentIndex(p.color_action.findData("add"))
     p._settings_timer.timeout.emit()
@@ -2006,5 +2019,15 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     gray = np.asarray(s.image[..., :3], float) @ [0.299, 0.587, 0.114]
     added, removed = s.auto_changes()
     assert not (removed & (gray < 120)).any()  # darker pixels stay
+    p.color_band_on.setChecked(True)  # p79: the Near edge area is shown (faint white, under the mask colors)
+    p.color_band.spin.setValue(5)
+    win.refresh()
+    from src.core.refine import near_edge
+
+    area = [o for o in c._overlays if o.style == "area"]
+    assert len(area) == 1 and (area[0].mask == near_edge(s.auto_base(), 5)).all()
+    p.color_band_on.setChecked(False)
+    win.refresh()
+    assert not [o for o in c._overlays if o.style == "area"]
     p.tool_btns["paint"].click()  # another tool: the picker stops
     assert not p.pick_btn.isChecked() and not c.color_pick_mode

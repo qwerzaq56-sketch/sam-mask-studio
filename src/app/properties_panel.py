@@ -376,9 +376,10 @@ class PropertiesPanel(QWidget):
         self._samples: List[Tuple[int, int, int]] = []
         self.pick_btn = QPushButton("Pick Color")
         self.pick_btn.setCheckable(True)
+        self.pick_btn.setStyleSheet("QPushButton:checked { background: #e08a00; color: black; font-weight: bold; }")
         self.pick_btn.setToolTip("On by itself in Range: clicking the image picks a color (no SAM point); Shift+click adds "
                                  "another (sky and cloud). Turn it off to place SAM points")
-        self.pick_btn.toggled.connect(self.color_pick_toggled)
+        self.pick_btn.toggled.connect(self._on_pick_toggled)
         self.clear_colors_btn = QPushButton("Clear")
         self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
         self.swatches = QLabel("No color picked")
@@ -388,6 +389,10 @@ class PropertiesPanel(QWidget):
         self.color_tol = SliderField(1, 100, 30)
         self.color_tol.setToolTip("How far (Lab: lightness, hue and saturation) a pixel's color may be "
                                   "from a picked one")
+        self.color_invert = QCheckBox("Invert selection")
+        self.color_invert.setToolTip("Select everything but the picked colors / brightness range (pick the "
+                                     "leaves, Invert: the rest is sky)")
+        self.color_invert.toggled.connect(lambda _on: self._settings_timer.start())
         self.bright_use = QCheckBox("Brightness from")
         self.bright_lo = SliderField(0, 255, 0)
         self.bright_hi = SliderField(0, 255, 255)
@@ -457,6 +462,7 @@ class PropertiesPanel(QWidget):
         rl.addWidget(self.bright_lo, 3, 1)
         rl.addWidget(QLabel("to"), 4, 0, Qt.AlignmentFlag.AlignRight)
         rl.addWidget(self.bright_hi, 4, 1)
+        rl.addWidget(self.color_invert, 5, 0, 1, 2)
         bf.addRow(self.range_box)
         bf.addRow(note(
             "Near edge (on): only pixels this close to the mask's edge may change; off: anywhere. Inside the "
@@ -729,6 +735,7 @@ class PropertiesPanel(QWidget):
             "color_balance": self.color_balance.value(),
             "color_band": self.color_band.value(),
             "color_band_on": self.color_band_on.isChecked(),
+            "color_invert": self.color_invert.isChecked(),
             "color_action": self.color_action.currentData(),
             "color_samples": tuple(self._samples),
             "color_tol": self.color_tol.value(),
@@ -759,6 +766,11 @@ class PropertiesPanel(QWidget):
 
     def set_brush_size(self, px: int) -> None:
         self.brush_size.setText(f"size {px}px · Alt+right-drag or Ctrl+wheel to change")
+
+    def _on_pick_toggled(self, on: bool) -> None:
+        """The button says the state and the way out; the canvas follows."""
+        self.pick_btn.setText("Picking colors: click here or Esc to stop" if on else "Pick Color")
+        self.color_pick_toggled.emit(on)
 
     def _on_color_basis(self, _i: int = 0, emit: bool = True) -> None:
         """Balance is for the Auto ways, the picker and ranges for Range."""

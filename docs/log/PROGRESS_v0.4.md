@@ -537,6 +537,12 @@
 - 초안 마스크에서 해 보면(하늘색 1개, 전체): 허용치 20이면 초안 넘침의 52–72 %가 빠지지만 하늘 그라데이션 때문에 진짜 하늘도 0.4–20 % 빠짐, 30이면 넘침 9–24 %·하늘 0–2 %. 넘침 대부분은 하늘과 섞인 밝은 경계 픽셀이라, 색 하나보다 여러 개를 고르고 Paint로 칠한 곳만 빼는 쓰임새.
 - 테스트: 잘라보기 테스트가 캔버스의 Final Mask 비동기 갱신 때문에 가끔 실패하던 것 고침.
 
+### 79단계 · By Color 판정 영역 표시, Invert selection, Pick Color 상태 명시 (`v0.4-p79`, 2026-10-07)
+- 사용자 지적: Replace면 반경 안은 다 빠지거나 들어가야 하는데 둘 다 아닌 곳이 있음. 계산은 맞음: 반경 안 픽셀은 모두 판정되고, 이미 그 상태인 픽셀은 변화가 없어 프리뷰에 색이 없음(마스크 안 = Object 색, 밖 = 원본). 그런데 반경이 어디까지인지 안 보여서 '판정 안 된 곳'처럼 보임.
+- **Near edge 판정 영역을 옅은 흰색으로 표시**(마스크 색 아래, Region 있으면 그 안만). 영역 안: Object 색 = 하늘로 남음, 옅은 흰색만 = 밖으로 남음, 마젠타/보라 = 바뀜. Near edge를 끄면(전체) 표시 없음. `session.auto_area`.
+- Range에 **Invert selection**: 고른 색·밝기 범위 밖이 선택(잎을 고르고 Invert하면 나머지 = 하늘).
+- Pick Color 상태: 켜지면 버튼이 주황 'Picking colors: click here or Esc to stop', 캔버스 배너 'PICK COLOR · click: pick · Shift+click: add · Esc / the Pick button: stop'. **Esc 첫 번째는 피커만 끔**(도구·편집은 그대로).
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.
