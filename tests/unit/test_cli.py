@@ -165,7 +165,19 @@ def test_sky_color_preset_takes_out_what_is_not_sky_colored(scene, tmp_path, mon
     assert cli.main(base + ["--out", str(tmp_path / "a"), "--color-preset", str(preset), "--report", str(report)]) == 0
     m = read(tmp_path / "a" / "00000.png")
     assert m[40, 130] == 0 and m[10, 20] == 255 and m[80, 300] == 255 and m[150:].max() == 0
-    assert json.loads(report.read_text(encoding="utf-8"))["settings"]["by_color"] == settings
+    rep = json.loads(report.read_text(encoding="utf-8"))["settings"]
+    assert rep["by_color"] == settings
+    assert rep["tree_tips"] is None  # no band (color_band_on False): nothing beyond it to take out
+    # p110: the tree tips rule goes with By Color unless --no-tree-tips
+    banded = tmp_path / "banded.json"
+    banded.write_text(json.dumps({**settings, "color_band_on": True}), encoding="utf-8")
+    assert cli.main(base + ["--out", str(tmp_path / "t"), "--color-preset", str(banded), "--report", str(report)]) == 0
+    from src.core.refine import TREE_TIPS
+
+    assert json.loads(report.read_text(encoding="utf-8"))["settings"]["tree_tips"] == TREE_TIPS
+    assert cli.main(base + ["--out", str(tmp_path / "t2"), "--color-preset", str(banded), "--no-tree-tips",
+                            "--report", str(report)]) == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["settings"]["tree_tips"] is None
 
     # by name: a preset saved in the app's By Color panel
     from src.app import settings as app_settings
@@ -188,3 +200,5 @@ def test_a_mask_preset_carries_by_color_for_sky():
 
     p = MaskPreset.from_dict({"name": "sky-blue", "sky": {"color": {"color_tol": 7}}})
     assert p.sky.color == {"color_tol": 7}
+    assert p.sky.tree_tips is True  # p110: on by default with By Color
+    assert MaskPreset.from_dict({"name": "s", "sky": {"tree_tips": False}}).sky.tree_tips is False

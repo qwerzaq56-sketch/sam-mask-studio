@@ -111,3 +111,30 @@ def test_or_joins_two_ways_of_catching_the_sky():
     # Not per condition and Swap still apply on top: the inverse mask
     assert (~select_range(img, [sky], 40, **kw))[0].tolist() == [False, False, True, False]
 
+
+
+def test_tree_tips_beyond_the_band():
+    """p110: rough, not-sky-colored pixels the sky mask painted over beyond the band, near the tree, come out."""
+    from src.core.refine import tree_tips
+
+    blue = (170, 195, 235)
+    img = np.zeros((200, 120, 3), np.uint8)
+    img[:] = blue
+    img[140:] = (40, 80, 40)  # the tree
+    yy, xx = np.mgrid[:200, :120]
+    checker = ((yy + xx) % 2 == 0)[..., None]
+    rough = np.where(checker, np.uint8(40), np.uint8(200)).repeat(3, -1)  # dark leaf / pale gray, not A
+    img[60:80, 20:40] = rough[60:80, 20:40]  # a tip 60-80 px above the tree: beyond the band, within reach
+    img[2:12, 20:40] = rough[2:12, 20:40]  # 128+ px from the tree: out of reach
+    img[60:80, 70:90] = (120, 120, 120)  # not sky-colored but smooth: not a tip
+    base = np.zeros((200, 120), bool)
+    base[:140] = True  # the sky model painted everything above the tree
+    st = {"color_samples": (blue,), "color_tol": 7, "color_use": True, "bright_range": (205, 255),
+          "bright_use": True, "range_join": "or", "color_band": 30, "color_band_on": True}
+    tips = tree_tips(base, img, st, grow=0)
+    assert tips[60:80, 20:40].mean() > 0.9
+    assert not tips[:30].any() and not tips[110:].any()  # out of reach; the band is By Color's job
+    assert not tips[64:76, 74:86].any()  # inside the smooth patch (its rim against the sky is rough)
+    grown = tree_tips(base, img, st, grow=1)
+    assert (grown >= tips).all() and not (grown & ~base).any()
+    assert not tree_tips(base, img, {**st, "color_band_on": False}).any()  # no band: nothing beyond it

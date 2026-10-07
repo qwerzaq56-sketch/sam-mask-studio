@@ -56,7 +56,7 @@ python -m src.cli person <이미지 폴더> --out <사람 마스크 폴더> [--r
 ```
 
 - `sky`: 폴더의 모든 이미지에 하늘 마스크(흰색 = 하늘, `--invert`면 검정). 원본 해상도로, 경계는 원본 이미지에서 다시 판정(Export의 "Sky edges at full resolution"과 같음).
-- `sky --color-preset`: 원본 크기 하늘 마스크에 By Color를 앱의 오토 툴과 똑같이 한 번 적용. 앱 By Color 패널에 저장한 프리셋 이름(`config.local.json`) 또는 그 설정을 담은 `.json` 파일. 마스킹 프리셋의 `sky.color`에 넣어도 됨, `--no-color`로 끔. 0022 정답 12장: 프리셋 `sky 8 colors + bright 205`로 넘침 12.8 % → 0.95 %(이 프리셋으로 정답을 만들었으니 낙관적일 수 있음).
+- `sky --color-preset`: 원본 크기 하늘 마스크에 By Color를 앱의 오토 툴과 똑같이 한 번 적용. 앱 By Color 패널에 저장한 프리셋 이름(`config.local.json`) 또는 그 설정을 담은 `.json` 파일. 마스킹 프리셋의 `sky.color`에 넣어도 됨, `--no-color`로 끔. 0022 정답 12장: 프리셋 `sky 8 colors + bright 205`로 넘침 12.8 % → 0.95 %(이 프리셋으로 정답을 만들었으니 낙관적일 수 있음). 함께 띠 밖 나무 끝(띠 30 px 밖에서 하늘로 칠해진 거친·하늘색 아닌 잎)도 뺌(p110, 넘침 0.95 → 0.85 %), `--no-tree-tips`로 끔.
 - 파일 이름 `00011.jpg.png`(`--names stem`이면 `00011.png`), `cam0/` 같은 하위 폴더 유지(`--recursive`).
 - `--out`에 이미 있는 마스크는 바꾸지 않음. 이어서 하려면 `--skip-existing`, 바꾸려면 `--overwrite`.
 - GPU를 쓰지 않음(CPU). 3840² 어안 한 장에 약 2.6초. `--report run.json`으로 장별 하늘 비율과 시간.

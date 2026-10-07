@@ -294,12 +294,13 @@ def range_selection(image: np.ndarray, settings: dict, with_parts: bool = False)
     return (sel, overlap, color) if with_parts else sel
 
 
-def apply_by_color(base: np.ndarray, image: np.ndarray, settings: dict) -> np.ndarray:
+def apply_by_color(base: np.ndarray, image: np.ndarray, settings: dict, sel: Optional[np.ndarray] = None) -> np.ndarray:
     """By Color on *base* (*image* RGB, same size): A = the selection, B = the rest, both only inside the Near edge
     area (``color_band`` px around *base*'s edge, or anywhere); Changes: Add puts A in, Remove takes B out, both
-    does both."""
+    does both. *sel*: A when it is already worked out (:func:`range_selection`)."""
     band = settings.get("color_band", 30) if settings.get("color_band_on", True) else 0  # 0: anywhere
-    sel = range_selection(image, settings)
+    if sel is None:
+        sel = range_selection(image, settings)
     area = near_edge(base, band)
     a, b = sel & area, ~sel & area
     action = settings.get("color_action", "both")
@@ -308,6 +309,48 @@ def apply_by_color(base: np.ndarray, image: np.ndarray, settings: dict) -> np.nd
     if action == "remove":
         return base & ~b
     return (base | a) & ~b
+
+
+# Tree tips beyond the band (p110), measured on the 0022 sky truth (12 crops, user's "sky 8 colors + bright 205"):
+# spill 0.95 -> 0.85 %, missed 1.06 -> 1.13 %. Beyond the band B is never taken out, yet not-A there is still
+# mostly sky (100 : 1); brightness does not tell the tips (mixed with the sky behind them) from it, roughness does.
+TREE_TIPS = {"reach": 120, "rough": 12.0, "far": 10.0, "grow": 1}
+
+
+def tree_tips(base: np.ndarray, image: np.ndarray, settings: dict, sel: Optional[np.ndarray] = None,
+              reach: float = 120, rough: float = 12.0, far: float = 10.0, grow: int = 1) -> np.ndarray:
+    """Tree tips *base* (a sky mask) painted over beyond By Color's Near edge band, to take out after By Color:
+    inside *base*, not A, outside the band, within *reach* px of what is not *base*, rough (gray's 7x7 standard
+    deviation above *rough*) and at least *far* (Lab) from every picked color; then grown *grow* px through not-A
+    pixels of *base* (the tips' mixed rims). Nothing without a band (By Color works anywhere then)."""
+    m = base.astype(bool)
+    band = settings.get("color_band", 30) if settings.get("color_band_on", True) else 0
+    if band <= 0 or not m.any():
+        return np.zeros(m.shape, bool)
+    if sel is None:
+        sel = range_selection(image, settings)
+    img = np.ascontiguousarray(image[..., :3])
+    # distance to the tree inside the sky; the image's border is not tree (the same padding as near_edge)
+    dist = cv2.distanceTransform(np.pad(m, 1, mode="edge").astype(np.uint8), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    cand = m & ~sel & ~near_edge(m, band) & (dist <= reach)
+    if not cand.any():
+        return cand
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    mean = cv2.blur(gray, (7, 7))
+    sd = np.sqrt(np.maximum(cv2.blur(gray * gray, (7, 7)) - mean * mean, 0))
+    cand &= sd > rough
+    samples = settings.get("color_samples", ())
+    if cand.any() and len(samples):
+        ys, xs = np.nonzero(cand)
+        lab = cv2.cvtColor(img[ys, xs][:, None], cv2.COLOR_RGB2LAB).astype(np.float32)
+        lab[..., 0] *= 100 / 255
+        near = _lab_distance2(lab, samples)[:, 0] < float(far) ** 2
+        cand[ys[near], xs[near]] = False
+    path = (m & ~sel).astype(np.uint8)
+    k = np.ones((3, 3), np.uint8)
+    for _ in range(max(int(grow), 0)):
+        cand |= (cv2.dilate(cand.astype(np.uint8), k) & path).astype(bool)
+    return cand
 
 
 def color_settings(values: dict) -> dict:
