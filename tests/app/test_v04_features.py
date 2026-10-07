@@ -2775,3 +2775,20 @@ def test_batch_mask_dialog_finishes_the_sky_with_a_by_color_preset(qapp, win, tm
     for w in (d, d2):
         w.done(0)
 
+
+
+def test_batch_mask_dialog_settings_column_is_never_cut_off(qapp, win, tmp_path):
+    """p114: the settings column was narrower than its check boxes (sideways scrolling, text cut off)."""
+    from src.app.batch_mask_dialog import BatchMaskDialog
+
+    d = BatchMaskDialog(win.session.image_dir, tmp_path / "scene", free_models=lambda: False,
+                        color_presets={"a long By Color preset name for the sky and the clouds": {}})
+    d.preset.setCurrentIndex(d.preset.findData("osmo360-selfie-stick"))
+    for size in ((1100, 760), (700, 600)):
+        d.resize(*size)
+        d.show()
+        qapp.processEvents()
+        sc = d._left_scroll
+        assert sc.viewport().width() >= sc.widget().minimumSizeHint().width()
+        assert sc.horizontalScrollBar().maximum() == 0
+    d.done(0)

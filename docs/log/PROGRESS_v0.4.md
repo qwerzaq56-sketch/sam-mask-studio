@@ -780,6 +780,13 @@
 - 테스트: 창(프리셋 고르기·나무 끝 활성 조건·저장 값·`--cpu`·앱 프리셋이 바뀐 뒤 값 유지), `run --cpu` 안내.
 - 화면 확인(오프스크린 캡처): Sky 특수 Object의 Finish 줄, Batch Masking의 Sky 묶음. 창 왼쪽 칸이 원래부터 가로로 잘려 스크롤이 생김 → `ui-issues.md` 메모.
 
+## 114단계 (`v0.4-p114`): Batch Masking 창 왼쪽 칸 잘림
+
+- 사용자 요청(10-08). 원인: 왼쪽 칸 기본 폭 430 px < 내용 최소 폭 468 px(긴 체크박스 글: Run on the CPU…, Sub-folders too…, Unload this window's SAM models…).
+- 체크박스 글을 짧게(`Sub-folders too (cam0/, cam1/)`, `Unload the app's SAM models first`, `Run on the CPU (slow)`), 설명은 툴팁으로. 프리셋·By Color 목록은 긴 이름이 칸을 넓히지 않게(14자 기준).
+- 왼쪽 칸 최소 폭 = 내용 최소 폭(프리셋을 바꿀 때마다 다시 맞춤), 가로 스크롤 없음, 접히지 않음. 창을 줄이면 오른쪽(접촉 시트·출력)이 줄어듦. 1100 px 창에서 왼쪽 463 px.
+- 테스트 1개(두 창 크기에서 내용 폭 ≤ 보이는 폭, 가로 스크롤 없음).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
