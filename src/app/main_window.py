@@ -467,6 +467,9 @@ class MainWindow(QMainWindow):
         ob.setContentsMargins(6, 0, 6, 0)
         ob.addWidget(self.overlay_label)
         ob.addWidget(self.overlay_opacity)
+        ob.setSpacing(4)
+        # its own width only: in the toolbar it took the spare width and pushed the slider far from its label
+        self.overlay_box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         self.act_changes = self._action(
             "Show Changes",
             self.set_show_changes,
