@@ -703,7 +703,7 @@ class PropertiesPanel(QWidget):
         if hasattr(self, "apply_all_btn"):
             self._show_apply_all()
         self.mode_hint.setText(
-            "Blue = added, orange = removed. Enter applies · A: pick in Paint mode."
+            "Blue = added, orange = removed (Range: blue = A, orange = B, light = stays). Enter applies · A: pick in Paint mode."
             if mode == "fill"
             else "Drag over the gray to pick · Alt+drag unpicks · A: all / none · Enter applies."
         )

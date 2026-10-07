@@ -579,6 +579,15 @@
 - 같은 내용을 아티팩트 [편집 도구 · 미리보기 수칙](https://claude.ai/artifact/JEJbPmcFfefHebuFTcMDFF)로 게시, 상위 기획서(360 → 3DGS 워크플로우 개선 계획) 8.2 하위 문서 표와 머리말에 추가.
 - 코드 변경 없음.
 
+## 86단계 (`v0.4-p86`): By Color Range 미리보기를 A / B로 칠함
+
+- 문제: 미리보기가 마스크에 생길 변화만 칠해서, A인데 이미 마스크 안(마스크 색만)이거나 B인데 이미 밖(원본 그대로)인 픽셀이 A도 B도 아닌 것처럼 보였다. 계산은 정상(Add & Remove 결과 = A, 크롭 00489에서 픽셀 단위 일치)이고 표시가 (A/B) × (지금 마스크 안/밖) 네 칸이었다.
+- 이제 판정 영역의 모든 픽셀을 A = 파랑, B = 주황으로 칠한다. 바뀌는 픽셀은 진하게(기존 `auto_add` / `auto_sub`), 그대로인 픽셀은 옅게(새 `auto_a` / `auto_b`, alpha 60). 크롭 00489, Near edge 끔: 네 레이어 합 = 이미지 전체(589,824 px), Invert를 켜면 색이 그대로 맞바뀜.
+- 원래 마스크가 보이게: 오토 툴 색은 편집 레이어 색을 덮어쓰지 않고 그 위에 섞는다(`canvas.compose`, `BLENDED`). 경계는 흰 선 그대로.
+- `Session.auto_ab(settings)`: Range의 (A, B), 판정 영역(Near edge, Region) 안. 필터 결과는 설정이 같으면 캐시.
+- 테스트: Range 테스트에 A / B 표시가 이미지 전체를 나누는지(Add & Remove, Add only + Invert) 추가.
+- 대기: 고른 색 썸네일을 누르면 그 색만 지우기(`docs/backlog/ui-issues.md` 22).
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.

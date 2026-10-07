@@ -892,11 +892,17 @@ class MainWindow(QMainWindow):
             if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
-            area = s.auto_area(self.properties_panel.tool_settings())
+            tool_settings = self.properties_panel.tool_settings()
+            area = s.auto_area(tool_settings)
             if area is not None:  # By Color's Near edge: where pixels are decided again (faint white)
                 overlays.insert(0, Overlay(area, (255, 255, 255), "area"))
             if added is not None:  # the auto tool (on top): taken parts blue / orange, the rest gray
                 taken = s.auto_taken()
+                ab = s.auto_ab(tool_settings) if not self._auto_pending() else None  # with its own result only
+                if ab is not None:  # Range (p86): every pixel it decides shows as A (blue) or B (orange),
+                    changed = added | removed  # light where it stays as it is, dense (below) where it changes
+                    overlays.append(Overlay(ab[0] & ~changed, AUTO_ADD_COLOR, "auto_a"))
+                    overlays.append(Overlay(ab[1] & ~changed, AUTO_SUB_COLOR, "auto_b"))
                 overlays.append(Overlay((added | removed) & ~taken, (55, 55, 60), "guide"))  # dark gray
                 # own colors, so they are never confused with the edit layer's green / red
                 overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "auto_add"))
