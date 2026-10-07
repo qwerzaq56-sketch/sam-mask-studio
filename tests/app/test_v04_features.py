@@ -2187,3 +2187,18 @@ def test_clicking_a_picked_color_removes_only_that_one(qapp, win):
     assert panel.tool_settings()["color_samples"] == ()
     assert panel.swatches.text() == "No color picked"
     panel.remove_sample(5)  # a stale link does nothing
+
+
+def test_auto_tool_shows_a_color_legend(qapp, win):
+    """AT-2 (p91): with an auto tool on, the canvas lists the colors in use; none without one."""
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    p = win.properties_panel
+    assert win.canvas.legend == []
+    p.tool_btns["grow"].click()
+    assert [t for _c, _a, t in win.canvas.legend] == ["Adds", "Removes"]
+    p.mode_paint_btn.click()
+    assert [t for _c, _a, t in win.canvas.legend][-1] == "Not picked (Paint)"
+    win.canvas.grab()  # draws without error
+    win.escape()  # leave the tool
+    assert win.canvas.legend == []

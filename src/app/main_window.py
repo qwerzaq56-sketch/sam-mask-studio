@@ -924,6 +924,7 @@ class MainWindow(QMainWindow):
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
             tool_settings = self.properties_panel.tool_settings()
             area = s.auto_area(tool_settings)
+            legend = self._auto_legend(s, tool_settings, area is not None)
             if area is not None:  # By Color's Near edge: where pixels are decided again (faint white)
                 overlays.insert(0, Overlay(area, (255, 255, 255), "area"))
             if added is not None:  # the auto tool (on top): taken parts blue / orange, the rest gray
@@ -950,7 +951,24 @@ class MainWindow(QMainWindow):
             if preview:
                 overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.candidates_pickable = preview and self.picking()
+        self.canvas.set_legend(legend if edit_layer is not None else [])
         self.canvas.set_overlays(overlays)
+
+    @staticmethod
+    def _auto_legend(s, tool_settings: dict, area: bool) -> list:
+        """The colors an auto tool's preview uses right now and what they mean (AT-2, p91); none without a tool."""
+        if s.auto_tool is None:
+            return []
+        if s.auto_tool == "by_color" and tool_settings.get("color_basis") == "range":
+            items = [(AUTO_ADD_COLOR, 150, "A: adds"), (AUTO_ADD_COLOR, 60, "A: already in"),
+                     (AUTO_SUB_COLOR, 130, "B: removes"), (AUTO_SUB_COLOR, 60, "B: already out")]
+        else:
+            items = [(AUTO_ADD_COLOR, 150, "Adds"), (AUTO_SUB_COLOR, 130, "Removes")]
+        if s.auto_mode == "paint":
+            items.append(((55, 55, 60), 210, "Not picked (Paint)"))
+        if area:
+            items.append(((255, 255, 255), 70, "Decided here (Near edge)"))
+        return items
 
     # ------------------------------------------------------------------
     # Folder / navigation / saving
