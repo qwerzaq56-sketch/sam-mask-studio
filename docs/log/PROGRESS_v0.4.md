@@ -609,6 +609,11 @@
 - `docs/design/edit-tools-preview-rules.md`는 공통 수칙만(데이터 안전, 색, 모드, Mask Preview 키 · 툴바, 브러쉬, 검증)으로 줄이고 1–7절로 다시 번호. `ux-principles.md` 링크를 세 문서로.
 - 공유 페이지: 하위 문서를 각각의 아티팩트가 아니라 상위 문서(360 → 3DGS 개선 계획) 안의 페이지(`sky.html` … `rules.html`, `auto.html`, `bycolor.html`)로 넣음. 다른 아티팩트로 가는 링크는 데스크톱 앱 밖 브라우저를 띄워서 불편하다는 피드백. 8.2 표를 "마스킹 방법" / "SAM Mask Studio 편집 도구" 두 범주로.
 
+## 90단계 (`v0.4-p90`): 고른 색 썸네일 클릭 = 그 색 지우기
+
+- By Color Range의 고른 색 썸네일이 하나씩 링크. 누르면 그 색만 빠지고 나머지는 그대로, 결과는 다시 계산(`PropertiesPanel.remove_sample`). `Clear`는 전부. ui-issues 22 완료.
+- 테스트: 가운데 색을 지우면 앞뒤 색이 남고, 다 지우면 "No color picked".
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

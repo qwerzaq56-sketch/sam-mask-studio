@@ -383,6 +383,9 @@ class PropertiesPanel(QWidget):
         self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
         self.swatches = QLabel("No color picked")
         self.swatches.setWordWrap(True)
+        # each picked color is a link: clicking it removes just that one (ui-issues 22, p90)
+        self.swatches.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.swatches.linkActivated.connect(self.remove_sample)
         self.color_use = QCheckBox("Color within")
         self.color_use.setChecked(True)
         self.color_tol = SliderField(1, 100, 30)
@@ -799,12 +802,21 @@ class PropertiesPanel(QWidget):
         self._samples = [tuple(c) for c in colors][-8:]
         if self._samples:
             boxes = "".join(
-                f'<span style="background-color: rgb{c}; color: rgb{c};">&nbsp;&nbsp;&nbsp;&nbsp;</span>&nbsp;'
-                for c in self._samples)
+                f'<a href="{i}" style="text-decoration: none;"><span style="background-color: rgb{c}; color: rgb{c};">'
+                f'&nbsp;&nbsp;&nbsp;&nbsp;</span></a>&nbsp;'
+                for i, c in enumerate(self._samples))
             self.swatches.setText(boxes + f" {len(self._samples)} color(s)")
+            self.swatches.setToolTip("Click a color to remove just that one (Clear: all)")
         else:
             self.swatches.setText("No color picked")
+            self.swatches.setToolTip("")
         self._settings_timer.start()
+
+    def remove_sample(self, index) -> None:
+        """Drop one picked color (its swatch was clicked); the rest stay."""
+        i = int(index)
+        if 0 <= i < len(self._samples):
+            self.set_samples(self._samples[:i] + self._samples[i + 1:])
 
     def _on_region_mode(self, on: bool) -> None:
         if on:
