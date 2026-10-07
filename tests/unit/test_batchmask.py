@@ -175,3 +175,25 @@ def test_run_refuses_a_busy_gpu_before_anything(tmp_path, monkeypatch, mine):
         cli.main(["run", str(images), "--preset", "people-only", "--out", str(tmp_path / "s"), "--recursive",
                   "--sam3-model", str(model)])
     assert not (tmp_path / "s").exists()
+
+
+def test_run_with_by_color_sky_checks_the_gpu_for_sam2(tmp_path, monkeypatch, mine):
+    """p111: a preset whose sky has By Color runs SAM2 after it, so run asks for (1 GB of) free GPU too."""
+    images, model = _frames(tmp_path, monkeypatch)
+    sam2 = tmp_path / "sam2.pt"
+    sam2.write_bytes(b"x")
+    monkeypatch.setattr(cli, "SAM2_MODEL", sam2)
+    devices = []
+    monkeypatch.setattr(cli, "sky_folder", lambda images, out, **kw: devices.append(kw["device"]) or
+                        {"written": 0, "skipped_existing": 0, "failed": [], "seconds": 0})
+    path = P.save_preset(P.MaskPreset.from_dict({"name": "sky-color", "sky": {"color": {"color_tol": 7}}}))
+    sky_model = tmp_path / "sky.onnx"
+    sky_model.write_bytes(b"x")
+    args = ["run", str(images), "--preset", str(path), "--recursive", "--sky-model", str(sky_model)]
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 0.5)
+    with pytest.raises(SystemExit, match="GPU memory"):
+        cli.main(args + ["--out", str(tmp_path / "a")])
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 1.5)  # enough for SAM2 alone (not for SAM3)
+    assert cli.main(args + ["--out", str(tmp_path / "b")]) == 0
+    assert cli.main(args + ["--out", str(tmp_path / "c"), "--cpu"]) == 0
+    assert devices == ["cuda", "cpu"]

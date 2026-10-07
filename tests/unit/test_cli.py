@@ -8,6 +8,7 @@ import pytest
 
 import src.core.special as special
 from src import cli
+from tests.fakes import FakeEngine
 
 
 class FakeSky:
@@ -23,6 +24,13 @@ class FakeSky:
 @pytest.fixture
 def scene(tmp_path, monkeypatch):
     monkeypatch.setattr(special, "SkyModel", FakeSky)
+    sam2_devices = []  # SAM2 after By Color (p111): a fake, on a "free" GPU
+    monkeypatch.setattr(cli, "_sam2_engine", lambda device: sam2_devices.append(device) or FakeEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    monkeypatch.setattr(cli, "sam2_devices", sam2_devices, raising=False)
+    sam2 = tmp_path / "sam2.pt"
+    sam2.write_bytes(b"x")
+    monkeypatch.setattr(cli, "SAM2_MODEL", sam2)
     images = tmp_path / "이미지"
     for cam in ("cam0", "cam1"):
         (images / cam).mkdir(parents=True)
@@ -202,3 +210,26 @@ def test_a_mask_preset_carries_by_color_for_sky():
     assert p.sky.color == {"color_tol": 7}
     assert p.sky.tree_tips is True  # p110: on by default with By Color
     assert MaskPreset.from_dict({"name": "s", "sky": {"tree_tips": False}}).sky.tree_tips is False
+
+
+def test_sky_color_preset_runs_sam2_and_needs_a_free_gpu(scene, tmp_path, monkeypatch):
+    """p111: with By Color, SAM2 brings back sky By Color left out; never without it, on the GPU or --cpu."""
+    images, model = scene
+    preset = tmp_path / "blue.json"
+    preset.write_text(json.dumps({"color_samples": [[170, 195, 235]], "color_tol": 10, "color_use": True}),
+                      encoding="utf-8")
+    base = ["sky", str(images / "cam0"), "--model", str(model), "--names", "stem", "--color-preset", str(preset)]
+    report = tmp_path / "r.json"
+    assert cli.main(base + ["--out", str(tmp_path / "a"), "--report", str(report)]) == 0
+    r = json.loads(report.read_text(encoding="utf-8"))
+    assert r["settings"]["sam2"]["device"] == "cuda" and r["settings"]["sam2"]["tile"] == 1024
+    assert cli.sam2_devices == ["cuda"]
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 0.5)  # a training holds the GPU
+    with pytest.raises(SystemExit, match="GPU memory"):
+        cli.main(base + ["--out", str(tmp_path / "b")])
+    assert not (tmp_path / "b").exists()
+    assert cli.main(base + ["--out", str(tmp_path / "c"), "--cpu"]) == 0
+    assert cli.sam2_devices[-1] == "cpu"
+    # without By Color: no SAM2, the GPU is not even asked
+    assert cli.main(["sky", str(images / "cam0"), "--model", str(model), "--out", str(tmp_path / "d")]) == 0
+    assert len(cli.sam2_devices) == 2

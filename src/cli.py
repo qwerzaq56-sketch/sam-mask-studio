@@ -9,7 +9,10 @@ Object's model and settings (src/core/special.py), its edge decided again on the
 ``--color-preset NAME`` then puts By Color on each full-size mask, as the app's auto tool does: a preset saved
 in the app's By Color panel (config.local.json) or a .json file of those settings (p109). With it, tree tips the
 sky model painted over beyond By Color's band (rough, not sky-colored, near the tree) are taken out too
-(p110; ``--no-tree-tips`` leaves them).
+(p110; ``--no-tree-tips`` leaves them), and SAM2 brings back the sky pieces whose colors the preset does not
+have (p111, src/core/sky_sam2.py): on the GPU (keep it free: no training, no viewer), or ``--cpu`` (about 10x
+slower). By Color alone misses those pieces (missed 1.13 % against 0.34 % on the 0022 truth), so there is no
+way to leave SAM2 out.
 
 ``lens``: a fisheye's image circle for every image — the Lens edge special Object's circle, found in
 each camera folder's frames (cam0/ and cam1/ may differ), pulled in by a margin over the lens rim's glow.
@@ -67,6 +70,7 @@ LENS_SAMPLES = 16  # frames per camera folder the circle is found in
 SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
 SAM2_MODEL = ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt"  # not loaded; the engine wants a path
 GPU_NEEDED = 5.0  # GB free before person starts (SAM3 at 1024 px peaked at 4.2 GB on 0022)
+SKY_GPU_NEEDED = 1.0  # GB free before sky's SAM2 step starts (sam2.1 tiny on 1024 px tiles peaked at 0.6 GB)
 
 
 def _write_png(path: Path, mask: np.ndarray) -> None:
@@ -140,13 +144,17 @@ class Batch:
 def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "name", invert: bool = False,
                threshold: float = 50.0, grow: int = 0, top_only: bool = False, refine: bool = True,
                edges: bool = True, max_side: int = 1024, model_path: Path = SKY_MODEL,
-               existing: str = "stop", log=print, color: Optional[dict] = None, tree_tips: bool = True) -> dict:
+               existing: str = "stop", log=print, color: Optional[dict] = None, tree_tips: bool = True,
+               device: str = "cuda") -> dict:
     """The ``sky`` command; returns its report (also what ``--report`` writes). *color*: By Color settings (a
     preset as the app saves it, see :func:`color_preset`) put on each full-size mask before ``invert``;
-    *tree_tips*: with them, also take out the tree tips beyond By Color's band (:func:`src.core.refine.tree_tips`)."""
+    *tree_tips*: with them, also take out the tree tips beyond By Color's band (:func:`src.core.refine.tree_tips`).
+    With *color*, SAM2 on *device* then brings back the sky pieces By Color left out
+    (:func:`src.core.sky_sam2.sam2_tiles`)."""
     from src.core.refine import TREE_TIPS, apply_by_color, color_settings, range_selection
     from src.core.refine import tree_tips as find_tips
     from src.core.sky_edges import sky_edges
+    from src.core.sky_sam2 import SAM2_TILES, sam2_tiles
     from src.core.special import SKY, SkyModel, Special, sky_maps, sky_mask
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
@@ -156,24 +164,30 @@ def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "n
     b = Batch("sky", images, out, recursive, names, existing, log=log, settings={
         "threshold": threshold, "grow": grow, "top_only": top_only, "refine": refine,
         "full_resolution_edges": edges, "max_side": max_side, "invert": invert, "model": str(model_path),
-        "by_color": color, "tree_tips": dict(TREE_TIPS) if tips_on else None})
+        "by_color": color, "tree_tips": dict(TREE_TIPS) if tips_on else None,
+        "sam2": {**SAM2_TILES, "model": SAM2_MODEL.name, "device": device} if color is not None else None})
     by_color = color_settings(color) if color is not None else None
     sp = Special.new(SKY).with_params(threshold=threshold, grow=grow, top_only=float(top_only),
                                       refine=float(refine))
     model = SkyModel(model_path)
+    sam2 = _sam2_engine(device) if color is not None else None
 
     def make(key):
         rgb = read_rgb(images / key)
         prob, refined = sky_maps(model, to_working(rgb, max_side))
         m = sky_mask(refined if refine else prob, sp)
         full = sky_edges(m, rgb) if edges else resize_mask(m, rgb.shape[:2])
+        note = {}
         if by_color is not None:
             sel = range_selection(rgb, by_color)
             tips = find_tips(full, rgb, by_color, sel, **TREE_TIPS) if tips_on else None
+            allowed = full.copy()  # SAM2 adds back only inside the sky model's mask, not where the tips came out
             full = apply_by_color(full, rgb, by_color, sel)
             if tips is not None:
                 full &= ~tips
-        return (~full if invert else full), {"sky": round(float(full.mean()), 4)}
+                allowed &= ~tips
+            full, note["sam2_clicks"] = sam2_tiles(sam2, rgb, full, allowed, **SAM2_TILES)
+        return (~full if invert else full), {"sky": round(float(full.mean()), 4), **note}
 
     return b.run(make, lambda note: f"sky {100 * note['sky']:.1f}%")
 
@@ -278,6 +292,15 @@ def gpu_free_gb() -> Optional[float]:
         return None
     free, _total = torch.cuda.mem_get_info()
     return free / 2**30
+
+
+def _sam2_engine(device: str):
+    """SAM2 alone (sky after By Color)."""
+    from src.engine.inference import InferenceEngine
+
+    eng = InferenceEngine(str(SAM2_MODEL), None, device=device)
+    eng.load_sam2()
+    return eng
 
 
 def _engine(model: Path, device: str):
@@ -418,7 +441,7 @@ def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: 
         log(f"--- sky -> {folders['sky']}")
         steps["sky"] = sky_folder(images, folders["sky"], threshold=s.threshold, grow=s.grow, top_only=s.top_only,
                                   refine=s.refine, edges=s.edges, max_side=s.max_side, model_path=sky_model,
-                                  color=s.color, tree_tips=s.tree_tips, **common)
+                                  color=s.color, tree_tips=s.tree_tips, device=device, **common)
     return {
         "command": "run", "version": app_version(), "images": str(images), "out": str(out),
         "preset": preset.to_dict(), "folders": {k: str(v) for k, v in folders.items()}, "steps": steps,
@@ -534,18 +557,22 @@ def _settings(parser: argparse.ArgumentParser, args, step: str):
     return STEPS[step](**values), preset
 
 
-def _device(parser: argparse.ArgumentParser, args) -> str:
-    """cuda, or cpu with --cpu; refuses when another job (a training) holds the GPU."""
-    if not args.sam3_model.is_file():
+def _device(parser: argparse.ArgumentParser, args, sam3: bool = True, need: float = GPU_NEEDED) -> str:
+    """cuda, or cpu with --cpu; refuses when another job (a training) holds the GPU. *sam3*: SAM3 runs (person),
+    else SAM2 alone (sky after By Color); *need*: GB of GPU memory free to start."""
+    if sam3 and not args.sam3_model.is_file():
         parser.error(f"SAM3 model not found: {args.sam3_model}")
+    if not sam3 and not SAM2_MODEL.is_file():
+        parser.error(f"SAM2 model not found: {SAM2_MODEL}")
     if args.cpu:
         return "cpu"
     free = gpu_free_gb()
     if free is None:
         parser.error("no CUDA GPU (--cpu to run on the CPU, very slowly)")
-    if free < GPU_NEEDED and not args.gpu_anyway:
-        raise SystemExit(f"Only {free:.1f} GB of GPU memory is free ({GPU_NEEDED:.0f} needed): another GPU "
-                         "job (a training?) is running. Nothing done. Wait for it, or --gpu-anyway.")
+    if free < need and not args.gpu_anyway:
+        raise SystemExit(f"Only {free:.1f} GB of GPU memory is free ({need:.0f} needed): another GPU "
+                         "job (a training? a viewer?) is running. Nothing done. Free the GPU or wait for it; "
+                         "--cpu (slow) or --gpu-anyway.")
     return "cuda"
 
 
@@ -683,6 +710,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sky.add_argument("--no-tree-tips", dest="tree_tips", action="store_const", const=False,
                      help="With By Color, leave the tree tips beyond its band (by default they are taken out)")
     sky.add_argument("--model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx (default {SKY_MODEL})")
+    sky.add_argument("--cpu", action="store_true",
+                     help="With --color-preset: run its SAM2 step on the CPU (about 10x slower than the GPU)")
+    sky.add_argument("--gpu-anyway", action="store_true",
+                     help=f"Start the SAM2 step even with less than {SKY_GPU_NEEDED:.0f} GB of GPU memory free")
 
     lens = sub.add_parser("lens", help="Fisheye lens edge masks for a folder",
                           description="White = inside the image circle (trained on), black = outside it and its "
@@ -858,6 +889,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             parser.error("--and-with and --out must be different folders")
     if args.command == "sky":
         s, _ = _settings(parser, args, "sky")
+        device = _device(parser, args, sam3=False, need=SKY_GPU_NEEDED) if s.color is not None else "cpu"
+        if s.color is not None and device == "cpu":
+            print("SAM2 on the CPU: about 10x slower than the GPU (some 15 s a 3840² frame)")
         if not args.model.is_file():
             parser.error(f"sky model not found: {args.model} (download skyseg.onnx from "
                          "https://huggingface.co/JianyuanWang/skyseg into checkpoints/sky/)")
@@ -865,7 +899,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             threshold=s.threshold, grow=s.grow, top_only=s.top_only, refine=s.refine,
             edges=s.edges, max_side=s.max_side, model_path=args.model, existing=existing, color=s.color,
-            tree_tips=s.tree_tips,
+            tree_tips=s.tree_tips, device=device,
         )
     elif args.command == "lens":
         c, _ = _settings(parser, args, "lens")
@@ -892,6 +926,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         device = "cpu"
         if preset.person is not None:
             device = _device(parser, args)
+        elif preset.sky is not None and preset.sky.color is not None:  # SAM2 after By Color (p111)
+            device = _device(parser, args, sam3=False, need=SKY_GPU_NEEDED)
         if preset.sky is not None and not args.sky_model.is_file():
             parser.error(f"sky model not found: {args.sky_model}")
         report = run_folder(args.images, args.out, preset, recursive=args.recursive, names=args.names,
