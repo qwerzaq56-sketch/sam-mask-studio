@@ -665,7 +665,9 @@ SHORTCUTS = (
     ("View", (
         ("Z (hold)", "Mask Preview while held"),
         ("V", "Mask Preview (black and white) on / off"),
-        ("X", "Mask Preview shows: the Final Mask <-> the selected Object's mask"),
+        ("X", "Mask Preview looks: black and white <-> the image cut out by the mask"),
+        ("C", "Cut out: inside the mask <-> outside it"),
+        ("Shift+X", "Mask Preview shows: the Final Mask <-> the selected Object's mask"),
         ("O", "Outline on / off"),
         ("Q / `", "Solo: color only the selected Objects"),
         ("H", "Hide Masks: the plain image"),
@@ -687,7 +689,7 @@ SHORTCUTS = (
         ("Drag a point / double-click it", "Move the point / delete it"),
         ("Alt+drag", "Paint: subtract · auto tool Paint mode: unpick · Region Box: remove a box"),
         ("Shift+drag", "Paint without turning the brush on"),
-        ("Alt+right-drag left / right, Ctrl+wheel / Shift+wheel", "Brush size"),
+        ("Ctrl+drag left / right, Ctrl+wheel / Shift+wheel", "Brush size (down to one image pixel; Ctrl+click: a piece of the image)"),
     )),
 )
 
