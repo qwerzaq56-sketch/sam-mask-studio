@@ -33,6 +33,7 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | 키 | 동작 | 언제 |
 |---|---|---|
 | Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export | 항상 |
+| Ctrl+Shift+E | Export Current Mask: 지금 이미지 마스크 한 장(Final 또는 Object 하나, 반전 선택), 원본 크기 PNG (`p104`) | 폴더가 열려 있을 때 |
 | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | Undo / Redo | 항상 |
 | N | New Object (포인트로) | 항상 |
 | E | Edit의 **포인트** 도구: 편집 시작(선택한 Object) · 브러쉬 / 오토 툴에서 → 포인트 · 포인트에서 다시 → 편집 끝 | 항상 |
