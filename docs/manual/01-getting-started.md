@@ -43,7 +43,7 @@ Original(포인트 · 박스 · 불러온 마스크)  ∪  더하기 레이어  
 | 번호 | 이름 | 하는 일 |
 |---|---|---|
 | ① | **메뉴 바** (File · Edit · View · Go · Help) | 모든 명령이 키와 함께 있습니다. 메뉴를 열어 보면 단축키를 배울 수 있습니다 |
-| ② | **툴바** | 작업 중 자주 켜고 끄는 것만: Mask Preview · Preview: Final / Object · Brush · Outline(두께 칸) · Show Changes · Solo · Hide Masks |
+| ② | **툴바** | 작업 중 자주 켜고 끄는 것만: Mask Preview · Preview: Final / Object(`X`) · Cut Out: Inside / Outside(`C`) · Checker · Brush · Outline(두께 칸) · Overlay %(마스크 색 진하기) · Show Changes · Solo · Hide Masks |
 | ③ | **Frame List** | 프레임 목록(ID · 표시 · 파일 이름). 제목줄의 `1` = 선택한 Object 기준으로 표시, `Aa` = 이름을 접어 좁게 |
 | ④ | **Objects** | Object 목록. 한 줄: 👁 · 체크박스 · 이름 · 🔗 · 🔒 · Points · × · ···. 아래에 **+ New Object from Points**, **+ Special ▾** 와 선택한 Object용 버튼 |
 | ⑤ | **탭** | **Prompt / Detection**(SAM3로 찾기) · **Batch**(여러 프레임에 한꺼번에) · **Propagation**(전파) · **Logs**(작업 기록) |
