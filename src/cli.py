@@ -61,6 +61,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from src.core.sky_sam2 import SKY_GPU_NEEDED, SKY_SAM2
 from src.version import app_version
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,9 +69,8 @@ SKY_MODEL = ROOT / "checkpoints" / "sky" / "skyseg.onnx"
 LENS_MARGIN = 2.0  # % of the radius: the lens rim's glow, about 40 px on a 3840² OSMO 360 fisheye
 LENS_SAMPLES = 16  # frames per camera folder the circle is found in
 SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
-SAM2_MODEL = ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt"  # not loaded; the engine wants a path
+SAM2_MODEL = SKY_SAM2  # SAM2 tiny: the engine wants a path; sky after By Color loads it
 GPU_NEEDED = 5.0  # GB free before person starts (SAM3 at 1024 px peaked at 4.2 GB on 0022)
-SKY_GPU_NEEDED = 1.0  # GB free before sky's SAM2 step starts (sam2.1 tiny on 1024 px tiles peaked at 0.6 GB)
 
 
 def _write_png(path: Path, mask: np.ndarray) -> None:
@@ -151,22 +151,18 @@ def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "n
     *tree_tips*: with them, also take out the tree tips beyond By Color's band (:func:`src.core.refine.tree_tips`).
     With *color*, SAM2 on *device* then brings back the sky pieces By Color left out
     (:func:`src.core.sky_sam2.sam2_tiles`)."""
-    from src.core.refine import TREE_TIPS, apply_by_color, color_settings, range_selection
-    from src.core.refine import tree_tips as find_tips
+    from src.core.refine import TREE_TIPS
     from src.core.sky_edges import sky_edges
-    from src.core.sky_sam2 import SAM2_TILES, sam2_tiles
+    from src.core.sky_sam2 import SAM2_TILES, finish_sky, tips_apply
     from src.core.special import SKY, SkyModel, Special, sky_maps, sky_mask
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
-    # the tips rule works beyond By Color's band: none without By Color or with its band off
-    tips_on = (tree_tips and color is not None and bool(color.get("color_band_on", True))
-               and color.get("color_band", 30) > 0)
+    tips_on = tips_apply(color, tree_tips)
     b = Batch("sky", images, out, recursive, names, existing, log=log, settings={
         "threshold": threshold, "grow": grow, "top_only": top_only, "refine": refine,
         "full_resolution_edges": edges, "max_side": max_side, "invert": invert, "model": str(model_path),
         "by_color": color, "tree_tips": dict(TREE_TIPS) if tips_on else None,
         "sam2": {**SAM2_TILES, "model": SAM2_MODEL.name, "device": device} if color is not None else None})
-    by_color = color_settings(color) if color is not None else None
     sp = Special.new(SKY).with_params(threshold=threshold, grow=grow, top_only=float(top_only),
                                       refine=float(refine))
     model = SkyModel(model_path)
@@ -178,15 +174,8 @@ def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "n
         m = sky_mask(refined if refine else prob, sp)
         full = sky_edges(m, rgb) if edges else resize_mask(m, rgb.shape[:2])
         note = {}
-        if by_color is not None:
-            sel = range_selection(rgb, by_color)
-            tips = find_tips(full, rgb, by_color, sel, **TREE_TIPS) if tips_on else None
-            allowed = full.copy()  # SAM2 adds back only inside the sky model's mask, not where the tips came out
-            full = apply_by_color(full, rgb, by_color, sel)
-            if tips is not None:
-                full &= ~tips
-                allowed &= ~tips
-            full, note["sam2_clicks"] = sam2_tiles(sam2, rgb, full, allowed, **SAM2_TILES)
+        if color is not None:
+            full, note["sam2_clicks"] = finish_sky(full, rgb, color, tree_tips, sam2)
         return (~full if invert else full), {"sky": round(float(full.mean()), 4), **note}
 
     return b.run(make, lambda note: f"sky {100 * note['sky']:.1f}%")

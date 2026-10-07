@@ -13,7 +13,8 @@ on the whole frame at the app's 1024 px working size: spill 0.61 % at the edge a
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -21,6 +22,8 @@ import numpy as np
 from src.core.project import Point
 
 SAM2_TILES = {"tile": 1024, "step": 768, "min_depth": 15, "max_per": 4}
+SKY_SAM2 = Path(__file__).resolve().parents[2] / "checkpoints" / "sam2" / "sam2.1_hiera_tiny.pt"  # the measured one
+SKY_GPU_NEEDED = 1.0  # GB of GPU memory free to start (it takes about 0.6)
 
 
 def _starts(size: int, tile: int, step: int) -> List[int]:
@@ -65,3 +68,28 @@ def sam2_tiles(engine, image: np.ndarray, sky: np.ndarray, allowed: np.ndarray, 
                     add[sl] |= np.asarray(variants[0].mask, bool)
                 clicks += 1
     return sky | (add & allowed.astype(bool)), clicks
+
+
+def tips_apply(color: Optional[dict], tree_tips: bool = True) -> bool:
+    """Whether the tree tips rule runs: it works beyond By Color's band, so none without By Color or its band."""
+    return (tree_tips and color is not None and bool(color.get("color_band_on", True))
+            and color.get("color_band", 30) > 0)
+
+
+def finish_sky(full: np.ndarray, rgb: np.ndarray, color: dict, tree_tips: bool, engine) -> Tuple[np.ndarray, int]:
+    """The sky model's full-resolution mask *full* finished the way ``cli sky --color-preset`` and the app's Sky
+    Object do it (one function, so both make the same pixels): By Color (*color*: a preset as the app saves it),
+    the tree tips beyond its band taken out (*tree_tips*), then SAM2 (*engine*) on the sky pieces By Color left
+    out, kept inside the model's mask. Returns (mask, SAM2 clicks)."""
+    from src.core.refine import TREE_TIPS, apply_by_color, color_settings, range_selection
+    from src.core.refine import tree_tips as find_tips
+
+    by_color = color_settings(color)
+    sel = range_selection(rgb, by_color)
+    tips = find_tips(full, rgb, by_color, sel, **TREE_TIPS) if tips_apply(color, tree_tips) else None
+    allowed = full.copy()  # SAM2 adds back only inside the sky model's mask, not where the tips came out
+    out = apply_by_color(full, rgb, by_color, sel)
+    if tips is not None:
+        out &= ~tips
+        allowed &= ~tips
+    return sam2_tiles(engine, rgb, out, allowed, **SAM2_TILES)

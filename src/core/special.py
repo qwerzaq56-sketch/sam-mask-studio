@@ -13,6 +13,7 @@ settings go), which can then be edited by hand like any other.
 from __future__ import annotations
 
 import dataclasses
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple
@@ -45,6 +46,10 @@ class Special:
     kind: str
     params: Tuple[Tuple[str, float], ...] = ()
     keys: Tuple[str, ...] = ()
+    # sky: the finish after the model (By Color + tree tips + SAM2, src/core/sky_sam2.py) as JSON
+    # {"name", "color": a By Color preset's values, "tree_tips"}; "" = none. Values, not a preset's name: a preset
+    # changed or deleted later does not change the masks made with it
+    finish: str = ""
 
     @classmethod
     def new(cls, kind: str) -> "Special":
@@ -65,15 +70,26 @@ class Special:
         wanted = set(keys)
         return dataclasses.replace(self, keys=tuple(k for k in order if k in wanted))
 
+    def with_finish(self, finish: Optional[dict]) -> "Special":
+        return dataclasses.replace(self, finish=json.dumps(finish, sort_keys=True) if finish else "")
+
+    @property
+    def finish_values(self) -> Optional[dict]:
+        """The finish (name, color, tree_tips), None = none."""
+        return json.loads(self.finish) if self.finish else None
+
     def to_json(self) -> dict:
-        return {"kind": self.kind, "params": dict(self.params), "keys": list(self.keys)}
+        d = {"kind": self.kind, "params": dict(self.params), "keys": list(self.keys)}
+        if self.finish:
+            d["finish"] = self.finish_values
+        return d
 
     @classmethod
     def from_json(cls, d: Optional[dict]) -> Optional["Special"]:
         if not d or d.get("kind") not in KINDS:
             return None
         base = cls.new(d["kind"]).with_params(**{k: v for k, v in (d.get("params") or {}).items()})
-        return dataclasses.replace(base, keys=tuple(d.get("keys") or ()))
+        return dataclasses.replace(base, keys=tuple(d.get("keys") or ())).with_finish(d.get("finish"))
 
 
 # ----------------------------------------------------------------------

@@ -95,6 +95,7 @@ $env:SAM2_BUILD_CUDA = "0"                              # SAM2 CUDA 확장은 �
 ```
 
 - 체크포인트: `checkpoints/sam2/sam2.1_hiera_tiny.pt`, `checkpoints/sam3/sam3.pt` (앱의 Settings에서 변경 가능).
+  Sky 특수 Object의 Finish(By Color + SAM2, `cli sky --color-preset`과 같은 결과)는 `checkpoints/sam2/sam2.1_hiera_tiny.pt`와 GPU 빈 메모리 1 GB를 씁니다(없으면 CPU, 약 10배 느림).
   Sky 특수 Object는 `checkpoints/sky/skyseg.onnx`([Hugging Face JianyuanWang/skyseg](https://huggingface.co/JianyuanWang/skyseg), 약 170 MB)를 씁니다.
   SAM3 가중치는 [Hugging Face facebook/sam3](https://huggingface.co/facebook/sam3)에서 접근 승인을 받아야 받을 수 있습니다.
 - 설정은 `config.local.json`(git 제외)에 저장되고, 앱 폴더 안의 경로는 상대 경로로 저장됩니다.
