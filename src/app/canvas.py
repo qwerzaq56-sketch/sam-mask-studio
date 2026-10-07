@@ -85,9 +85,9 @@ def checkerboard(h: int, w: int) -> np.ndarray:
     return np.repeat(g[..., None], 3, axis=2)
 
 
-ORIGINAL_BANNER = "ORIGINAL (T)"  # BC-P3: the overlays are hidden, not gone
+ORIGINAL_BANNER = "ORIGINAL (hold T: masks)"  # BC-P3: the overlays are hidden, not gone
 PICK_BANNER = ("PICK COLOR · click: pick (1 px) · right-click: leave out · Shift: add · Alt: 5×5 mean · "
-               "T: original · Esc: stop")
+               "hold T: original · Esc: stop")
 OVERLAP_COLOR = (255, 230, 0)  # By Color: pixels both a picked and a left-out color claim (outlined, BC-P4 b)
 STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
