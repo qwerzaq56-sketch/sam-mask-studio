@@ -2266,3 +2266,29 @@ def test_edit_layer_tab_has_an_edit_button_in_step_with_the_object_list(qapp, wi
     p.edit_btn.click()
     settle(qapp)
     assert win.session.editing is None and not row_btn().isChecked()
+
+
+def test_alt_click_picks_the_mean_color(qapp, win):
+    """p95: a click picks one pixel, Alt+click the 5×5 mean around it (Shift still adds)."""
+    import numpy as np
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtTest import QTest
+
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    c = win.canvas
+    c.set_color_pick(True)
+    got = []
+    c.color_picked.connect(lambda col, add: got.append((col, add)))
+    img = np.zeros_like(c.image)
+    pos = c.rect().center()
+    x, y = (int(v) for v in c.to_image(QPointF(pos)))
+    img[y, x] = (250, 250, 250)
+    c.image = img
+    QTest.mouseClick(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pos)
+    QTest.mouseClick(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, pos)
+    QTest.mouseClick(c, Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.ShiftModifier, pos)
+    assert got[0] == ((250, 250, 250), False)
+    assert got[1] == ((10, 10, 10), False)  # 250 / 25
+    assert got[2] == ((10, 10, 10), True)

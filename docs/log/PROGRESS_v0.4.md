@@ -634,6 +634,10 @@
 
 - Edit Layer 탭 맨 위에 `Edit <이름> (E)` / `Editing: <이름> (Esc: finish)` 버튼. 패널에 보이는 Object의 편집을 켜고 끔. Object 목록의 Points / Editing 버튼과 같은 동작(`toggle_edit`)이고, 둘 다 세션 상태를 따라 같이 눌림 / 풀림.
 
+## 95단계 (`v0.4-p95`): Alt+클릭 = 5×5 평균색
+
+- By Color 색 고르기: 클릭 = 1 px(p93), **Alt**+클릭 = 주변 5×5 평균(노이즈가 많은 곳). Shift와 같이 쓰면 평균색을 추가. 배너·툴팁에 안내.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
