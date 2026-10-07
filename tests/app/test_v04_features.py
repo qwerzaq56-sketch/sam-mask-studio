@@ -2172,3 +2172,18 @@ def test_toolbar_preview_buttons_follow_x_c_and_overlay_opacity(qapp, win):
     assert isinstance(win.overlay_opacity, QSlider) and win.overlay_label.text() == "Overlay 50 %"  # a slider
     assert compose([Overlay(m, (255, 0, 0), "edit")], (4, 4), opacity=c.overlay_opacity)[0, 0, 3] == round(full * 0.5)
     win.overlay_opacity.setValue(100)
+
+
+def test_clicking_a_picked_color_removes_only_that_one(qapp, win):
+    """By Color Range: each swatch is a link; clicking it drops that color, the others stay (p90, ui-issues 22)."""
+    panel = win.properties_panel
+    panel.set_samples([(10, 20, 30), (200, 210, 220), (90, 90, 90)])
+    assert 'href="1"' in panel.swatches.text()
+    panel.swatches.linkActivated.emit("1")
+    assert panel.tool_settings()["color_samples"] == ((10, 20, 30), (90, 90, 90))
+    assert "2 color(s)" in panel.swatches.text()
+    panel.swatches.linkActivated.emit("0")
+    panel.swatches.linkActivated.emit("0")
+    assert panel.tool_settings()["color_samples"] == ()
+    assert panel.swatches.text() == "No color picked"
+    panel.remove_sample(5)  # a stale link does nothing
