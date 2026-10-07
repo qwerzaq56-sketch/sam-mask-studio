@@ -771,6 +771,15 @@
 - 검증 V4(실제 GPU, 0022 2장 00585·00957): 앱 Export = `cli sky --color-preset` = p111 출력, **차이 0 px**. 앱 마무리 2장 19 s(SAM2 올리는 시간 포함).
 - 테스트 1개(가짜 마무리·가짜 SAM2): 마무리 없음은 전과 같음, 설정만으로는 안 돎, Stop 뒤 이어 하기, 설정 이동/복귀, Export 원본 해상도, GPU 바쁨 → 취소/CPU, 프리셋 변경 뒤 값 유지, 저장, Apply.
 
+## 113단계 (`v0.4-p113`): Batch Masking 창의 하늘 By Color·나무 끝·CPU
+
+- 기획 "하늘 마무리 앱 연결 · UX 검증" V10–V12.
+- File › Batch Masking의 Sky 묶음: **By Color**(Off + 앱 By Color 패널의 프리셋, 프리셋 파일에만 있는 값이면 "By Color values in this preset"), **Take out tree tips beyond the band**(그 프리셋의 띠가 켜졌을 때만), 안내(SAM2·GPU 1 GB·장당 약 8 s, GPU가 모자라면 아무것도 안 쓰고 멈춤). 고른 프리셋의 **값**이 마스킹 프리셋 `sky.color`·`sky.tree_tips`로 들어감(Save as Preset, Run, Copy Command 모두).
+- **Run on the CPU (slow)** 체크 → `run`/`probe`/Copy Command에 `--cpu`. 하늘에 By Color가 있으면 "이 창의 SAM 모델 먼저 내리기"도 적용.
+- `cli run --cpu`: 사람 또는 By Color 하늘이 있으면 시작할 때 "On the CPU: much slower…" 한 줄.
+- 테스트: 창(프리셋 고르기·나무 끝 활성 조건·저장 값·`--cpu`·앱 프리셋이 바뀐 뒤 값 유지), `run --cpu` 안내.
+- 화면 확인(오프스크린 캡처): Sky 특수 Object의 Finish 줄, Batch Masking의 Sky 묶음. 창 왼쪽 칸이 원래부터 가로로 잘려 스크롤이 생김 → `ui-issues.md` 메모.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

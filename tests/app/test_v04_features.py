@@ -2726,3 +2726,52 @@ def test_sky_finish_runs_on_make_masks_and_is_kept_per_settings(qapp, win, tmp_p
     win.special_apply()
     o = s.project.get(o.id)
     assert o.special is None and o.mask(keys[0]).all()
+
+
+# --- p113: Batch Masking's sky: By Color (the app's presets), the tree tips, the CPU ----------------------
+
+
+def test_batch_mask_dialog_finishes_the_sky_with_a_by_color_preset(qapp, win, tmp_path, monkeypatch):
+    import json
+
+    from PyQt6.QtWidgets import QInputDialog
+
+    from src.app.batch_mask_dialog import OWN, BatchMaskDialog
+    from src.batchmask import presets as P
+
+    monkeypatch.setenv(P.ENV, str(tmp_path / "mine"))
+    blue = {"tol": 7, "color_band": 30, "color_band_on": True}
+    d = BatchMaskDialog(win.session.image_dir, tmp_path / "scene", color_presets={"blue": blue, "flat": {"color_band_on": False}})
+    d.preset.setCurrentIndex(d.preset.findData("osmo360-selfie-stick"))
+    assert d.sky_color.currentData() is None and d.current().sky.color is None  # built in: no By Color
+    assert "model's mask" in d.sky_note.text()
+    d.sky_color.setCurrentIndex(d.sky_color.findData("blue"))
+    assert d.sky_tips.isEnabled() and "SAM2" in d.sky_note.text()
+    d.sky_color.setCurrentIndex(d.sky_color.findData("flat"))
+    assert not d.sky_tips.isEnabled()  # its Near edge band off: no tips
+    d.sky_color.setCurrentIndex(d.sky_color.findData("blue"))
+    d.sky_tips.setChecked(False)
+    sky = d.current().sky
+    assert sky.color == blue and sky.tree_tips is False
+
+    # V10: saved into the preset as values; the command runs it
+    answers = iter([("sky-blue", True), ("", True)])
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
+    d.save_as()
+    assert P.find_preset("sky-blue").sky.color == blue
+    args = d.run_args()
+    assert "--cpu" not in args
+    written = json.loads(open(args[args.index("--preset") + 1], encoding="utf-8").read())
+    assert written["sky"]["color"] == blue and written["sky"]["tree_tips"] is False
+
+    # V11: the CPU
+    d.cpu.setChecked(True)
+    assert d.run_args()[-1] == "--cpu"
+
+    # the app's preset changed later: the saved preset keeps its values, shown as its own
+    d2 = BatchMaskDialog(win.session.image_dir, tmp_path / "scene", color_presets={"blue": dict(blue, tol=9)})
+    d2.preset.setCurrentIndex(d2.preset.findData("sky-blue"))
+    assert d2.sky_color.currentData() == OWN and d2.current().sky.color == blue
+    for w in (d, d2):
+        w.done(0)
+
