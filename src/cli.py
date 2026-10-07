@@ -7,7 +7,9 @@ Object's model and settings (src/core/special.py), its edge decided again on the
     python -m src.cli sky H:/scene/images --out H:/scene/sky_masks --recursive
 
 ``--color-preset NAME`` then puts By Color on each full-size mask, as the app's auto tool does: a preset saved
-in the app's By Color panel (config.local.json) or a .json file of those settings (p109).
+in the app's By Color panel (config.local.json) or a .json file of those settings (p109). With it, tree tips the
+sky model painted over beyond By Color's band (rough, not sky-colored, near the tree) are taken out too
+(p110; ``--no-tree-tips`` leaves them).
 
 ``lens``: a fisheye's image circle for every image — the Lens edge special Object's circle, found in
 each camera folder's frames (cam0/ and cam1/ may differ), pulled in by a margin over the lens rim's glow.
@@ -138,18 +140,23 @@ class Batch:
 def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "name", invert: bool = False,
                threshold: float = 50.0, grow: int = 0, top_only: bool = False, refine: bool = True,
                edges: bool = True, max_side: int = 1024, model_path: Path = SKY_MODEL,
-               existing: str = "stop", log=print, color: Optional[dict] = None) -> dict:
+               existing: str = "stop", log=print, color: Optional[dict] = None, tree_tips: bool = True) -> dict:
     """The ``sky`` command; returns its report (also what ``--report`` writes). *color*: By Color settings (a
-    preset as the app saves it, see :func:`color_preset`) put on each full-size mask before ``invert``."""
-    from src.core.refine import apply_by_color, color_settings
+    preset as the app saves it, see :func:`color_preset`) put on each full-size mask before ``invert``;
+    *tree_tips*: with them, also take out the tree tips beyond By Color's band (:func:`src.core.refine.tree_tips`)."""
+    from src.core.refine import TREE_TIPS, apply_by_color, color_settings, range_selection
+    from src.core.refine import tree_tips as find_tips
     from src.core.sky_edges import sky_edges
     from src.core.special import SKY, SkyModel, Special, sky_maps, sky_mask
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
+    # the tips rule works beyond By Color's band: none without By Color or with its band off
+    tips_on = (tree_tips and color is not None and bool(color.get("color_band_on", True))
+               and color.get("color_band", 30) > 0)
     b = Batch("sky", images, out, recursive, names, existing, log=log, settings={
         "threshold": threshold, "grow": grow, "top_only": top_only, "refine": refine,
         "full_resolution_edges": edges, "max_side": max_side, "invert": invert, "model": str(model_path),
-        "by_color": color})
+        "by_color": color, "tree_tips": dict(TREE_TIPS) if tips_on else None})
     by_color = color_settings(color) if color is not None else None
     sp = Special.new(SKY).with_params(threshold=threshold, grow=grow, top_only=float(top_only),
                                       refine=float(refine))
@@ -161,7 +168,11 @@ def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "n
         m = sky_mask(refined if refine else prob, sp)
         full = sky_edges(m, rgb) if edges else resize_mask(m, rgb.shape[:2])
         if by_color is not None:
-            full = apply_by_color(full, rgb, by_color)
+            sel = range_selection(rgb, by_color)
+            tips = find_tips(full, rgb, by_color, sel, **TREE_TIPS) if tips_on else None
+            full = apply_by_color(full, rgb, by_color, sel)
+            if tips is not None:
+                full &= ~tips
         return (~full if invert else full), {"sky": round(float(full.mean()), 4)}
 
     return b.run(make, lambda note: f"sky {100 * note['sky']:.1f}%")
@@ -407,7 +418,7 @@ def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: 
         log(f"--- sky -> {folders['sky']}")
         steps["sky"] = sky_folder(images, folders["sky"], threshold=s.threshold, grow=s.grow, top_only=s.top_only,
                                   refine=s.refine, edges=s.edges, max_side=s.max_side, model_path=sky_model,
-                                  color=s.color, **common)
+                                  color=s.color, tree_tips=s.tree_tips, **common)
     return {
         "command": "run", "version": app_version(), "images": str(images), "out": str(out),
         "preset": preset.to_dict(), "folders": {k: str(v) for k, v in folders.items()}, "steps": steps,
@@ -669,6 +680,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sky.add_argument("--color-preset", help="Put By Color on each full-size mask, as the app does: a preset saved in "
                                             "the app's By Color panel, by name, or a .json file of those settings")
     sky.add_argument("--no-color", action="store_true", help="No By Color, even if --preset has it")
+    sky.add_argument("--no-tree-tips", dest="tree_tips", action="store_const", const=False,
+                     help="With By Color, leave the tree tips beyond its band (by default they are taken out)")
     sky.add_argument("--model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx (default {SKY_MODEL})")
 
     lens = sub.add_parser("lens", help="Fisheye lens edge masks for a folder",
@@ -852,6 +865,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             threshold=s.threshold, grow=s.grow, top_only=s.top_only, refine=s.refine,
             edges=s.edges, max_side=s.max_side, model_path=args.model, existing=existing, color=s.color,
+            tree_tips=s.tree_tips,
         )
     elif args.command == "lens":
         c, _ = _settings(parser, args, "lens")

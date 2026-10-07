@@ -67,6 +67,8 @@ class SkyStep:
     max_side: int = 1024
     # By Color on the full-size mask (p109): the settings as the app saves a By Color preset, None = none
     color: Optional[dict] = None
+    # with By Color, also take out tree tips beyond its band (p110, src/core/refine.py ``tree_tips``)
+    tree_tips: bool = True
 
 
 STEPS = {"person": PersonStep, "lens": LensStep, "sky": SkyStep}
