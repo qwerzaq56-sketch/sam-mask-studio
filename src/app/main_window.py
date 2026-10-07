@@ -648,6 +648,7 @@ class MainWindow(QMainWindow):
         p.point_selected.connect(self.on_point_selected)
         p.layer_selected.connect(lambda n: (self.session.select_layer(n), self.refresh()))
         p.load_color_presets(self.settings.color_presets)  # By Color presets live in the settings file (p105)
+        self._shown_presets = set(self.settings.color_presets)  # the names the panel lists (p107)
         p.color_presets_changed.connect(self._save_color_presets)
         # By Color's settings as last left come back at the next start (p106); kept a moment after each change
         if self.settings.color_last:
@@ -2858,8 +2859,15 @@ class MainWindow(QMainWindow):
             self.settings.save(self.settings_path)
 
     def _save_color_presets(self, presets: dict) -> None:
-        self.settings.color_presets = presets
-        self.settings.save(self.settings_path)
+        s = self.settings
+        removed = self._shown_presets - set(presets)  # deleted in the panel: not merged back from the file
+        s.removed_presets = (s.removed_presets | removed) - set(presets)
+        s.color_presets = {k: v for k, v in s.color_presets.items() if k not in removed}
+        s.color_presets.update(presets)
+        s.save(self.settings_path)  # keeps presets the file got meanwhile (p107)
+        presets = s.color_presets
+        self.properties_panel.load_color_presets(presets, self.properties_panel.color_preset.currentData())
+        self._shown_presets = set(presets)
         self.log(f"By Color presets: {', '.join(sorted(presets, key=str.lower)) or 'none'}")
 
     def save_path(self, title: str, start: str) -> Optional[str]:
