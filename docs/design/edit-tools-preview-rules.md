@@ -81,7 +81,7 @@ Edit Layer 패널, 오토 툴(특히 By Color), Mask Preview를 고칠 때 지�
 - 세 가지 이상을 한 키로 순환시키지 않는다(`p73`). 토글은 두 상태만.
 - 스타일 키는 미리보기를 켜지 않는다(`V` / `Z`만 켬, `p71`).
 - 상태(`preview_object`, `preview_style`, `cutout_side`, `cutout_fill`)는 설정 파일에 저장한다.
-- 툴바 버튼은 키와 같게(`p87`): `Preview: Final / Object` = `X`, `Cut Out: Inside / Outside` = `C`, 지금 보이는 쪽 버튼이 눌린 상태. `Checker`(잘라보기 바탕 체커), `Overlay %`(마스크 색·도구 색 진하기 10–200 %, 저장됨)도 툴바에.
+- 툴바 버튼은 키와 같게(`p87`): `Preview: Final / Object` = `X`, `Cut Out: Inside / Outside` = `C`, 지금 보이는 쪽 버튼이 눌린 상태. `Checker`(잘라보기 바탕 체커), `Overlay` 슬라이더(마스크 색·도구 색 진하기 10–200 %, 저장됨, `p88`)도 툴바에.
 
 ## 6. 브러쉬
 

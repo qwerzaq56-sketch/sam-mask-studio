@@ -33,7 +33,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
     QDoubleSpinBox,
-    QSpinBox,
+    QSlider,
     QFileDialog,
     QLabel,
     QLineEdit,
@@ -445,15 +445,26 @@ class MainWindow(QMainWindow):
         self.outline_width.setValue(self.settings.outline_width)
         self.outline_width.setToolTip("Outline width in screen pixels")
         self.outline_width.valueChanged.connect(lambda _v: self.set_outline(self.act_outline.isChecked()))
-        self.overlay_opacity = QSpinBox()  # how strong the mask colors and tool tints are drawn (p87)
+        # how strong the mask colors and tool tints are drawn (p87): a slider with its value beside it
+        self.overlay_opacity = QSlider(Qt.Orientation.Horizontal)
         self.overlay_opacity.setRange(10, 200)
-        self.overlay_opacity.setSingleStep(10)
-        self.overlay_opacity.setPrefix("Overlay ")
-        self.overlay_opacity.setSuffix(" %")
+        self.overlay_opacity.setSingleStep(5)
+        self.overlay_opacity.setPageStep(10)
+        self.overlay_opacity.setFixedWidth(110)
         self.overlay_opacity.setValue(min(200, max(10, int(self.settings.overlay_opacity))))
-        self.overlay_opacity.setToolTip("Opacity of the mask colors and tool tints on the image (100 % = normal; "
-                                        "lower shows more of the image, higher stronger colors)")
+        self.overlay_label = QLabel()
+        self.overlay_label.setMinimumWidth(self.overlay_label.fontMetrics().horizontalAdvance("Overlay 200 %") + 6)
+        tip = ("Opacity of the mask colors and tool tints on the image (100 % = normal; lower shows more of the "
+               "image, higher stronger colors). Double-click the value: back to 100 %")
+        self.overlay_opacity.setToolTip(tip)
+        self.overlay_label.setToolTip(tip)
+        self.overlay_label.mouseDoubleClickEvent = lambda _e: self.overlay_opacity.setValue(100)
         self.overlay_opacity.valueChanged.connect(self.set_overlay_opacity)
+        self.overlay_box = QWidget()
+        ob = QHBoxLayout(self.overlay_box)
+        ob.setContentsMargins(6, 0, 6, 0)
+        ob.addWidget(self.overlay_label)
+        ob.addWidget(self.overlay_opacity)
         self.act_changes = self._action(
             "Show Changes",
             self.set_show_changes,
@@ -570,7 +581,7 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_outline)
         tb.addWidget(self.outline_width)
-        tb.addWidget(self.overlay_opacity)
+        tb.addWidget(self.overlay_box)
         tb.addSeparator()
         tb.addAction(self.act_changes)
         tb.addSeparator()
@@ -588,6 +599,7 @@ class MainWindow(QMainWindow):
             box.toggled_open.connect(lambda on, n=name: self._remember(n, on))
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
         self.canvas.set_overlay_opacity(self.overlay_opacity.value() / 100)
+        self.overlay_label.setText(f"Overlay {self.overlay_opacity.value()} %")
 
     def _connect(self) -> None:
         c = self.canvas
@@ -1419,6 +1431,7 @@ class MainWindow(QMainWindow):
 
     def set_overlay_opacity(self, percent: int) -> None:
         self.settings.overlay_opacity = int(percent)
+        self.overlay_label.setText(f"Overlay {int(percent)} %")
         self.canvas.set_overlay_opacity(percent / 100)
         self.settings.save(self.settings_path)
 
