@@ -20,7 +20,7 @@ depends on the mode the main window sets:
               With ``region_mode`` on, a drag reports ``region_box`` instead
               (Alt or Ctrl: subtract); the region is shown in cyan.
 
-Middle-drag or Space+drag pans and the wheel zooms at the cursor. Alt+right-drag left / right
+Middle-drag or Space+drag pans and the wheel zooms at the cursor. Ctrl+drag left / right
 (as in Photoshop), Ctrl+wheel or Shift+wheel set the brush size while an Object is in Edit. The Final Mask
 preview is a toggle (``set_final_preview``) or held (``set_final_peek``);
 editing keeps working in it. ``set_preview_style`` picks how it looks: the mask in black and white, the
@@ -237,8 +237,8 @@ class Canvas(QWidget):
         self._mouse: Optional[QPointF] = None
 
         self.brush_size = 30  # screen px diameter
-        self._size_drag = None  # Alt+right-drag: (start x, size then, where the circle stays)
-        self._seg_press = None  # Ctrl+click while editing: (where, button)
+        self._size_drag = None  # Ctrl+drag left / right: (start, size then, where the circle stays)
+        self._seg_press = None  # Ctrl+press while editing: (where, button; None = picking colors): click or size drag
         self.brush_mode = False  # Brush editing turned on (only acts in EDIT)
         self._brush = BrushEngine()
 
@@ -414,7 +414,7 @@ class Canvas(QWidget):
         self.update()
 
     def set_brush_size(self, px: int) -> None:
-        self.brush_size = max(2, min(800, int(px)))
+        self.brush_size = max(1, min(800, int(px)))
         self.brush_size_changed.emit(self.brush_size)
         self.update()
 
@@ -576,7 +576,8 @@ class Canvas(QWidget):
                 painter.setPen(QPen(QColor(255, 255, 255), 1.5))
                 painter.setBrush(QColor(40, 200, 60) if pt.positive else QColor(230, 40, 40))
                 painter.drawEllipse(q, POINT_RADIUS, POINT_RADIUS)
-        if self._mouse is not None and self._brush_on() and not self.color_pick_mode:
+        if self._mouse is not None and (self._size_drag is not None
+                                        or (self._brush_on() and not self.color_pick_mode)):
             # white on the photo; green over the black-and-white Final Mask, where white disappears;
             # red while Alt is held (the stroke subtracts / unpicks)
             if self._alt():
@@ -585,7 +586,7 @@ class Canvas(QWidget):
                 color = QColor(60, 230, 90) if self.showing_final else QColor(255, 255, 255)
             painter.setPen(QPen(color, 1.5 if self.showing_final or self._alt() else 1, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            r = self.brush_size / 2
+            r = (2 * self._brush_radius() + 1) * self._scale() / 2  # what a stroke covers, in screen px
             painter.drawEllipse(self._mouse, r, r)
         pick = PICK_BANNER if self.color_pick_mode else ""
         banner = "  ·  ".join(t for t in (f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else "", pick, self.banner) if t)
@@ -665,7 +666,8 @@ class Canvas(QWidget):
             self.unsetCursor()
 
     def _brush_radius(self) -> int:
-        return max(1, int(self.brush_size / 2 / self._scale()))
+        """Image px around the center: 0 = one pixel (the disc is 2r + 1 wide; the circle drawn is that size)."""
+        return max(0, round((self.brush_size / self._scale() - 1) / 2))
 
     def mousePressEvent(self, event):
         if self.image is None:
@@ -676,19 +678,19 @@ class Canvas(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         mods = event.modifiers()
+        ctrl_edit = (self.mode == Mode.EDIT and not self.region_mode and mods & Qt.KeyboardModifier.ControlModifier
+                     and btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton))
+        if ctrl_edit and self.color_pick_mode:
+            self._seg_press = (QPointF(pos), None)  # picking colors: a Ctrl+drag only sizes the brush
+            return
         if self.color_pick_mode:
             if btn == Qt.MouseButton.LeftButton:
                 color = self.sample_color(*self.to_image(pos))
                 if color is not None:
                     self.color_picked.emit(color, bool(mods & Qt.KeyboardModifier.ShiftModifier))
             return  # while picking colors, clicks do nothing else
-        if (self.mode == Mode.EDIT and btn == Qt.MouseButton.RightButton
-                and mods & Qt.KeyboardModifier.AltModifier):
-            self._size_drag = (pos.x(), self.brush_size, QPointF(pos))  # left / right: smaller / bigger
-            return
-        if (self.mode == Mode.EDIT and not self.region_mode and mods & Qt.KeyboardModifier.ControlModifier
-                and btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton)):
-            self._seg_press = (QPointF(pos), btn)  # a piece of the image added / taken out, brush on or off
+        if ctrl_edit:  # a click: a piece of the image added / taken out (brush on or off); a drag: brush size
+            self._seg_press = (QPointF(pos), btn)
             return
         shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         if self.mode == Mode.EDIT and self.region_mode:
@@ -742,9 +744,15 @@ class Canvas(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.position()
         self._mouse = pos
+        if self._seg_press is not None and self._size_drag is None:
+            start = self._seg_press[0]
+            d = pos - start
+            if (d.x() ** 2 + d.y() ** 2) ** 0.5 > CLICK_SLOP:  # Ctrl+drag, not a click: the brush size
+                self._seg_press = None
+                self._size_drag = (start, self.brush_size, QPointF(start))
         if self._size_drag is not None:
-            x0, size0, anchor = self._size_drag
-            self.set_brush_size(size0 + 2 * (pos.x() - x0))  # the diameter follows the drag, twice as fast
+            p0, size0, anchor = self._size_drag
+            self.set_brush_size(size0 + 2 * (pos.x() - p0.x()))  # right: bigger, left: smaller, twice as fast
             self._mouse = anchor  # the circle stays where the drag began
         elif self._pan_from is not None:
             start, pan = self._pan_from
@@ -784,7 +792,8 @@ class Canvas(QWidget):
             start, btn = self._seg_press
             self._seg_press = None
             d = pos - start
-            if btn == event.button() and (d.x() ** 2 + d.y() ** 2) ** 0.5 <= CLICK_SLOP and self._inside(pos):
+            if (btn is not None and btn == event.button() and (d.x() ** 2 + d.y() ** 2) ** 0.5 <= CLICK_SLOP
+                    and self._inside(pos)):
                 self.segment_clicked.emit(*self.to_image(pos), btn == Qt.MouseButton.LeftButton)
             return
         if self._pan_from is not None:

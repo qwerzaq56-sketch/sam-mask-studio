@@ -75,8 +75,10 @@ from src.version import app_version
 logger = get_logger(__name__)
 
 
-AUTO_ADD_COLOR = (255, 40, 220)  # magenta: an auto tool adds these pixels
-AUTO_SUB_COLOR = (130, 60, 255)  # purple: ...and removes these
+# an auto tool's preview: blue = added, orange-red = removed (magenta / purple until p83: not read as in / out;
+# not green / red: Show Changes (R) tints the edit layer's own additions / removals (80, 255, 120) / (255, 60, 60))
+AUTO_ADD_COLOR = (40, 110, 255)
+AUTO_SUB_COLOR = (255, 120, 0)
 
 SOURCE_SHORT = {  # how an Object was made, in the work bar
     Source.SAM3_DETECTION: "SAM3",
@@ -406,11 +408,11 @@ class MainWindow(QMainWindow):
             True,
         )
         # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
-        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.toggle_preview_mode, ["X"])
+        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.toggle_preview_mode, ["Shift+X"])
         self._show_preview_mode()
         # how Mask Preview looks: the mask, or the image cut out by it (inside / outside)
-        self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout, ["C"])
-        self.act_cutout_side = self._action("Cut Out: Inside / Outside", self.toggle_cutout_side, ["Shift+C"])
+        self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout, ["X"])
+        self.act_cutout_side = self._action("Cut Out: Inside / Outside", self.toggle_cutout_side, ["C"])
         self.act_cutout_checker = self._action(
             "Cut Out Background: Checkerboard", self.toggle_cutout_checker,
             tip="The cut-out previews fill the rest with a gray checkerboard (off: the mask's own color there, "
@@ -422,7 +424,7 @@ class MainWindow(QMainWindow):
             self.brush_key,
             ["D"],
             "Brush editing (not editing: edits the selected Object with the brush): drag = add, "
-            "Alt+drag = subtract, Alt+right-drag / Ctrl+wheel = size",
+            "Alt+drag = subtract, Ctrl+drag left / right or Ctrl+wheel = size",
             True,
         )
         self.act_outline = self._action(
@@ -893,7 +895,7 @@ class MainWindow(QMainWindow):
             area = s.auto_area(self.properties_panel.tool_settings())
             if area is not None:  # By Color's Near edge: where pixels are decided again (faint white)
                 overlays.insert(0, Overlay(area, (255, 255, 255), "area"))
-            if added is not None:  # the auto tool (on top): taken parts magenta / purple, the rest gray
+            if added is not None:  # the auto tool (on top): taken parts blue / orange, the rest gray
                 taken = s.auto_taken()
                 overlays.append(Overlay((added | removed) & ~taken, (55, 55, 60), "guide"))  # dark gray
                 # own colors, so they are never confused with the edit layer's green / red
@@ -2141,18 +2143,20 @@ class MainWindow(QMainWindow):
         self.canvas.update()
 
     def toggle_cutout(self) -> None:
-        """C: Mask Preview shows the mask in black and white <-> the image cut out by it (the rest the mask's
-        black / white, or a checkerboard), on the side Shift+C picks. Only the style: V toggles the preview itself, Z peeks."""
+        """X: Mask Preview shows the mask in black and white <-> the image cut out by it (the rest the mask's
+        black / white, or a checkerboard), on the side C picks. Only the style: V toggles the preview itself, Z peeks."""
         cur = self.settings.preview_style
         self.settings.preview_style = self.settings.cutout_side if cur == "mask" else "mask"
         self._set_preview_style()
 
     def toggle_cutout_side(self) -> None:
-        """Shift+C: the cut-out preview shows the image inside the mask <-> outside it."""
-        side = "outside" if self.settings.cutout_side == "cutout" else "cutout"
-        self.settings.cutout_side = side
-        if self.settings.preview_style != "mask":
-            self.settings.preview_style = side
+        """C: the cut-out preview shows the image inside the mask <-> outside it; from black and white (X) it
+        goes to the cut-out first, on the side it had."""
+        if self.settings.preview_style == "mask":
+            self.settings.preview_style = self.settings.cutout_side
+        else:
+            side = "outside" if self.settings.cutout_side == "cutout" else "cutout"
+            self.settings.cutout_side = self.settings.preview_style = side
         self._set_preview_style()
 
     def toggle_cutout_checker(self, on: bool) -> None:
@@ -2174,9 +2178,9 @@ class MainWindow(QMainWindow):
         self.act_preview_style.setIconText(
             {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
         self.act_preview_style.setToolTip(
-            "How Mask Preview (V, hold Z) looks. C: the mask in black and white <-> the image cut out by it "
-            "(the rest black / white as in the mask, or a checkerboard: View menu). Shift+C: cut out inside the mask (what it holds: leaves in a sky "
-            "mask) <-> outside it (what it left: sky it missed)")
+            "How Mask Preview (V, hold Z) looks. X: the mask in black and white <-> the image cut out by it "
+            "(the rest black / white as in the mask, or a checkerboard: View menu). C: cut out inside the mask "
+            "(what it holds: leaves in a sky mask) <-> outside it (what it left: sky it missed)")
 
     def _show_preview_mode(self) -> None:
         """The toolbar button names the mode in use; the menu entry keeps its command name."""

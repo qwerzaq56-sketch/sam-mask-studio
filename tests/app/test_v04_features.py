@@ -259,7 +259,7 @@ def test_mask_preview_final_or_object(qapp, win):
     ids = make_objects(win, 2)
     s = win.session
     assert win.act_final.text() == "Mask Preview"
-    assert win.act_preview_mode.shortcut().toString() == "X"  # V until v0.4-p15 (V is now Mask Preview)
+    assert win.act_preview_mode.shortcut().toString() == "Shift+X"  # V until p15, X until p83 (X is now the preview style)
     assert win.act_preview_mode.text() == "Toggle Final / Object Mask"  # the menu name
     final = s.project.final_mask(s.key)
     assert np.array_equal(win.canvas._final, final) and win.canvas._final_label == "FINAL MASK"
@@ -559,7 +559,7 @@ def test_menus_hold_every_command(qapp, win):
 
 
 def test_preview_keys_swapped_and_toggles_do_not_repeat(qapp, win):
-    assert win.act_final.shortcut().toString() == "V" and win.act_preview_mode.shortcut().toString() == "X"
+    assert win.act_final.shortcut().toString() == "V" and win.act_preview_mode.shortcut().toString() == "Shift+X"
     for a in (win.act_final, win.act_preview_mode, win.act_brush, win.act_outline, win.act_changes):
         assert not a.autoRepeat(), a.text()  # held: one toggle
     assert win.act_next_frame.autoRepeat()  # moving still repeats
@@ -1507,10 +1507,10 @@ def test_moving_frames_while_editing(qapp, win):
     assert s.index == 1 and s.editing == ids[0] and s.auto_tool is None
 
 
-# --- p42: Alt+right-drag left / right sets the brush size ------------------------------------------------
+# --- p42: a drag left / right sets the brush size (Alt+right-drag until p83, now Ctrl+drag) ---------------
 
 
-def test_alt_right_drag_sets_the_brush_size(qapp, win):
+def test_ctrl_drag_sets_the_brush_size(qapp, win):
     from PyQt6.QtCore import QPoint, Qt
     from PyQt6.QtTest import QTest
 
@@ -1518,14 +1518,14 @@ def test_alt_right_drag_sets_the_brush_size(qapp, win):
     win.toggle_edit(ids[0])
     c = win.canvas
     c.set_brush_size(30)
-    alt = Qt.KeyboardModifier.AltModifier
+    ctrl = Qt.KeyboardModifier.ControlModifier
     start = QPoint(200, 200)
-    QTest.mousePress(c, Qt.MouseButton.RightButton, alt, start)
+    QTest.mousePress(c, Qt.MouseButton.RightButton, ctrl, start)
     QTest.mouseMove(c, start + QPoint(20, 0))
     assert c.brush_size == 70 and c._mouse == start  # bigger to the right; the circle stays put
     QTest.mouseMove(c, start + QPoint(-10, 0))
     assert c.brush_size == 10
-    QTest.mouseRelease(c, Qt.MouseButton.RightButton, alt, start + QPoint(-10, 0))
+    QTest.mouseRelease(c, Qt.MouseButton.RightButton, ctrl, start + QPoint(-10, 0))
     assert c._size_drag is None and not win.session.editing_frame().points[1:]  # no negative point added
 
 
@@ -1927,15 +1927,21 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     assert (arr[final] == 255).all() and (arr[~final] == c.image[~final][:, :3]).all()  # mask white inside
     c.set_preview_style("cutout")
     win.act_preview_style.trigger()
-    assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()  # C: two states only
-    win.act_cutout_side.trigger()  # Shift+C picks the side; in black and white it waits for C
-    assert c.preview_style == "mask" and win.settings.cutout_side == "outside"
-    win.act_preview_style.trigger()
-    assert c.preview_style == "outside"
+    assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()  # X: two states only
+    # p83: X = black and white <-> cut out, C = inside <-> outside (from black and white: the cut-out first)
+    assert win.act_preview_style.shortcut().toString() == "X" and win.act_cutout_side.shortcut().toString() == "C"
     win.act_cutout_side.trigger()
     assert c.preview_style == "cutout"
+    win.act_cutout_side.trigger()
+    assert c.preview_style == "outside" and win.settings.cutout_side == "outside"
+    win.act_cutout_side.trigger()
+    assert c.preview_style == "cutout"
+    win.act_cutout_side.trigger()
     win.act_preview_style.trigger()
     assert c.preview_style == "mask"
+    win.act_preview_style.trigger()
+    assert c.preview_style == "outside"  # back to the side it had
+    win.act_preview_style.trigger()
 
 
 def test_by_color_range_with_picker_and_remove_only(qapp, win):
@@ -2053,3 +2059,45 @@ def test_brush_with_hide_masks_keeps_the_mask(qapp, win):
     after = s.editing_frame().mask
     assert (after & before).sum() == before.sum()  # nothing of the old mask lost
     assert after[y, x]  # and the stroke added
+
+
+def test_brush_down_to_one_pixel_and_ctrl_drag_sizes(qapp, win):
+    """p83: the smallest brush paints one image pixel (it painted a 3 px disc); Ctrl+drag left / right sizes the
+    brush, also while By Color's picker is on; a Ctrl+click still takes a piece of the image."""
+    import numpy as np
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from tests.app.test_gui import canvas_pos
+
+    ids = make_objects(win, 1)
+    s, c, p = win.session, win.canvas, win.properties_panel
+    win.toggle_edit(ids[0])
+    before = s.editing_frame().mask.copy()
+    win.set_brush_tool("paint")
+    c.set_brush_size(1)
+    assert c.brush_size == 1 and c._brush_radius() == 0
+    y, x = np.argwhere(~before)[len(np.argwhere(~before)) // 2]
+    QTest.mousePress(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, canvas_pos(win, x, y))
+    QTest.mouseRelease(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, canvas_pos(win, x, y))
+    qapp.processEvents()
+    assert (s.editing_frame().mask & ~before).sum() == 1  # one pixel
+    p.tool_btns["by_color"].click()
+    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
+    assert c.color_pick_mode
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    pos = c.rect().center()
+    c.set_brush_size(30)
+    QTest.mousePress(c, Qt.MouseButton.LeftButton, ctrl, pos)
+    QTest.mouseMove(c, pos + QPoint(20, 0))  # Ctrl+drag right: bigger (p83, was Alt+right-drag)
+    QTest.mouseRelease(c, Qt.MouseButton.LeftButton, ctrl, pos + QPoint(20, 0))
+    assert c.brush_size == 70 and p.tool_settings()["color_samples"] == ()  # sized, nothing picked
+    p.tool_btns["paint"].click()
+    segs = []
+    c.segment_clicked.connect(lambda *a: segs.append(a))
+    QTest.mousePress(c, Qt.MouseButton.LeftButton, ctrl, pos)
+    QTest.mouseMove(c, pos + QPoint(-15, 0))  # left: smaller, and no piece of the image
+    QTest.mouseRelease(c, Qt.MouseButton.LeftButton, ctrl, pos + QPoint(-15, 0))
+    assert c.brush_size == 40 and not segs
+    QTest.mouseClick(c, Qt.MouseButton.LeftButton, ctrl, pos)  # a Ctrl+click still takes a piece
+    assert len(segs) == 1 and c.brush_size == 40

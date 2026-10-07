@@ -37,7 +37,7 @@ class Settings:
     preview_object: bool = False  # Mask Preview shows the selected Object's mask (else the Final Mask)
     preview_style: str = "mask"  # Mask Preview: mask (black and white) | cutout (the image inside) | outside
     cutout_fill: str = "mask"  # the cut-out previews' rest: mask (its black / white) | checker
-    cutout_side: str = "cutout"  # which cut-out C switches to: cutout (inside the mask) | outside (Shift+C)
+    cutout_side: str = "cutout"  # the cut-out side: cutout (inside the mask) | outside (C switches, X: <-> black and white)
     export_sky_edges: bool = True  # Export: Sky Objects' edges at full resolution (src/core/sky_edges.py)
     export_target: str = "brush"  # the Export window's trainer for a COLMAP scene (src/core/presets.py)
 

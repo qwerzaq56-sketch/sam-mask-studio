@@ -703,7 +703,7 @@ class PropertiesPanel(QWidget):
         if hasattr(self, "apply_all_btn"):
             self._show_apply_all()
         self.mode_hint.setText(
-            "Magenta = added, purple = removed. Enter applies · A: pick in Paint mode."
+            "Blue = added, orange = removed. Enter applies · A: pick in Paint mode."
             if mode == "fill"
             else "Drag over the gray to pick · Alt+drag unpicks · A: all / none · Enter applies."
         )
@@ -764,7 +764,7 @@ class PropertiesPanel(QWidget):
         )
 
     def set_brush_size(self, px: int) -> None:
-        self.brush_size.setText(f"size {px}px · Alt+right-drag or Ctrl+wheel to change")
+        self.brush_size.setText(f"size {px}px · Ctrl+drag left / right or Ctrl+wheel to change")
 
     def _on_pick_toggled(self, on: bool) -> None:
         """The button says the state and the way out; the canvas follows."""
