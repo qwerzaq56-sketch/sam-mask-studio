@@ -941,8 +941,9 @@ class PropertiesPanel(QWidget):
             out[k] = [list(c) for c in out[k]] if k != "bright_range" else list(out[k])
         return out
 
-    def apply_color_preset(self, values: dict) -> None:
-        """Put a preset's settings in (missing keys keep their value); the colors change as one undo step."""
+    def apply_color_preset(self, values: dict, edited: bool = True) -> None:
+        """Put a preset's settings in (missing keys keep their value); the colors change as one undo step
+        (*edited* False: no undo step, e.g. the last settings put back at start)."""
         v = values
         if "color_action" in v and self.color_action.findData(v["color_action"]) >= 0:
             self.color_action.setCurrentIndex(self.color_action.findData(v["color_action"]))
@@ -963,7 +964,7 @@ class PropertiesPanel(QWidget):
         if "color_samples" in v or "color_samples_out" in v:
             cin = [tuple(int(x) for x in c) for c in v.get("color_samples", self._samples)]
             cout = [tuple(int(x) for x in c) for c in v.get("color_samples_out", self._samples_out)]
-            self.set_samples(cin, out=cout)  # emits color_samples_edited: one undo step
+            self.set_samples(cin, edited=edited, out=cout)  # edited: emits color_samples_edited, one undo step
         if "color_not" in v:  # after the colors: Not waits for a picked color
             self.color_not.setChecked(bool(v["color_not"]) and self.color_not.isEnabled())
         self._settings_timer.start()

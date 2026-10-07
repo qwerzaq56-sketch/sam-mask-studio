@@ -42,6 +42,7 @@ class Settings:
     export_sky_edges: bool = True  # Export: Sky Objects' edges at full resolution (src/core/sky_edges.py)
     export_target: str = "brush"  # the Export window's trainer for a COLMAP scene (src/core/presets.py)
     color_presets: dict = field(default_factory=dict)  # By Color filter presets: name -> its settings (p105)
+    color_last: dict = field(default_factory=dict)  # By Color's settings as last left, put back at start (p106)
 
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":
