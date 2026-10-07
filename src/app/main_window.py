@@ -888,6 +888,9 @@ class MainWindow(QMainWindow):
             if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
+            area = s.auto_area(self.properties_panel.tool_settings())
+            if area is not None:  # By Color's Near edge: where pixels are decided again (faint white)
+                overlays.insert(0, Overlay(area, (255, 255, 255), "area"))
             if added is not None:  # the auto tool (on top): taken parts magenta / purple, the rest gray
                 taken = s.auto_taken()
                 overlays.append(Overlay((added | removed) & ~taken, (55, 55, 60), "guide"))  # dark gray
@@ -1660,7 +1663,10 @@ class MainWindow(QMainWindow):
         self.set_brush_tool("")
 
     def escape(self) -> None:
-        """Esc: first leave the tool (dropping a Fill preview), then finish editing."""
+        """Esc: first stop picking colors, then leave the tool (dropping a Fill preview), then finish editing."""
+        if self.canvas.color_pick_mode:
+            self.properties_panel.pick_btn.setChecked(False)
+            return
         if self._tool:
             self.close_tool(apply=False)
             self.set_brush_tool("")

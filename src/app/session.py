@@ -52,7 +52,7 @@ AUTO_PARAMS = {
     "close_gaps": ("gap",),
     "invert": (),
     "by_color": ("color_basis", "color_balance", "color_band", "color_band_on", "color_action", "color_samples", "color_tol",
-                 "color_use", "bright_range", "bright_use"),
+                 "color_use", "bright_range", "bright_use", "color_invert"),
 }
 IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
 
@@ -79,6 +79,8 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
             sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
                                settings.get("bright_use", False))
+            if settings.get("color_invert", False):  # everything but the picked colors / range (p79)
+                sel = ~sel
             # Photoshop-like: keep only the selected pixels, add them, take them out, or make the mask the selection
             area = near_edge(base, band)
             action = settings.get("color_action", "both")
@@ -157,6 +159,7 @@ class Session:
         self._picked: Optional[np.ndarray] = None  # Paint mode: the area strokes picked
         self._result: Optional[Tuple[str, np.ndarray, List[np.ndarray]]] = None  # (tool, target, masks it fits)
         self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
+        self._area_cache: Optional[tuple] = None  # (base, band, By Color's Near edge area)
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -658,6 +661,20 @@ class Session:
     def auto_base(self) -> Optional[np.ndarray]:
         fs = self.editing_frame()
         return fs.mask if fs is not None else None
+
+    def auto_area(self, settings: dict) -> Optional[np.ndarray]:
+        """Where By Color decides pixels again: the Near edge band around the mask (inside the region if any);
+        None when it is the whole image (or region) or another tool is in use."""
+        base = self.auto_base()
+        if self.auto_tool != "by_color" or base is None or not settings.get("color_band_on", True):
+            return None
+        band = settings.get("color_band", 30)
+        if band <= 0:
+            return None
+        c = self._area_cache
+        if c is None or c[0] is not base or c[1] != band:
+            c = self._area_cache = (base, band, near_edge(base, band))
+        return c[2] & self.region if self.region is not None else c[2]
 
     def auto_stale(self) -> bool:
         """The mask changed by something other than this tool's strokes (undo, a click, ...)."""
