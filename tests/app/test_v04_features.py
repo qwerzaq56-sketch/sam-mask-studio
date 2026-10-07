@@ -259,7 +259,7 @@ def test_mask_preview_final_or_object(qapp, win):
     ids = make_objects(win, 2)
     s = win.session
     assert win.act_final.text() == "Mask Preview"
-    assert win.act_preview_mode.shortcut().toString() == "Shift+X"  # V until p15, X until p83 (X is now the preview style)
+    assert win.act_preview_mode.shortcut().toString() == "X"  # V until p15 (Shift+X in p83 only)
     assert win.act_preview_mode.text() == "Toggle Final / Object Mask"  # the menu name
     final = s.project.final_mask(s.key)
     assert np.array_equal(win.canvas._final, final) and win.canvas._final_label == "FINAL MASK"
@@ -559,7 +559,7 @@ def test_menus_hold_every_command(qapp, win):
 
 
 def test_preview_keys_swapped_and_toggles_do_not_repeat(qapp, win):
-    assert win.act_final.shortcut().toString() == "V" and win.act_preview_mode.shortcut().toString() == "Shift+X"
+    assert win.act_final.shortcut().toString() == "V" and win.act_preview_mode.shortcut().toString() == "X"
     for a in (win.act_final, win.act_preview_mode, win.act_brush, win.act_outline, win.act_changes):
         assert not a.autoRepeat(), a.text()  # held: one toggle
     assert win.act_next_frame.autoRepeat()  # moving still repeats
@@ -1928,8 +1928,26 @@ def test_preview_style_cuts_the_image_out(qapp, win):
     c.set_preview_style("cutout")
     win.act_preview_style.trigger()
     assert c.preview_style == "mask" and "Mask" in win.act_preview_style.iconText()  # X: two states only
-    # p83: X = black and white <-> cut out, C = inside <-> outside (from black and white: the cut-out first)
-    assert win.act_preview_style.shortcut().toString() == "X" and win.act_cutout_side.shortcut().toString() == "C"
+    # p84: X = Final <-> Object in black and white (from a cut-out: back to it); C = inside <-> outside (from
+    # black and white: to the cut-out); each keeps its state
+    assert win.act_preview_mode.shortcut().toString() == "X" and win.act_cutout_side.shortcut().toString() == "C"
+    obj = win.settings.preview_object
+    win.act_preview_mode.trigger()  # X in black and white: Final <-> Object
+    assert c.preview_style == "mask" and win.settings.preview_object != obj
+    win.act_cutout_side.trigger()  # C: to the cut-out (inside, kept)
+    assert c.preview_style == "cutout"
+    win.act_cutout_side.trigger()
+    assert c.preview_style == "outside"
+    win.act_preview_mode.trigger()  # X in a cut-out: back to black and white, Final / Object as it was
+    assert c.preview_style == "mask" and win.settings.preview_object != obj
+    win.act_cutout_side.trigger()  # C: back to the side kept
+    assert c.preview_style == "outside"
+    win.act_preview_mode.trigger()
+    win.act_preview_mode.trigger()  # in black and white: the other mask again
+    assert win.settings.preview_object == obj
+    win.act_cutout_side.trigger()
+    win.act_cutout_side.trigger()  # outside -> inside
+    win.act_preview_style.trigger()  # the View menu's Mask / Cut Out
     win.act_cutout_side.trigger()
     assert c.preview_style == "cutout"
     win.act_cutout_side.trigger()

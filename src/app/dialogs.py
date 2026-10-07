@@ -665,9 +665,8 @@ SHORTCUTS = (
     ("View", (
         ("Z (hold)", "Mask Preview while held"),
         ("V", "Mask Preview (black and white) on / off"),
-        ("X", "Mask Preview looks: black and white <-> the image cut out by the mask"),
-        ("C", "Cut out: inside the mask <-> outside it"),
-        ("Shift+X", "Mask Preview shows: the Final Mask <-> the selected Object's mask"),
+        ("X", "Mask Preview in black and white: the Final Mask <-> the selected Object's mask (in a cut-out: back to black and white)"),
+        ("C", "Mask Preview cut out: inside the mask <-> outside it (in black and white: to the cut-out)"),
         ("O", "Outline on / off"),
         ("Q / `", "Solo: color only the selected Objects"),
         ("H", "Hide Masks: the plain image"),
