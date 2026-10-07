@@ -2,7 +2,7 @@
 
 기능을 넣거나 바꿀 때 지키는 기준입니다. 사용자 피드백([`ideas.md`](../backlog/ideas.md), [`ui-issues.md`](../backlog/ui-issues.md))에서 나온 판단을
 일반 규칙으로 적었습니다. 메뉴·툴바 배치는 [`menu-design.md`](menu-design.md), 키는 [`keymap.md`](keymap.md).
-Edit 패널·오토 툴·Mask Preview 수칙은 [`edit-tools-preview-rules.md`](edit-tools-preview-rules.md).
+편집 도구 수칙은 세 문서: 공통(데이터 안전·색·Mask Preview·브러쉬) [`edit-tools-preview-rules.md`](edit-tools-preview-rules.md), 오토 툴(Fill / Paint·적용·나가기) [`auto-tools-rules.md`](auto-tools-rules.md), By Color [`by-color.md`](by-color.md).
 
 ## 1. 되돌릴 수 있으면 묻지 않는다
 - Undo가 되는 동작은 확인 창 없이 바로 실행합니다. 확인 창은 되돌릴 수 없는 것(예: 전파 중 종료)에만.
