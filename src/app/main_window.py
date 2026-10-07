@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
     QDoubleSpinBox,
+    QSpinBox,
     QFileDialog,
     QLabel,
     QLineEdit,
@@ -408,16 +409,21 @@ class MainWindow(QMainWindow):
             True,
         )
         # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
-        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.key_x, ["X"])
+        # the toolbar shows X / C as two buttons, the one for the look in use checked (p87)
+        self.act_preview_mode = self._action("Toggle Final / Object Mask", lambda _on=False: self.key_x(), ["X"],
+                                             checkable=True)
         self._show_preview_mode()
         # how Mask Preview looks: the mask, or the image cut out by it (inside / outside)
         self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout)  # X / C go there too
-        self.act_cutout_side = self._action("Cut Out: Inside / Outside", self.toggle_cutout_side, ["C"])
+        self.act_cutout_side = self._action("Cut Out: Inside / Outside", lambda _on=False: self.toggle_cutout_side(),
+                                            ["C"],
+                                            checkable=True)
         self.act_cutout_checker = self._action(
             "Cut Out Background: Checkerboard", self.toggle_cutout_checker,
             tip="The cut-out previews fill the rest with a gray checkerboard (off: the mask's own color there, "
                 "black outside the mask, white inside)", checkable=True)
         self.act_cutout_checker.setChecked(self.settings.cutout_fill == "checker")
+        self.act_cutout_checker.setIconText("Checker")
         self._show_preview_style()
         self.act_brush = self._action(
             "Brush",
@@ -439,6 +445,15 @@ class MainWindow(QMainWindow):
         self.outline_width.setValue(self.settings.outline_width)
         self.outline_width.setToolTip("Outline width in screen pixels")
         self.outline_width.valueChanged.connect(lambda _v: self.set_outline(self.act_outline.isChecked()))
+        self.overlay_opacity = QSpinBox()  # how strong the mask colors and tool tints are drawn (p87)
+        self.overlay_opacity.setRange(10, 200)
+        self.overlay_opacity.setSingleStep(10)
+        self.overlay_opacity.setPrefix("Overlay ")
+        self.overlay_opacity.setSuffix(" %")
+        self.overlay_opacity.setValue(min(200, max(10, int(self.settings.overlay_opacity))))
+        self.overlay_opacity.setToolTip("Opacity of the mask colors and tool tints on the image (100 % = normal; "
+                                        "lower shows more of the image, higher stronger colors)")
+        self.overlay_opacity.valueChanged.connect(self.set_overlay_opacity)
         self.act_changes = self._action(
             "Show Changes",
             self.set_show_changes,
@@ -548,12 +563,14 @@ class MainWindow(QMainWindow):
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
         tb.addAction(self.act_final)
-        tb.addAction(self.act_preview_mode)
-        tb.addAction(self.act_preview_style)
+        tb.addAction(self.act_preview_mode)  # X: black and white, Final / Object
+        tb.addAction(self.act_cutout_side)  # C: cut out, inside / outside
+        tb.addAction(self.act_cutout_checker)
         tb.addAction(self.act_brush)
         tb.addSeparator()
         tb.addAction(self.act_outline)
         tb.addWidget(self.outline_width)
+        tb.addWidget(self.overlay_opacity)
         tb.addSeparator()
         tb.addAction(self.act_changes)
         tb.addSeparator()
@@ -570,6 +587,7 @@ class MainWindow(QMainWindow):
             box.set_open(getattr(self.settings, name))
             box.toggled_open.connect(lambda on, n=name: self._remember(n, on))
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
+        self.canvas.set_overlay_opacity(self.overlay_opacity.value() / 100)
 
     def _connect(self) -> None:
         c = self.canvas
@@ -1399,6 +1417,11 @@ class MainWindow(QMainWindow):
         if redraw:
             self.refresh()
 
+    def set_overlay_opacity(self, percent: int) -> None:
+        self.settings.overlay_opacity = int(percent)
+        self.canvas.set_overlay_opacity(percent / 100)
+        self.settings.save(self.settings_path)
+
     def set_outline(self, on: bool) -> None:
         self.settings.outline_visible = bool(on)
         self.settings.outline_width = float(self.outline_width.value())
@@ -2192,6 +2215,13 @@ class MainWindow(QMainWindow):
         self.canvas.set_cutout_fill(self.settings.cutout_fill if self.settings.cutout_fill in CUTOUT_FILLS else "mask")
         self.act_preview_style.setIconText(
             {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
+        side = self.settings.cutout_side if self.settings.cutout_side in ("cutout", "outside") else "cutout"
+        self.act_cutout_side.setIconText("Cut Out: Inside" if side == "cutout" else "Cut Out: Outside")
+        self.act_cutout_side.setToolTip(
+            "C: the image cut out by the mask; again: inside <-> outside (what it holds / what it left). "
+            "Checked while Mask Preview (V, hold Z) looks like this")
+        self.act_cutout_side.setChecked(style != "mask")
+        self.act_preview_mode.setChecked(style == "mask")
         self.act_preview_style.setToolTip(
             "How Mask Preview (V, hold Z) looks. X: black and white (Final <-> Object mask; from a cut-out: back "
             "to it). C: the image cut out by the mask (inside <-> outside: what it holds / what it left; from black "
@@ -2202,9 +2232,12 @@ class MainWindow(QMainWindow):
         """The toolbar button names the mode in use; the menu entry keeps its command name."""
         one = self.settings.preview_object
         self.act_preview_mode.setIconText("Preview: Object" if one else "Preview: Final")
+        self.act_preview_mode.setChecked(self.settings.preview_style == "mask")  # a click toggled it: set it back
         self.act_preview_mode.setToolTip(
-            "Mask Preview shows the selected Object's mask (X: switch to the Final Mask)" if one
-            else "Mask Preview shows the Final Mask, every checked Object (X: switch to the selected Object)"
+            "X: Mask Preview in black and white, the selected Object's mask (again: the Final Mask). "
+            "Checked while Mask Preview (V, hold Z) looks like this" if one
+            else "X: Mask Preview in black and white, the Final Mask, every checked Object (again: the "
+                 "selected Object). Checked while Mask Preview (V, hold Z) looks like this"
         )
 
     def _update_preview_mask(self) -> None:

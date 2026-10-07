@@ -2131,3 +2131,41 @@ def test_brush_down_to_one_pixel_and_ctrl_drag_sizes(qapp, win):
     assert c.brush_size == 40 and not segs
     QTest.mouseClick(c, Qt.MouseButton.LeftButton, ctrl, pos)  # a Ctrl+click still takes a piece
     assert len(segs) == 1 and c.brush_size == 40
+
+
+def test_toolbar_preview_buttons_follow_x_c_and_overlay_opacity(qapp, win):
+    """p87: the toolbar's preview buttons are X (black and white: Final / Object) and C (cut out: inside / outside),
+    the one for the look in use checked; the checkerboard background and the overlay opacity are on it too."""
+    from PyQt6.QtWidgets import QToolBar
+
+    from src.app.canvas import Overlay, compose
+
+    c = win.canvas
+    tb = win.findChild(QToolBar, "main_toolbar").actions()
+    assert win.act_preview_mode in tb and win.act_cutout_side in tb and win.act_cutout_checker in tb
+    win.settings.preview_style, win.settings.cutout_side, win.settings.preview_object = "mask", "cutout", False
+    win._show_preview_style()
+    win._show_preview_mode()
+    assert win.act_preview_mode.isChecked() and not win.act_cutout_side.isChecked()
+    win.act_cutout_side.trigger()  # the C button: to the cut-out (inside, kept)
+    assert c.preview_style == "cutout" and win.act_cutout_side.isChecked() and not win.act_preview_mode.isChecked()
+    assert win.act_cutout_side.iconText() == "Cut Out: Inside"
+    win.act_cutout_side.trigger()  # again: outside
+    assert c.preview_style == "outside" and win.act_cutout_side.iconText() == "Cut Out: Outside"
+    assert win.act_cutout_side.isChecked()
+    win.act_preview_mode.trigger()  # the X button: back to black and white, still the Final Mask
+    assert c.preview_style == "mask" and win.act_preview_mode.isChecked() and not win.settings.preview_object
+    win.act_preview_mode.trigger()  # again: Final -> Object
+    assert win.settings.preview_object and win.act_preview_mode.isChecked()
+    win.act_cutout_checker.trigger()
+    assert win.settings.cutout_fill == "checker" and win.act_cutout_checker.iconText() == "Checker"
+    win.act_cutout_checker.trigger()
+    assert win.settings.cutout_fill == "mask"
+    import numpy as np
+
+    m = np.ones((4, 4), bool)
+    full = compose([Overlay(m, (255, 0, 0), "edit")], (4, 4))[0, 0, 3]
+    win.overlay_opacity.setValue(50)
+    assert win.settings.overlay_opacity == 50 and c.overlay_opacity == 0.5
+    assert compose([Overlay(m, (255, 0, 0), "edit")], (4, 4), opacity=c.overlay_opacity)[0, 0, 3] == round(full * 0.5)
+    win.overlay_opacity.setValue(100)

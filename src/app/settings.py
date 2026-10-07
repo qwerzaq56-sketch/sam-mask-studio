@@ -29,6 +29,7 @@ class Settings:
     autosave_ms: int = 1500
     outline_visible: bool = True  # white outline around the edited mask
     outline_width: float = 1.0  # screen px
+    overlay_opacity: int = 100  # % of each overlay's own opacity (mask colors, tool tints), 10-200
     show_edit_changes: bool = False  # tint what the edit layer added (green) / removed (red)
     frame_list_names: bool = True  # the Frame List shows file names (else only IDs and marks)
     marks_one_object: bool = False  # frame marks for the shown Object only (else every Object)

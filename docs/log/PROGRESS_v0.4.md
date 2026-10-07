@@ -588,6 +588,12 @@
 - 테스트: Range 테스트에 A / B 표시가 이미지 전체를 나누는지(Add & Remove, Add only + Invert) 추가.
 - 대기: 고른 색 썸네일을 누르면 그 색만 지우기(`docs/backlog/ui-issues.md` 22).
 
+## 87단계 (`v0.4-p87`): 툴바 미리보기 버튼 = X / C, 체커, 오버레이 투명도
+
+- 툴바의 `Style: …`(흑백 ↔ 잘라보기) 버튼 대신 키와 같은 두 버튼: `Preview: Final / Object` = `X`, `Cut Out: Inside / Outside` = `C`. 지금 Mask Preview가 보이는 쪽 버튼이 눌린 상태(흑백이면 X 버튼, 잘라보기면 C 버튼). 흑백 ↔ 잘라보기는 View 메뉴에 그대로.
+- 툴바에 `Checker`(잘라보기 바탕 체커, View 메뉴와 같은 동작)와 `Overlay %`(10–200 %, 마스크 색·오토 툴 색 등 모든 오버레이 채우기의 진하기, 설정에 저장). Mask Preview는 오버레이가 아니라 영향 없음.
+- 테스트: 툴바 버튼이 X / C와 같은 상태 변화와 눌림 표시, 체커, 오버레이 % (`compose`의 알파가 비율대로).
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.

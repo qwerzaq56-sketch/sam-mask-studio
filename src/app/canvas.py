@@ -149,8 +149,10 @@ class MaskInfo:
                 del d[k]
 
 
-def compose(overlays: Sequence[Overlay], hw: Tuple[int, int], info: Optional[MaskInfo] = None) -> np.ndarray:
-    """Blend overlay fills into one RGBA image (later layers on top); outlines are drawn separately."""
+def compose(overlays: Sequence[Overlay], hw: Tuple[int, int], info: Optional[MaskInfo] = None,
+            opacity: float = 1.0) -> np.ndarray:
+    """Blend overlay fills into one RGBA image (later layers on top); outlines are drawn separately.
+    *opacity* scales every style's alpha (the toolbar's Overlay %)."""
     info = info or MaskInfo()
     h, w = hw
     rgba = np.zeros((h, w, 4), np.uint8)
@@ -164,12 +166,12 @@ def compose(overlays: Sequence[Overlay], hw: Tuple[int, int], info: Optional[Mas
         sel = m[y : y + bh, x : x + bw]
         if ov.style in BLENDED:  # over what is there (the mask stays visible under it), not instead of it
             dst = rgba[y : y + bh, x : x + bw][sel].astype(np.float32)
-            a_s, a_d = ALPHA[ov.style] / 255.0, dst[:, 3:] / 255.0
+            a_s, a_d = min(255.0, ALPHA[ov.style] * opacity) / 255.0, dst[:, 3:] / 255.0
             a_o = a_s + a_d * (1 - a_s)
             rgb = (np.float32(ov.color) * a_s + dst[:, :3] * a_d * (1 - a_s)) / np.maximum(a_o, 1e-6)
             rgba[y : y + bh, x : x + bw][sel] = np.concatenate([rgb, a_o * 255], 1).round().astype(np.uint8)
         else:
-            rgba[y : y + bh, x : x + bw][sel] = (*ov.color, ALPHA.get(ov.style, 105))
+            rgba[y : y + bh, x : x + bw][sel] = (*ov.color, min(255, round(ALPHA.get(ov.style, 105) * opacity)))
     return rgba
 
 
@@ -223,6 +225,7 @@ class Canvas(QWidget):
         self.tool_target_fn: Optional[Callable[[str], Optional[np.ndarray]]] = None
         self._peek = False  # the Final Mask shown while a key is held
         self.outline_visible = True
+        self.overlay_opacity = 1.0  # scales every overlay's alpha (1 = as designed)
         self.outline_width = 1.0  # screen px, independent of zoom
         self._final: Optional[np.ndarray] = None
         self._final_q: Optional[QImage] = None
@@ -335,11 +338,11 @@ class Canvas(QWidget):
             hw = self.image.shape[:2]
             for g in groups:
                 layers = self._group_layers(g)
-                sig = tuple((id(o.mask), o.color, o.style) for o in layers)
+                sig = (self.overlay_opacity,) + tuple((id(o.mask), o.color, o.style) for o in layers)
                 old = self._layers.get(g)
                 if old is not None and old[0] == sig:
                     continue
-                img = _qimage(compose(layers, hw, self._info)) if layers else None
+                img = _qimage(compose(layers, hw, self._info, self.overlay_opacity)) if layers else None
                 self._layers[g] = (sig, img)
         self.update()
 
@@ -465,6 +468,13 @@ class Canvas(QWidget):
         self.selected_point = selected
         self.box = box
         self.update()
+
+    def set_overlay_opacity(self, factor: float) -> None:
+        """Every overlay fill's opacity times *factor* (0.1-2; the Mask Preview is not an overlay)."""
+        factor = min(2.0, max(0.1, float(factor)))
+        if factor != self.overlay_opacity:
+            self.overlay_opacity = factor
+            self._rebuild_overlay()
 
     def set_outline(self, visible: bool, width: float) -> None:
         self.outline_visible = bool(visible)
