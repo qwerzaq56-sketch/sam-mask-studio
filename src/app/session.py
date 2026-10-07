@@ -862,7 +862,7 @@ class Session:
         return self._set_target(freeze(np.where(taken, r[1], fs.mask)))
 
     def auto_all_keys(self) -> List[str]:
-        """Apply to All Frames: the images where the edited Object has a mask (others stay empty)."""
+        """Apply to Frames: the images where the edited Object has a mask (others stay empty)."""
         o = self.project.get(self.editing) if self.editing is not None else None
         if o is None:
             return []

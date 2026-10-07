@@ -1673,8 +1673,9 @@ class MainWindow(QMainWindow):
         self._auto_refresh()  # recompute from the new mask
 
     def apply_tool_to_all(self) -> None:
-        """Fill mode's Apply to All Frames: the auto tool with these settings on every frame where the edited
-        Object has a mask (inside the region, if any), off the UI thread, then one undo step."""
+        """Fill mode's Apply to Frames: the auto tool with these settings on every frame where the edited Object
+        has a mask, or only on those picked in the Frame List (p103), inside the region if any; off the UI
+        thread, then one undo step."""
         s = self.session
         tool = s.auto_tool
         if tool is None or s.auto_mode != "fill" or self._busy or s.editing is None:
@@ -1685,10 +1686,25 @@ class MainWindow(QMainWindow):
             return
         name = TOOL_TEXT[tool][0]
         where = " inside the region" if s.region is not None else ""
-        if not self.ask("Apply to All Frames",
-                        f"{name} with these settings on all {len(keys)} frame(s) of “{o.name}”{where}?\n\n"
-                        "One undo step (Ctrl+Z undoes it).", "Apply"):
+        picked = set(self.images_panel.selected_rows())
+        chosen = [k for k in keys if s.keys.index(k) in picked]  # picked in the Frame List, with a mask
+        answer = self.choose(
+            "Apply to Frames",
+            f"{name} with these settings on frames of “{o.name}”{where}. Frames where it has no mask stay "
+            "empty. One undo step (Ctrl+Z undoes it).",
+            [("Frames", [f"All: {len(keys)} frame(s) with a mask",
+                         f"Picked in the Frame List: {len(chosen)} frame(s) with a mask "
+                         f"(of {len(picked)} picked; Shift-click a range, Ctrl-click more)"],
+              1 if len(chosen) > 1 else 0)],
+            "Apply",
+        )
+        if answer is None:
             return
+        if answer[0] == 1:
+            if not chosen:
+                self.log("No picked frame has a mask: pick frames in the Frame List (Shift / Ctrl-click) first")
+                return
+            keys = chosen
         settings = self.properties_panel.tool_settings()
         settings.pop("restore", None)
         state, total = {"n": 0}, len(keys)
@@ -1711,7 +1727,7 @@ class MainWindow(QMainWindow):
             timer.stop()
             self._busy = None
             self.refresh()
-            self.warn(f"{name} on all frames failed: {msg}")
+            self.warn(f"{name} on the frames failed: {msg}")
 
         self._start(Task(lambda: s.auto_targets(tool, settings, keys,
                                                 progress=lambda n, t: state.update(n=n))), done, failed)

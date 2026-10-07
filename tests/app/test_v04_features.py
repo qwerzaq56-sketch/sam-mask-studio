@@ -1796,10 +1796,10 @@ def test_apply_to_all_frames_in_fill_mode_only(qapp, win):
     assert pp.apply_all_btn.isHidden()  # Paint mode: picks are per image
     pp.mode_fill_btn.click()
     asked = []
-    win.ask = lambda title, text, ok: asked.append(text) or True
+    win.choose = lambda title, text, groups, ok="OK": asked.append(groups[0][1]) or [0]  # All
     pp.apply_all_btn.click()
     wait_until(qapp, lambda: win._busy is None)
-    assert asked and "2 frame(s)" in asked[0]
+    assert asked and "All: 2 frame(s)" in asked[0][0]
     o = p.get(ids[0])
     assert (o.mask(k0) == ~m0).all() and (o.mask(k2) == ~m2).all()
     assert o.mask(s.keys[1]) is None  # a frame without a mask stays empty
@@ -2432,3 +2432,38 @@ def test_pick_marks_cover_warning_not_and_t_in_number_fields(qapp, win):
     p.clear_colors_btn.click()
     assert c.pick_marks == []
 
+
+def test_apply_to_frames_picked_in_the_frame_list(qapp, win):
+    """p103: Apply to Frames on just the frames picked in the Frame List (a range or a few); the rest untouched."""
+    from src.core.project import FrameState, FrameStatus
+    from tests.app.conftest import wait_until
+
+    ids = make_objects(win, 1)
+    s = win.session
+    p = s.project
+    k0, k1, k2 = s.keys[:3]
+    for k in (k1, k2):
+        p.set_frame(ids[0], k, FrameState.from_mask(p.get(ids[0]).mask(k0), status=FrameStatus.PROPAGATED))
+    m = {k: p.get(ids[0]).mask(k).copy() for k in (k0, k1, k2)}
+    win.toggle_edit(ids[0])
+    pp = win.properties_panel
+    pp.tool_btns["invert"].click()
+    assert pp.apply_all_btn.text() == "Apply to Frames…"
+    lst = win.images_panel.list
+    lst.clearSelection()
+    for row in (1, 2):
+        lst.item(row).setSelected(True)
+    asked = []
+    win.choose = lambda title, text, groups, ok="OK": asked.append(groups[0]) or [1]  # the picked ones
+    pp.apply_all_btn.click()
+    wait_until(qapp, lambda: win._busy is None)
+    assert asked[0][2] == 1 and "2 frame(s) with a mask (of 2 picked" in asked[0][1][1]  # picked: the default
+    o = p.get(ids[0])
+    assert (o.mask(k0) == m[k0]).all()  # not picked: untouched
+    assert (o.mask(k1) == ~m[k1]).all() and (o.mask(k2) == ~m[k2]).all()
+    win.undo()
+    assert (p.get(ids[0]).mask(k1) == m[k1]).all()
+    lst.clearSelection()
+    win.choose = lambda title, text, groups, ok="OK": [1]  # nothing picked: nothing happens, a hint
+    pp.apply_all_btn.click()
+    assert win._busy is None and (p.get(ids[0]).mask(k1) == m[k1]).all()

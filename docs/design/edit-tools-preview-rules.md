@@ -8,7 +8,7 @@ Edit Layer 패널, 오토 툴, Mask Preview를 고칠 때 지키는 공통 규�
 | 문서 | 내용 |
 |---|---|
 | 이 문서 | 데이터 안전, 색, 모드 표시, Mask Preview 키 · 툴바, 브러쉬, 검증 |
-| [`auto-tools-rules.md`](auto-tools-rules.md) | 오토 툴 켜기 · Fill / Paint · 적용 · 나가기 · Apply to All Frames, 각 규칙의 이유 |
+| [`auto-tools-rules.md`](auto-tools-rules.md) | 오토 툴 켜기 · Fill / Paint · 적용 · 나가기 · Apply to Frames, 각 규칙의 이유 |
 | [`by-color.md`](by-color.md) | By Color 선택 규칙(A / B)과 현재 동작 BC-1..19 (피드백용) |
 
 상위 원칙은 [`ux-principles.md`](ux-principles.md), 키는 [`keymap.md`](keymap.md).
