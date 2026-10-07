@@ -363,12 +363,11 @@ class PropertiesPanel(QWidget):
             "Range: the pixels like the colors you pick and / or within a brightness range.")
         self.color_basis.currentIndexChanged.connect(self._on_color_basis)
         self.color_action = QComboBox()
-        for value, text in (("both", "Add && Remove"), ("add", "Add only"), ("remove", "Remove only")):
+        for value, text in (("both", "Add & Remove"), ("add", "Add only"), ("remove", "Remove only")):
             self.color_action.addItem(text, value)
         self.color_action.setToolTip("Auto: what the result may change: both ways, only add to the mask, or only "
-                                     "take out of it.\nRange: keep only the selected pixels in the mask (pick "
-                                     "the sky, paint over leaves: they go), add them, remove them, or replace the "
-                                     "mask with the selection")
+                                     "take out of it.\nRange: A = the pixels the filter catches, B = the rest. "
+                                     "Add & Remove: A in, B out. Add only: A in. Remove only: B out")
         self.color_action.currentIndexChanged.connect(lambda _i: self._settings_timer.start())
         self.color_balance = SliderField(0, 100, 50)
         self.color_band = SliderField(0, 300, 30, " px")
@@ -389,9 +388,9 @@ class PropertiesPanel(QWidget):
         self.color_tol = SliderField(1, 100, 30)
         self.color_tol.setToolTip("How far (Lab: lightness, hue and saturation) a pixel's color may be "
                                   "from a picked one")
-        self.color_invert = QCheckBox("Invert selection")
-        self.color_invert.setToolTip("Select everything but the picked colors / brightness range (pick the "
-                                     "leaves, Invert: the rest is sky)")
+        self.color_invert = QCheckBox("Invert (swap A and B)")
+        self.color_invert.setToolTip("A = what the filter catches (picked colors / brightness range), B = the rest. "
+                                     "Invert: the caught pixels are B, the rest A")
         self.color_invert.toggled.connect(lambda _on: self._settings_timer.start())
         self.bright_use = QCheckBox("Brightness from")
         self.bright_lo = SliderField(0, 255, 0)
@@ -776,18 +775,10 @@ class PropertiesPanel(QWidget):
         """Balance is for the Auto ways, the picker and ranges for Range."""
         rng = self.color_basis.currentData() == "range"
         self.balance_row.setVisible(not rng)
-        items = ((("keep", "Keep selection only"), ("add", "Add selection"), ("remove", "Remove selection"),
-                  ("both", "Replace with selection")) if rng
-                 else (("both", "Add && Remove"), ("add", "Add only"), ("remove", "Remove only")))
-        if [self.color_action.itemData(i) for i in range(self.color_action.count())] != [v for v, _ in items]:
-            cur = self.color_action.currentData()
-            self.color_action.blockSignals(True)
-            self.color_action.clear()
-            for value, text in items:
-                self.color_action.addItem(text, value)
-            i = self.color_action.findData(cur)
-            self.color_action.setCurrentIndex(i if i >= 0 and cur != "both" else 0)  # Range starts at Keep
-            self.color_action.blockSignals(False)
+        texts = ({"both": "Add A & Remove B", "add": "Add only (A)", "remove": "Remove only (B)"} if rng
+                 else {"both": "Add & Remove", "add": "Add only", "remove": "Remove only"})
+        for i in range(self.color_action.count()):
+            self.color_action.setItemText(i, texts[self.color_action.itemData(i)])
         self.range_box.setVisible(rng)
         if not rng and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)

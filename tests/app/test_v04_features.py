@@ -1894,7 +1894,7 @@ def image_array(q, h, w):
 
     ptr = q.constBits()
     ptr.setsize(q.sizeInBytes())
-    return np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3)
+    return np.frombuffer(ptr, np.uint8).reshape(h, q.bytesPerLine())[:, : 3 * w].reshape(h, w, 3).copy()  # q is freed after
 
 
 def test_preview_style_cuts_the_image_out(qapp, win):
@@ -1981,44 +1981,33 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     p.color_band.spin.setValue(5)
     p.color_band_on.setChecked(False)  # off: the whole image (p74)
     assert not p.color_band.isEnabled()
-    p.color_action.setCurrentIndex(p.color_action.findData("remove"))
-    p._settings_timer.timeout.emit()
-    wait_until(qapp, lambda: s.auto_changes()[0] is not None)
-    added, removed = s.auto_changes()
-    assert not added.any() and (removed == before).all()  # Remove selection: every pixel selected, all go (p75)
-    assert p.color_action.currentText() == "Remove selection"
-    p.color_action.setCurrentIndex(p.color_action.findData("keep"))  # p78: keep only the selected pixels
-    p.bright_lo.spin.setValue(256 // 2)
-    p._settings_timer.timeout.emit()
-    wait_until(qapp, lambda: s.auto_changes()[1] is not None and s.auto_changes()[1].any())
-    added, removed = s.auto_changes()
-    import numpy as np
-
-    gray = np.asarray(s.image[..., :3], float) @ [0.299, 0.587, 0.114]
-    assert not added.any() and not (removed & (gray > 136)).any()  # the bright (selected) part stays
-    p.color_invert.setChecked(True)  # p79: Invert: the darker part is the selection, kept; the bright one goes
-    p._settings_timer.timeout.emit()
     import cv2
+    import numpy as np
 
     g8 = cv2.cvtColor(np.ascontiguousarray(s.image[..., :3]), cv2.COLOR_RGB2GRAY)
-    wait_until(qapp, lambda: s.auto_changes()[1] is not None
-               and (s.auto_changes()[1] == (before & (g8 >= 128))).all())  # only the bright part goes
-    p.color_invert.setChecked(False)
-    p.bright_lo.spin.setValue(0)
-    p.color_action.setCurrentIndex(p.color_action.findData("add"))
-    p._settings_timer.timeout.emit()
-    wait_until(qapp, lambda: s.auto_changes()[0] is not None and s.auto_changes()[0].any())
-    added, removed = s.auto_changes()
-    assert (added == ~before).all() and not removed.any()  # Add selection: the rest of the image joins
-    p.bright_lo.spin.setValue(256 // 2)  # only the brighter half: Remove takes only that out
-    p.color_action.setCurrentIndex(p.color_action.findData("remove"))
-    p._settings_timer.timeout.emit()
-    wait_until(qapp, lambda: s.auto_changes()[1] is not None and not s.auto_changes()[0].any())
-    import numpy as np
 
-    gray = np.asarray(s.image[..., :3], float) @ [0.299, 0.587, 0.114]
-    added, removed = s.auto_changes()
-    assert not (removed & (gray < 120)).any()  # darker pixels stay
+    def result(action, lo, invert=False):
+        """p81: A = what the filter catches, B = the rest; Add puts A in, Remove takes B out, Invert swaps."""
+        p.color_action.setCurrentIndex(p.color_action.findData(action))
+        p.bright_lo.spin.setValue(lo)
+        p.color_invert.setChecked(invert)
+        p._settings_timer.timeout.emit()
+        A = g8 >= lo
+        if invert:
+            A = ~A
+        want = {"both": A, "add": before | A, "remove": before & A}[action]
+        wait_until(qapp, lambda: s.auto_changes()[0] is not None
+                   and (((before | s.auto_changes()[0]) & ~s.auto_changes()[1]) == want).all())
+
+    assert p.color_action.currentText() == "Add A & Remove B"
+    for action in ("both", "add", "remove"):
+        for invert in (False, True):
+            result(action, 128, invert)
+    result("both", 0)  # everything is A: nothing to remove
+    assert not s.auto_changes()[1].any()
+    result("remove", 0, invert=True)  # Invert: everything is B, all of the mask goes
+    assert (s.auto_changes()[1] == before).all()
+    p.color_invert.setChecked(False)
     p.color_band_on.setChecked(True)  # p79: the Near edge area is shown (faint white, under the mask colors)
     p.color_band.spin.setValue(5)
     win.refresh()
