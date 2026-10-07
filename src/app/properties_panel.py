@@ -375,13 +375,13 @@ class PropertiesPanel(QWidget):
                                  "Right-click: a color to leave out (−), the same way. On by itself while no color "
                                  "is picked. Ctrl+Z undoes a change to the colors")
         self.pick_btn.toggled.connect(self._on_pick_toggled)
-        self.original_btn = QPushButton("Original (T)")
+        self.original_btn = QPushButton("Original (hold T)")
         self.original_btn.setCheckable(True)
         self.original_btn.setEnabled(False)  # only while picking; picking stops -> off (BC-P3)
         self.original_btn.setStyleSheet("QPushButton:checked { background: #e08a00; color: black; font-weight: bold; }")
         self.original_btn.setToolTip("While picking colors: the photo alone, without mask colors, the tool's preview "
-                                     "or the legend, to judge the colors you pick. T: on / off; hold T: just "
-                                     "while held. Goes off with the picker")
+                                     "or the legend, to judge the colors you pick. Click: on / off; hold T: turned around "
+                                     "just while held. Goes off with the picker")
         self.original_btn.toggled.connect(self.original_view_toggled)
         self.clear_colors_btn = QPushButton("Clear")
         self.clear_colors_btn.clicked.connect(lambda: self.set_samples([], out=[]))

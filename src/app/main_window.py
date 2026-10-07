@@ -80,7 +80,6 @@ logger = get_logger(__name__)
 # not green / red: Show Changes (R) tints the edit layer's own additions / removals (80, 255, 120) / (255, 60, 60))
 AUTO_ADD_COLOR = (40, 110, 255)
 AUTO_SUB_COLOR = (255, 120, 0)
-ORIGINAL_HOLD = 0.3  # s: T held longer than this = only while held (BC-P3)
 
 SOURCE_SHORT = {  # how an Object was made, in the work bar
     Source.SAM3_DETECTION: "SAM3",
@@ -142,7 +141,7 @@ class MainWindow(QMainWindow):
         self._goto_fields: List[QLineEdit] = []  # Frame List, frame strip
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
-        self._t_press = None  # T down while picking: (when, Original before it) (BC-P3)
+        self._t_press = None  # T down while picking: Original before it, put back on release (BC-P3, p100)
         self._pick_at: dict = {}  # ("in" / "out", rgb) -> (image key, x, y) where By Color's color was taken
         self._loading_models = False
 
@@ -1282,19 +1281,20 @@ class MainWindow(QMainWindow):
         return isinstance(w, (QLineEdit, QPlainTextEdit))
 
     def _original_key(self, pressed: bool) -> None:
-        """T while picking colors (BC-P3): a tap turns Original on / off; held past 0.3 s it goes back on release."""
+        """T while picking colors (BC-P3): Original turned around only while T is held, back on release (p100:
+        no tap toggle any more; the button toggles)."""
         btn = self.properties_panel.original_btn
         if pressed:
             if not btn.isEnabled():
                 self._t_press = None
                 self.log("T: Original (the photo alone) works while picking colors (Pick Color)")
                 return
-            self._t_press = (time.monotonic(), btn.isChecked())
+            self._t_press = btn.isChecked()
             btn.setChecked(not btn.isChecked())
             return
         press, self._t_press = self._t_press, None
-        if press is not None and btn.isEnabled() and time.monotonic() - press[0] > ORIGINAL_HOLD:
-            btn.setChecked(press[1])
+        if press is not None and btn.isEnabled():
+            btn.setChecked(press)
 
     def _hover_zone(self) -> Optional[str]:
         """The list under the mouse: ``frames`` (Frame List, Frames strip), ``objects`` or None."""

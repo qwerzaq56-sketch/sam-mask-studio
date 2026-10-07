@@ -2293,8 +2293,8 @@ def test_alt_click_picks_the_mean_color(qapp, win):
     assert got[2] == ((10, 10, 10), True)
 
 
-def test_original_view_while_picking_colors(qapp, win, monkeypatch):
-    """BC-P3: while picking, Original (T) shows the photo alone; a tap toggles, a hold reverts on release, and it
+def test_original_view_while_picking_colors(qapp, win):
+    """BC-P3: while picking, Original shows the photo alone; the button toggles, holding T turns it around until release, and it
     goes off with the picker."""
     import numpy as np
     from src.app import main_window as mw
@@ -2318,15 +2318,13 @@ def test_original_view_while_picking_colors(qapp, win, monkeypatch):
     p.original_btn.click()
     px = c.grab().toImage().pixelColor(pos)
     assert px.red() > px.green()  # the overlay is back
-    now = [100.0]
-    monkeypatch.setattr(mw.time, "monotonic", lambda: now[0])
-    win._original_key(True)  # tap: on, stays on
-    now[0] += 0.1
+    win._original_key(True)  # p100: held = on, released = back off (a short tap too: no toggle)
+    assert c.original_view
     win._original_key(False)
-    assert c.original_view and p.original_btn.isChecked()
-    win._original_key(True)  # held: off while held, back on release
+    assert not c.original_view and not p.original_btn.isChecked()
+    p.original_btn.click()  # the button toggles; holding T then shows the masks until release
+    win._original_key(True)
     assert not c.original_view
-    now[0] += 1.0
     win._original_key(False)
     assert c.original_view
     win.escape()  # the picker stops: Original goes with it
@@ -2425,8 +2423,8 @@ def test_pick_marks_cover_warning_not_and_t_in_number_fields(qapp, win):
     assert not win._typing_text(spin) and not win._typing_text(spin.findChild(QLineEdit))
     assert win._typing_text(QLineEdit())  # a text box keeps its T
     win._original_key(True)
-    win._original_key(False)
     assert c.original_view
+    win._original_key(False)
     p.clear_colors_btn.click()
     assert c.pick_marks == []
 
