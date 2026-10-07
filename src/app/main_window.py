@@ -143,6 +143,7 @@ class MainWindow(QMainWindow):
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
         self._t_press = None  # T down while picking: (when, Original before it) (BC-P3)
+        self._pick_at: dict = {}  # ("in" / "out", rgb) -> (image key, x, y) where By Color's color was taken
         self._loading_models = False
 
         self.setWindowTitle(f"SAM Mask Studio {app_version()}")
@@ -660,7 +661,11 @@ class MainWindow(QMainWindow):
         p.original_view_toggled.connect(self.canvas.set_original_view)
         self.canvas.color_picked.connect(p.add_sample)
         self.canvas.color_picked_out.connect(p.add_sample_out)
+        # where each color was taken, for its mark on the image (p99)
+        self.canvas.color_picked.connect(lambda color, _add: self._remember_pick("in", color))
+        self.canvas.color_picked_out.connect(lambda color, _add: self._remember_pick("out", color))
         p.color_samples_edited.connect(lambda colors: self.session.set_color_samples(*colors))
+        p.color_samples_edited.connect(lambda _colors: self._update_pick_marks())  # a swatch gone: its mark too
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
         p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))
@@ -940,6 +945,7 @@ class MainWindow(QMainWindow):
                     changed = added | removed  # light where it stays as it is, dense (below) where it changes
                     overlays.append(Overlay(ab[0] & ~changed, AUTO_ADD_COLOR, "auto_a"))
                     overlays.append(Overlay(ab[1] & ~changed, AUTO_SUB_COLOR, "auto_b"))
+                    self.properties_panel.set_color_cover(s.auto_color_cover(tool_settings))
                     overlap = s.auto_overlap(tool_settings)
                     if overlap is not None:  # a picked and a left-out color both claim these: the nearer won
                         overlays.append(Overlay(overlap, OVERLAP_COLOR, "overlap"))
@@ -962,6 +968,7 @@ class MainWindow(QMainWindow):
                 overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.candidates_pickable = preview and self.picking()
         self.canvas.set_legend(legend if edit_layer is not None else [])
+        self._update_pick_marks()
         self.canvas.set_overlays(overlays)
 
     @staticmethod
@@ -1236,7 +1243,7 @@ class MainWindow(QMainWindow):
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() == Qt.Key.Key_T
             and event.modifiers() == Qt.KeyboardModifier.NoModifier
-            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            and not self._typing_text()  # a number field cannot take a T: works there too (p99)
             and self.isActiveWindow()
         ):
             if not event.isAutoRepeat():
@@ -1265,6 +1272,14 @@ class MainWindow(QMainWindow):
                 QApplication.sendEvent(area.verticalScrollBar(), event)  # the panel scrolls instead
             return True
         return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _typing_text(w=None) -> bool:
+        """The keyboard (or *w*) is in a field that takes letters (a text box), not a number field or its editor."""
+        w = QApplication.focusWidget() if w is None else w
+        if isinstance(w, QAbstractSpinBox) or (w is not None and isinstance(w.parentWidget(), QAbstractSpinBox)):
+            return False
+        return isinstance(w, (QLineEdit, QPlainTextEdit))
 
     def _original_key(self, pressed: bool) -> None:
         """T while picking colors (BC-P3): a tap turns Original on / off; held past 0.3 s it goes back on release."""
@@ -2228,12 +2243,32 @@ class MainWindow(QMainWindow):
             self._do(self.session.redo)
             self._sync_color_samples()
 
+    def _remember_pick(self, kind: str, color) -> None:
+        """A color was picked on the image: remember where, for its mark (the latest place for that color)."""
+        if self.canvas.last_pick is not None and self.session.key is not None:
+            x, y = self.canvas.last_pick
+            self._pick_at[(kind, tuple(int(v) for v in color))] = (self.session.key, x, y)
+        self._update_pick_marks()
+
+    def _update_pick_marks(self) -> None:
+        """Mark the picked (1, 2 ...) and left-out (−1 ...) colors taken on this image, while By Color is on."""
+        s, t = self.session, self.properties_panel.tool_settings()
+        marks = []
+        if s.auto_tool == "by_color":
+            for kind, colors, sign in (("in", t["color_samples"], ""), ("out", t["color_samples_out"], "−")):
+                for i, c in enumerate(colors):
+                    at = self._pick_at.get((kind, tuple(c)))
+                    if at is not None and at[0] == s.key:
+                        marks.append((at[1], at[2], tuple(c), f"{sign}{i + 1}"))
+        self.canvas.set_pick_marks(marks)
+
     def _sync_color_samples(self) -> None:
         """Undo / redo may have put By Color's picked colors back: show them (p92)."""
         p, s = self.properties_panel, self.session
         t = p.tool_settings()
         if (t["color_samples"], t["color_samples_out"]) != (s.color_samples, s.color_samples_out):
             p.set_samples(s.color_samples, edited=False, out=s.color_samples_out)
+            self._update_pick_marks()
             self.log(f"Picked colors: {len(s.color_samples)}, left out: {len(s.color_samples_out)}")
 
     def toggle_final(self, on: bool) -> None:

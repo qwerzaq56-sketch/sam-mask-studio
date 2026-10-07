@@ -393,11 +393,12 @@ class PropertiesPanel(QWidget):
         self.color_use = QCheckBox("Color within")
         self.color_use.setChecked(True)
         self.color_tol = SliderField(1, 100, 30)
-        self.color_tol.setToolTip("How far (Lab: lightness, hue and saturation) a pixel's color may be "
-                                  "from a picked one")
+        self.color_tol.setToolTip("How far a pixel's color may be from a picked one. "
+                                  "Lab distance (lightness, hue, saturation): about 10 = almost the same color, 30 = alike (sky blue vs a lighter sky), 60+ = most of the image. 100 takes everything")
         self.color_tol_out = SliderField(1, 100, 30)
         self.color_tol_out.setToolTip("How far a pixel's color may be from a left-out color (−) to be left out. "
-                                      "Near both a picked and a left-out color: the nearer one wins")
+                                      "Near both a picked and a left-out color: the nearer one wins. "
+                                      "Lab distance (lightness, hue, saturation): about 10 = almost the same color, 30 = alike (sky blue vs a lighter sky), 60+ = most of the image. 100 takes everything")
         self.color_invert = QCheckBox("Swap A / B")
         self.color_invert.setToolTip("A = what the filter catches (picked colors / brightness range), B = the rest. "
                                      "Swap: the caught pixels are B, the rest A. To turn just one condition "
@@ -409,7 +410,13 @@ class PropertiesPanel(QWidget):
         # each condition turned around on its own (BC-P4 a): "brightness, but not the sky's colors"
         self.color_not = QCheckBox("Not")
         self.color_not.setToolTip("Not: the pixels far from every picked color (e.g. bright leaves = Brightness "
-                                  "from 140 and Not the sky's colors)")
+                                  "from 140 and Not the sky's colors). Picked colors only: left-out colors (−) "
+                                  "leave out either way, so with none picked there is nothing to turn around")
+        self.color_not.setEnabled(False)  # until a color is picked (p99)
+        # what the color condition alone takes where By Color decides: near 0 or 100 % it decides nothing (p99)
+        self.color_cover = QLabel("")
+        self.color_cover.setWordWrap(True)
+        self.color_cover.setVisible(False)
         self.bright_not = QCheckBox("Not")
         self.bright_not.setToolTip("Not: the pixels outside the brightness range")
         for c in (self.color_use, self.bright_use, self.color_not, self.bright_not):
@@ -476,12 +483,13 @@ class PropertiesPanel(QWidget):
         rl.addWidget(self.color_tol_out, 3, 1)
         for w in (self.tol_out_label, self.color_tol_out):
             w.setEnabled(False)  # until a color is left out
-        rl.addWidget(self.bright_use, 4, 0)
-        rl.addWidget(self.bright_lo, 4, 1)
-        rl.addWidget(self.bright_not, 4, 2)
-        rl.addWidget(QLabel("to"), 5, 0, Qt.AlignmentFlag.AlignRight)
-        rl.addWidget(self.bright_hi, 5, 1)
-        rl.addWidget(self.color_invert, 6, 0, 1, 3)
+        rl.addWidget(self.color_cover, 4, 0, 1, 3)
+        rl.addWidget(self.bright_use, 5, 0)
+        rl.addWidget(self.bright_lo, 5, 1)
+        rl.addWidget(self.bright_not, 5, 2)
+        rl.addWidget(QLabel("to"), 6, 0, Qt.AlignmentFlag.AlignRight)
+        rl.addWidget(self.bright_hi, 6, 1)
+        rl.addWidget(self.color_invert, 7, 0, 1, 3)
         bf.addRow(self.range_box)
         bf.addRow(note(
             "Near edge (on): only pixels this close to the mask's edge may change; off: anywhere. Inside the "
@@ -860,7 +868,23 @@ class PropertiesPanel(QWidget):
         has_out = bool(self._samples_out)
         self.tol_out_label.setEnabled(has_out)
         self.color_tol_out.setEnabled(has_out)
+        self.color_not.setEnabled(bool(self._samples))  # Not turns the picked colors around only (p99)
         self._settings_timer.start()
+
+    def set_color_cover(self, share: Optional[float]) -> None:
+        """How much of the area By Color decides the color condition alone takes (None: not in use); a warning
+        near 0 or 100 %, where the colors decide nothing (p99: tolerance 100 took everything)."""
+        if share is None:
+            self.color_cover.setVisible(False)
+            return
+        pct = share * 100
+        warn = pct >= 95 or pct <= 1
+        text = f"Color takes {pct:.0f} % of the area"
+        if warn:
+            text += " — it tells nothing apart: check the tolerances (a wide − takes everything out)"
+        self.color_cover.setText(text)
+        self.color_cover.setStyleSheet("color: #e08a00; font-weight: bold;" if warn else "color: gray;")
+        self.color_cover.setVisible(True)
 
     def remove_sample(self, index) -> None:
         """Drop one picked (``"2"``) or left-out (``"o2"``) color (its swatch was clicked); the rest stay."""
