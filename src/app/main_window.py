@@ -655,6 +655,7 @@ class MainWindow(QMainWindow):
         p.region_mode_toggled.connect(self.set_region_mode)
         p.color_pick_toggled.connect(self.canvas.set_color_pick)
         self.canvas.color_picked.connect(p.add_sample)
+        p.color_samples_edited.connect(self.session.set_color_samples)
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
         p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))
@@ -2186,10 +2187,19 @@ class MainWindow(QMainWindow):
     def undo(self) -> None:
         if not self._busy:
             self._do(self.session.undo)
+            self._sync_color_samples()
 
     def redo(self) -> None:
         if not self._busy:
             self._do(self.session.redo)
+            self._sync_color_samples()
+
+    def _sync_color_samples(self) -> None:
+        """Undo / redo may have put By Color's picked colors back: show them (p92)."""
+        p = self.properties_panel
+        if tuple(p.tool_settings()["color_samples"]) != self.session.color_samples:
+            p.set_samples(self.session.color_samples, edited=False)
+            self.log(f"Picked colors: {len(self.session.color_samples)}")
 
     def toggle_final(self, on: bool) -> None:
         self.canvas.set_final_preview(on)

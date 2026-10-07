@@ -166,6 +166,7 @@ class PropertiesPanel(QWidget):
     brush_tool_selected = pyqtSignal(str)  # "" = no tool, else a DIRECT_TOOLS / AUTO_TOOLS name
     auto_mode_changed = pyqtSignal(str)  # "fill" | "paint"
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
+    color_samples_edited = pyqtSignal(object)  # the picked colors were changed by hand (tuple): an undo step
     color_pick_toggled = pyqtSignal(bool)  # By Color's picker: clicks on the image sample colors
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
@@ -376,8 +377,9 @@ class PropertiesPanel(QWidget):
         self.pick_btn = QPushButton("Pick Color")
         self.pick_btn.setCheckable(True)
         self.pick_btn.setStyleSheet("QPushButton:checked { background: #e08a00; color: black; font-weight: bold; }")
-        self.pick_btn.setToolTip("On by itself in Range: clicking the image picks a color (no SAM point); Shift+click adds "
-                                 "another (sky and cloud). Turn it off to place SAM points")
+        self.pick_btn.setToolTip("Clicking the image picks a color (no SAM point), instead of the picked ones; Shift+click "
+                                 "adds another (sky and cloud). On by itself in Range while no color is picked. "
+                                 "Ctrl+Z undoes a change to the picked colors")
         self.pick_btn.toggled.connect(self._on_pick_toggled)
         self.clear_colors_btn = QPushButton("Clear")
         self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
@@ -679,8 +681,10 @@ class PropertiesPanel(QWidget):
         auto = tool in AUTO_TOOLS
         if tool != "by_color" and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)  # the picker belongs to By Color
-        elif tool == "by_color" and self.color_basis.currentData() == "range":
-            self.pick_btn.setChecked(True)  # Range: clicks pick colors, not SAM points (p77)
+        elif tool == "by_color" and self.color_basis.currentData() == "range" and not self._samples:
+            # Range with nothing picked yet: clicks pick colors, not SAM points (p77). With colors already
+            # picked it stays off, so an unnoticed click does not replace them (p92)
+            self.pick_btn.setChecked(True)
         self.settings_box.setVisible(auto)
         self.apply_auto_btn.setEnabled(auto)
         self.recompute_btn.setEnabled(auto)
@@ -785,8 +789,8 @@ class PropertiesPanel(QWidget):
         self.range_box.setVisible(rng)
         if not rng and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)
-        elif rng and self._tool == "by_color":
-            self.pick_btn.setChecked(True)  # Range: clicks pick colors, not SAM points (p77)
+        elif rng and self._tool == "by_color" and not self._samples:
+            self.pick_btn.setChecked(True)  # Range: clicks pick colors, not SAM points (p77; not over picked ones, p92)
         if emit:
             self._settings_timer.start()
 
@@ -798,8 +802,12 @@ class PropertiesPanel(QWidget):
         """A color picked on the image: instead of the picked ones, or (*add*, Shift+click) one more."""
         self.set_samples((self._samples if add else []) + [tuple(int(v) for v in color)])
 
-    def set_samples(self, colors) -> None:
+    def set_samples(self, colors, edited: bool = True) -> None:
+        """*edited*: changed by hand (an undo step); False when undo / redo puts them back."""
+        before = tuple(self._samples)
         self._samples = [tuple(c) for c in colors][-8:]
+        if edited and tuple(self._samples) != before:
+            self.color_samples_edited.emit(tuple(self._samples))
         if self._samples:
             boxes = "".join(
                 f'<a href="{i}" style="text-decoration: none;"><span style="background-color: rgb{c}; color: rgb{c};">'

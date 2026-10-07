@@ -619,6 +619,13 @@
 - 오토 툴이 켜져 있으면 캔버스 왼쪽 아래에 지금 쓰는 색과 뜻: `Adds` / `Removes`(Range: `A: adds`, `A: already in`, `B: removes`, `B: already out`), Paint면 `Not picked (Paint)`, Near edge면 `Decided here (Near edge)`. 견본은 화면과 같은 진하기. 도구를 나가거나 Mask Preview 중이면 없음(`Canvas.set_legend`, `MainWindow._auto_legend`).
 - 오토 툴 수칙 6-5로 옮기고 제안 AT-2는 뺌.
 
+## 92단계 (`v0.4-p92`): 고른 색 Undo, 고른 색이 있으면 피커가 저절로 안 켜짐
+
+- 사용자 보고: By Color를 다시 켜니 Pick Color가 저절로 켜진 것을 눈치 못 채고 클릭해서 고른 색이 날아갔고, 실행 취소도 안 됨.
+- 고른 색 바꾸기(클릭 = 교체, Shift+클릭, 썸네일 클릭, Clear)가 Undo 한 단계(`Session.set_color_samples`, UI 상태 `colors`). 프레임·편집 대상이 바뀌어도 그 기록은 남김.
+- Range의 피커 자동 켜기(p77)는 고른 색이 없을 때만. 있으면 꺼진 채 시작, `Pick Color`로 켬.
+- 공통 수칙 3-2 보충, 3-4 새로("공들인 상태는 Undo"), By Color BC-1.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
