@@ -1511,7 +1511,7 @@ def test_moving_frames_while_editing(qapp, win):
 
 
 def test_ctrl_drag_sets_the_brush_size(qapp, win):
-    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtCore import QPoint, QPointF, Qt
     from PyQt6.QtTest import QTest
 
     ids = make_objects(win, 1)
@@ -1520,13 +1520,21 @@ def test_ctrl_drag_sets_the_brush_size(qapp, win):
     c.set_brush_size(30)
     ctrl = Qt.KeyboardModifier.ControlModifier
     start = QPoint(200, 200)
-    QTest.mousePress(c, Qt.MouseButton.RightButton, ctrl, start)
+    QTest.mousePress(c, Qt.MouseButton.LeftButton, ctrl, start)
     QTest.mouseMove(c, start + QPoint(20, 0))
     assert c.brush_size == 70 and c._mouse == start  # bigger to the right; the circle stays put
     QTest.mouseMove(c, start + QPoint(-10, 0))
     assert c.brush_size == 10
-    QTest.mouseRelease(c, Qt.MouseButton.RightButton, ctrl, start + QPoint(-10, 0))
-    assert c._size_drag is None and not win.session.editing_frame().points[1:]  # no negative point added
+    QTest.mouseRelease(c, Qt.MouseButton.LeftButton, ctrl, start + QPoint(-10, 0))
+    assert c._size_drag is None and not win.session.editing_frame().points[1:]  # no point added
+    # p108: Ctrl+right never sizes; even moved a little it is the Ctrl+right-click where pressed
+    segs = []
+    c.segment_clicked.connect(lambda *a: segs.append(a))
+    QTest.mousePress(c, Qt.MouseButton.RightButton, ctrl, start)
+    QTest.mouseMove(c, start + QPoint(40, 0))
+    assert c.brush_size == 10 and c._size_drag is None
+    QTest.mouseRelease(c, Qt.MouseButton.RightButton, ctrl, start + QPoint(40, 0))
+    assert len(segs) == 1 and segs[0][:2] == c.to_image(QPointF(start)) and segs[0][2] is False
 
 
 # --- p44: Ctrl+click adds / takes out the piece under the cursor, the rest of the mask stays ------------

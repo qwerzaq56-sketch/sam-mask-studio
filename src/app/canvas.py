@@ -265,6 +265,7 @@ class Canvas(QWidget):
         self.brush_size = 30  # screen px diameter
         self._size_drag = None  # Ctrl+drag left / right: (start, size then, where the circle stays)
         self._seg_press = None  # Ctrl+press while editing: (where, button; None = picking colors): click or size drag
+        # (a size drag only with the left button; Ctrl+right is always a click where pressed, p108)
         self.brush_mode = False  # Brush editing turned on (only acts in EDIT)
         self._brush = BrushEngine()
 
@@ -793,7 +794,8 @@ class Canvas(QWidget):
         ctrl_edit = (self.mode == Mode.EDIT and not self.region_mode and mods & Qt.KeyboardModifier.ControlModifier
                      and btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton))
         if ctrl_edit and self.color_pick_mode:
-            self._seg_press = (QPointF(pos), None)  # picking colors: a Ctrl+drag only sizes the brush
+            if btn == Qt.MouseButton.LeftButton:
+                self._seg_press = (QPointF(pos), None)  # picking colors: a Ctrl+drag only sizes the brush
             return
         if self.color_pick_mode:
             if btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
@@ -859,7 +861,8 @@ class Canvas(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.position()
         self._mouse = pos
-        if self._seg_press is not None and self._size_drag is None:
+        if (self._seg_press is not None and self._size_drag is None
+                and self._seg_press[1] != Qt.MouseButton.RightButton):  # Ctrl+right: no size drag (p108)
             start = self._seg_press[0]
             d = pos - start
             if (d.x() ** 2 + d.y() ** 2) ** 0.5 > CLICK_SLOP:  # Ctrl+drag, not a click: the brush size
@@ -907,7 +910,10 @@ class Canvas(QWidget):
             start, btn = self._seg_press
             self._seg_press = None
             d = pos - start
-            if (btn is not None and btn == event.button() and (d.x() ** 2 + d.y() ** 2) ** 0.5 <= CLICK_SLOP
+            if btn == Qt.MouseButton.RightButton and btn == event.button():  # a shaky hand: still the click pressed
+                if self._inside(start):
+                    self.segment_clicked.emit(*self.to_image(start), False)
+            elif (btn is not None and btn == event.button() and (d.x() ** 2 + d.y() ** 2) ** 0.5 <= CLICK_SLOP
                     and self._inside(pos)):
                 self.segment_clicked.emit(*self.to_image(pos), btn == Qt.MouseButton.LeftButton)
             return

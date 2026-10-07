@@ -691,7 +691,7 @@ SHORTCUTS = (
         ("Drag a point / double-click it", "Move the point / delete it"),
         ("Alt+drag", "Paint: subtract · auto tool Paint mode: unpick · Region Box: remove a box"),
         ("Shift+drag", "Paint without turning the brush on"),
-        ("Ctrl+drag left / right, Ctrl+wheel / Shift+wheel", "Brush size (down to one image pixel; Ctrl+click: a piece of the image)"),
+        ("Ctrl+left-drag left / right, Ctrl+wheel / Shift+wheel", "Brush size (down to one image pixel; Ctrl+click: a piece of the image; Ctrl+right-click takes one out, even moved a little)"),
     )),
 )
 
