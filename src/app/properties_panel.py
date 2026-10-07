@@ -174,7 +174,7 @@ class PropertiesPanel(QWidget):
     clear_region_requested = pyqtSignal()
     auto_apply_requested = pyqtSignal()  # write the auto tool's result in and leave the tool
     auto_recompute_requested = pyqtSignal()  # write it in, stay, compute the next one
-    auto_apply_all_requested = pyqtSignal()  # Fill mode: the tool on every frame of the Object
+    auto_apply_all_requested = pyqtSignal()  # Fill mode: the tool on the Object's frames (all / picked)
     apply_layer_requested = pyqtSignal()
     delete_layer_requested = pyqtSignal()
 
@@ -309,10 +309,11 @@ class PropertiesPanel(QWidget):
         self.recompute_btn.setToolTip("Write the result in and compute the next one (Enter)")
         self.recompute_btn.clicked.connect(self.auto_recompute_requested)
         self.recompute_btn.setEnabled(False)
-        self.apply_all_btn = QPushButton("Apply to All Frames")
+        self.apply_all_btn = QPushButton("Apply to Frames…")
         self.apply_all_btn.setToolTip(
-            "Fill mode: this tool with these settings on every frame where the Object has a mask\n"
-            "(inside the region, if any). One undo step (Ctrl+Z)"
+            "Fill mode: this tool with these settings on every frame where the Object has a mask, or only on\n"
+            "the frames picked in the Frame List (Shift-click a range, Ctrl-click more); inside the region,\n"
+            "if any. One undo step (Ctrl+Z)"
         )
         self.apply_all_btn.clicked.connect(self.auto_apply_all_requested)
         self.apply_all_btn.setEnabled(False)
@@ -768,7 +769,7 @@ class PropertiesPanel(QWidget):
             self.auto_mode_changed.emit(mode)
 
     def _show_apply_all(self) -> None:
-        """Apply to All Frames: Fill mode only (Paint's picks belong to one image)."""
+        """Apply to Frames: Fill mode only (Paint's picks belong to one image)."""
         fill = self.mode == "fill"
         self.apply_all_btn.setVisible(fill)
         self.apply_all_btn.setEnabled(fill and self._tool in AUTO_TOOLS)

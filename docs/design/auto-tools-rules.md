@@ -54,7 +54,7 @@ By Color의 세부 동작과 피드백 항목은 [`by-color.md`](by-color.md), �
 | 화면 | 파랑 = 넣음, 주황 = 뺌 | 고른 부분 파랑 / 주황, 안 고른 변화 짙은 회색 |
 | 패널 | `Will apply: +N px / −N px` | `Will apply: +n / −n (of +N / −N)` |
 | 마우스 | 캔버스 클릭은 평소대로(포인트) | 드래그 = 고르기, `Alt`+드래그 = 해제 |
-| Apply to All Frames | 있음 | 없음 (고름은 한 이미지 것) |
+| Apply to Frames… | 있음 | 없음 (고름은 한 이미지 것) |
 
 **3-2. Paint에 처음 들어가면 전부 고른 상태.** Fill에서 보던 것이 그대로 남고, 거기서 **빼 나가는** 식으로 고친다.
 - 이유: 같은 결과로 가는 길은 같은 상태에서 시작한다(ux 3). 대부분 "거의 다 맞고 몇 군데만 틀림"이라 빼는 쪽이 빠르다(`p15`).
@@ -83,12 +83,12 @@ By Color의 세부 동작과 피드백 항목은 [`by-color.md`](by-color.md), �
 안 쓰였으면 넘어가지 않는다**: 상태 표시줄에 `The auto tool's picks are not written in yet: Enter applies them, Esc drops them`.
 - 이유: Paint의 고름은 사람이 시간을 들인 작업이라 조용히 버리지 않는다. Fill 결과는 다시 계산하면 그만이라 막지 않는다.
 
-**4-6. 적용은 한 번 = Undo 한 단계.** 여러 프레임에 한 번에 쓰는 Apply to All Frames도 Undo 한 번.
+**4-6. 적용은 한 번 = Undo 한 단계.** 여러 프레임에 한 번에 쓰는 Apply to Frames도 Undo 한 번.
 
-## 5. Apply to All Frames
+## 5. Apply to Frames (`p103` 전 이름 Apply to All Frames)
 
-- Fill 모드에서만. 지금 설정으로 **이 Object가 마스크를 가진 모든 프레임**에 같은 도구를 건다(Region이 있으면 그 안만).
-- 시작 전에 확인 창 하나(프레임이 많아 시간이 걸리고 결과를 한눈에 볼 수 없으므로). 백그라운드에서 돌고, 끝나면 `N of M frame(s)` 로그.
+- Fill 모드에서만. 지금 설정으로 이 Object가 마스크를 가진 프레임에 같은 도구를 건다(Region이 있으면 그 안만).
+- 시작 전 창에서 프레임을 고른다(`p103`, 사용자 요청 10-07): **All** = 마스크가 있는 모든 프레임, **Picked in the Frame List** = Frame List에서 고른 프레임 중 마스크가 있는 것(Shift-클릭 = 범위, Ctrl-클릭 = 하나씩 더). 2장 넘게 골라 두었으면 Picked가 기본. 골랐는데 마스크 있는 게 없으면 아무것도 안 하고 로그로 알림. 백그라운드에서 돌고, 끝나면 `N of M frame(s)` 로그.
 - 그 사이 마스크가 바뀐 프레임, 이미지 크기가 다른 프레임은 **건너뛰고** 개수를 알린다.
 - 이유: 자동 결과를 수십 장에 확인 없이 쓰므로, 손댄 프레임은 덮지 않는 쪽이 안전하다. 되돌리기는 Undo 한 번.
 

@@ -80,7 +80,7 @@ Shift+클릭 = 하나 **추가**(최대 8개, 넘으면 오래된 것부터 버�
 - 피드백:
 
 **BC-8. 적용.** 오토 툴 공통 규칙([`auto-tools-rules.md`](auto-tools-rules.md) 4장): Fill 모드는 Enter로 전체 결과 적용(Undo 한 번), Paint 모드는 붓으로 문지른 곳만.
-`Apply to All Frames`: 같은 설정·같은 고른 색으로 이 Object의 다른 프레임에도 적용(프레임마다 그 프레임 마스크의 경계로 띠를 다시 잡음).
+`Apply to Frames…`(`p103` 전 Apply to All Frames): 같은 설정·같은 고른 색으로 이 Object의 다른 프레임(전부 또는 Frame List에서 고른 것)에도 적용(프레임마다 그 프레임 마스크의 경계로 띠를 다시 잡음).
 - 피드백:
 
 ### 2-2. Auto: Color / Auto: Brightness — **지움 (`v0.4-p97`, BC-P5 a)**
