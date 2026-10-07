@@ -546,6 +546,16 @@
 ### 80단계 · Pick Color 버튼 글자 짧게 (`v0.4-p80`, 2026-10-07)
 - 켜졌을 때 글자가 버튼 폭에서 잘림 → 'Stop Picking (Esc)'. 자세한 안내는 캔버스 배너에.
 
+### 81단계 · By Color Range를 A/B 규칙으로 (`v0.4-p81`, 2026-10-07)
+- 사용자 지시대로 다시 설계. 필터(고른 색·허용치, 밝기 범위)가 잡은 영역 = **A**, 나머지 = **B**(Near edge 영역 안).
+  - **Add A & Remove B**(기본): A는 마스크에 넣고 B는 뺌.
+  - **Add only (A)**: A만 넣음. **Remove only (B)**: B만 뺌.
+  - **Invert (swap A and B)**: A와 B를 바꿈.
+- 예전 설계의 문제: Remove가 'A를 빼기', B를 빼는 건 따로 'Keep selection only'라 Add/Remove가 같은 영역 기준이 아니었음. Keep 항목 없앰.
+- 0022 크롭 00489, 하늘색 하나·허용치 30·Near edge 30: Add & Remove = 흰 틈 1831/1833 들어옴, 잎 16 px 빠짐 / Invert = 잎 66,816 px 들어옴, 하늘 63,571 px 빠짐 / Remove only = 16 px 빠짐(Invert: 63,571).
+- 콤보 글자 'Add && Remove'가 화면에 &&로 보이던 것 고침(콤보는 &를 그대로 보여줌).
+- 테스트: 잘라보기 테스트가 가끔 실패하던 원인 = 테스트 도우미가 해제된 QImage 메모리를 읽음(복사로 고침). 5번 연속 257개 통과.
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.
