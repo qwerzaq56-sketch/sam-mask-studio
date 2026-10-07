@@ -419,6 +419,15 @@ class PropertiesPanel(QWidget):
         self.color_cover.setVisible(False)
         self.bright_not = QCheckBox("Not")
         self.bright_not.setToolTip("Not: the pixels outside the brightness range")
+        # how the color and brightness conditions join (p101): two ways of catching the same thing add up
+        self.range_join = QComboBox()
+        self.range_join.addItem("Or: either one catches (add up)", "or")
+        self.range_join.addItem("And: both must catch", "and")
+        self.range_join.setToolTip("Or: A = what the colors catch + what the brightness range catches (e.g. the "
+                                   "blue sky by its color and the clouds by their brightness). And: only what "
+                                   "both catch (e.g. bright, and Not the sky's colors). Left-out colors (−) are "
+                                   "taken out of A either way")
+        self.range_join.currentIndexChanged.connect(lambda _i: self._settings_timer.start())
         for c in (self.color_use, self.bright_use, self.color_not, self.bright_not):
             c.toggled.connect(lambda _on: self._settings_timer.start())
         for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount, self.gap,
@@ -484,18 +493,23 @@ class PropertiesPanel(QWidget):
         for w in (self.tol_out_label, self.color_tol_out):
             w.setEnabled(False)  # until a color is left out
         rl.addWidget(self.color_cover, 4, 0, 1, 3)
-        rl.addWidget(self.bright_use, 5, 0)
-        rl.addWidget(self.bright_lo, 5, 1)
-        rl.addWidget(self.bright_not, 5, 2)
-        rl.addWidget(QLabel("to"), 6, 0, Qt.AlignmentFlag.AlignRight)
-        rl.addWidget(self.bright_hi, 6, 1)
-        rl.addWidget(self.color_invert, 7, 0, 1, 3)
+        self.join_label = QLabel("Join")
+        self.join_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        rl.addWidget(self.join_label, 5, 0)
+        rl.addWidget(self.range_join, 5, 1, 1, 2)
+        rl.addWidget(self.bright_use, 6, 0)
+        rl.addWidget(self.bright_lo, 6, 1)
+        rl.addWidget(self.bright_not, 6, 2)
+        rl.addWidget(QLabel("to"), 7, 0, Qt.AlignmentFlag.AlignRight)
+        rl.addWidget(self.bright_hi, 7, 1)
+        rl.addWidget(self.color_invert, 8, 0, 1, 3)
         bf.addRow(self.range_box)
         bf.addRow(note(
             "Near edge (on): only pixels this close to the mask's edge may change; off: anywhere. Inside the "
             "region if any; Paint mode takes it only where you brush. A = the pixels like the picked colors and / or "
-            "within the brightness range (both must hold; Not turns one around), B = the rest. Right-click while "
-            "picking: a color to leave out (−); near a picked and a left-out color, the nearer one wins."))
+            "within the brightness range (Join: Or = either one, And = both; Not turns one around), less the "
+            "left-out colors; B = the rest. Right-click while picking: a color to leave out (−); near a picked and "
+            "a left-out color, the nearer one wins."))
         self._pages["by_color"] = self.settings_stack.addWidget(by_color)
         self.preview_label = note("")
         self.settings_box = CollapsibleBox("Settings")  # foldable: its state is kept in the settings
@@ -786,6 +800,7 @@ class PropertiesPanel(QWidget):
             "bright_range": (self.bright_lo.value(), self.bright_hi.value()),
             "bright_use": self.bright_use.isChecked(),
             "bright_not": self.bright_not.isChecked(),
+            "range_join": self.range_join.currentData(),
             "restore": self.restore_mode.currentData(),
         }
 

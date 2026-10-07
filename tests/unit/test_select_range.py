@@ -28,8 +28,8 @@ def test_select_range_by_picked_colors_and_brightness():
     assert both.mean() > 0.99
     bright = select_range(img, (), use_color=False, brightness=(120, 255), use_brightness=True)
     assert (bright == sky).mean() > 0.99
-    # color and brightness together: the sky's color, but only its darker half
-    dark_sky = select_range(img, [sky_color], 25, brightness=(0, 178), use_brightness=True)
+    # color and brightness, And: the sky's color, but only its darker half
+    dark_sky = select_range(img, [sky_color], 25, brightness=(0, 178), use_brightness=True, join="and")
     assert dark_sky.sum() < sky.sum() * 0.8 and not (dark_sky & ~sky).any()
     assert not select_range(img).any()  # nothing picked, no range: nothing
     # p78: lightness counts: a white sky does not take a dark gray leaf
@@ -89,4 +89,25 @@ def test_not_turns_only_the_picked_colors_around():
     # the color condition alone comes back with the parts; a huge tolerance takes everything
     _, _, color = select_range(img, [leaf], 100, with_parts=True)
     assert color.all()
+
+
+def test_or_joins_two_ways_of_catching_the_sky():
+    """p101: color and brightness catch the same sky two ways and add up (Or, the default); And keeps only what
+    both catch; left-out colors come off the result either way."""
+    from src.core.refine import select_range
+
+    img = np.zeros((1, 4, 3), np.uint8)
+    img[0, 0] = (126, 169, 220)  # blue sky (gray 162): the color catches it, the brightness does not
+    img[0, 1] = (245, 245, 245)  # white cloud: the brightness catches it, the color does not
+    img[0, 2] = (110, 120, 60)  # leaf: neither
+    img[0, 3] = (215, 225, 230)  # pale haze: both
+    sky = (126, 169, 220)
+    kw = dict(brightness=(205, 255), use_brightness=True)
+    assert select_range(img, [sky], 40, **kw)[0].tolist() == [True, True, False, True]
+    assert select_range(img, [sky], 40, join="and", **kw)[0].tolist() == [False, False, False, True]
+    # the haze left out (it is nearer to its own color than to the sky): off the Or result too
+    out = select_range(img, [sky], 40, samples_out=[(215, 225, 230)], tolerance_out=5, **kw)
+    assert out[0].tolist() == [True, True, False, False]
+    # Not per condition and Swap still apply on top: the inverse mask
+    assert (~select_range(img, [sky], 40, **kw))[0].tolist() == [False, False, True, False]
 

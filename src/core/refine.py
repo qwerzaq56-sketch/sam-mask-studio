@@ -208,6 +208,7 @@ def select_range(
     samples_out=(),
     tolerance_out: Optional[float] = None,
     with_parts: bool = False,
+    join: str = "or",
 ):
     """Pixels like the picked colors (Photoshop's Color Range, roughly), on either or both of:
 
@@ -222,40 +223,51 @@ def select_range(
 
     *not_color* / *not_brightness* turn that condition around (BC-P4 a): far from every picked color / outside
     the range. Not touches the picked colors only: left-out colors leave out either way, and with no picked
-    colors Not does nothing. All conditions in use must hold, so bright leaves under a bright sky are "brightness, not the sky's
-    colors". Neither in use (or color with no samples): nothing is selected.
+    colors Not does nothing.
+    *join* (p101): ``"or"`` = A is what **either** condition catches (two ways of catching the same thing, e.g.
+    the sky by its blue and the clouds by their brightness, add up); ``"and"`` = both must hold (bright leaves
+    = "brightness, Not the sky's colors"). The left-out colors are taken out of that at the end, so "brightness
+    less the sky's colors" works either way. Nothing in use (and nothing left out): nothing is selected.
     *with_parts*: return ``(selection, overlap, color)``: also where both kinds of colors claim a pixel (decided
     by the nearer one) and what the color condition alone takes (None when it is not in use), so a condition that
     takes everything or nothing can be pointed out (p99).
     """
     img = np.ascontiguousarray(image[..., :3])
+    shape = img.shape[:2]
     color_on = use_color and (len(samples) > 0 or len(samples_out) > 0)
-    overlap = np.zeros(img.shape[:2], bool)
-    near = None
-    if not color_on and not use_brightness:
-        sel = np.zeros(img.shape[:2], bool)
-        return (sel, overlap, None) if with_parts else sel
-    sel = np.ones(img.shape[:2], bool)
+    overlap = np.zeros(shape, bool)
+    near = None  # what the color condition alone takes (reported, p99)
+    conds = []  # the conditions in use, joined by *join*
+    out = None  # what the left-out colors take out at the end
     if color_on:
         lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB).astype(np.float32)
         lab[..., 0] *= 100 / 255  # L* in 0-100 like a*, b* (OpenCV scales it to 0-255)
         d_in, d_out = _lab_distance2(lab, samples), _lab_distance2(lab, samples_out)
         tol_out = tolerance if tolerance_out is None else tolerance_out
-        claimed = d_out <= float(tol_out) ** 2 if d_out is not None else np.zeros(sel.shape, bool)
-        # Not turns the picked colors around only; left-out colors always leave out (p99: with only left-out
-        # colors, Not used to turn "not the sky" back into "the sky")
-        if d_in is None:
-            near = ~claimed
-        elif not_color:
-            near = (d_in > float(tolerance) ** 2) & ~claimed
-        else:
+        claimed = d_out <= float(tol_out) ** 2 if d_out is not None else None
+        if d_in is not None:
             near_in = d_in <= float(tolerance) ** 2
-            overlap = near_in & claimed
-            near = near_in if d_out is None else near_in & ~(claimed & (d_out <= d_in))  # nearer wins; tie: out
-        sel &= near
+            if not_color:  # Not turns the picked colors around only; left-out colors still leave out (p99)
+                near, out = ~near_in, claimed
+            else:
+                near = near_in
+                if claimed is not None:  # near both kinds: the nearer one wins; a tie: left out
+                    overlap = near_in & claimed
+                    out = claimed & ~(near_in & (d_in < d_out))
+            conds.append(near)
+        elif claimed is not None:  # left-out colors only: everything they do not claim
+            near, out = ~claimed, claimed
     if use_brightness:
         lo, hi = sorted(brightness)
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         inside = (gray >= lo) & (gray <= hi)
-        sel &= ~inside if not_brightness else inside
+        conds.append(~inside if not_brightness else inside)
+    if conds:
+        sel = conds[0].copy()
+        for c in conds[1:]:
+            sel = (sel & c) if join == "and" else (sel | c)
+    else:  # left-out colors alone: everything else; nothing in use: nothing
+        sel = np.full(shape, out is not None)
+    if out is not None:
+        sel &= ~out
     return (sel, overlap, near) if with_parts else sel

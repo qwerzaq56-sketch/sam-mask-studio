@@ -2342,7 +2342,7 @@ def test_range_not_per_condition(qapp, win):
     img[:, 1] = (230, 200, 60)  # bright yellow leaves
     img[:, 2] = (20, 40, 20)  # dark leaves
     base = {"color_samples": ((250, 250, 250),), "color_tol": 20, "color_use": True,
-            "bright_range": (140, 255), "bright_use": True}
+            "bright_range": (140, 255), "bright_use": True, "range_join": "and"}
     assert range_selection(img, base)[0].tolist() == [True, False, False]  # bright and cloud-colored
     leaves = range_selection(img, {**base, "color_not": True})  # bright, not the cloud's color
     assert leaves[0].tolist() == [False, True, False]
@@ -2354,6 +2354,10 @@ def test_range_not_per_condition(qapp, win):
     p.bright_not.setChecked(True)
     t = p.tool_settings()
     assert t["color_not"] and t["bright_not"] and p.color_invert.text() == "Swap A / B"
+    assert t["range_join"] == "or"  # p101: two ways of catching the same thing add up by default
+    p.range_join.setCurrentIndex(1)
+    assert p.tool_settings()["range_join"] == "and"
+    assert range_selection(img, {**base, "range_join": "or"})[0].tolist() == [True, True, False]  # bright or cloud
 
 
 def test_right_click_leaves_a_color_out_and_overlaps_show(qapp, win):
