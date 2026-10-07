@@ -216,19 +216,20 @@ class ViewLayout:
 # the layouts 360 tools use (docs/specs/08 §8, sources there); no more: these cover the usual needs
 VIEW_LAYOUTS = {lay.key: lay for lay in (
     ViewLayout("colmap12", "COLMAP Overlap · 12 Views",
-               "COLMAP panorama SfM 방식 기반의 overlapping perspective views (4 × pitch −35 / 0 / 35, 위 줄 45° 엇갈림). "
-               "일반적인 360 → COLMAP 변환의 기본값: 겹침으로 특징 매칭 / SfM 안정성 중심",
+               "Overlapping perspective views as in COLMAP's panorama SfM (4 × pitch −35 / 0 / 35, the upper row "
+               "turned 45°). The usual default for 360 → COLMAP: the overlap helps feature matching and SfM",
                (Ring(-35, 4), Ring(0, 4), Ring(35, 4, 45.0))),
     ViewLayout("cube6", "Cubemap · 6 Views",
-               "90° 단위 6방향(앞 · 오른쪽 · 뒤 · 왼쪽 · 위 · 아래). 구 전체를 고르게 덮는 단순하고 직관적인 변환",
+               "Six directions 90° apart (front · right · back · left · up · down): simple, covers the whole "
+               "sphere evenly",
                (Ring(0, 4),), (90.0, -90.0)),
     ViewLayout("horizon4", "Horizon · 4 Views",
-               "수평 4방향, 위 / 아래 없음(COLMAP의 non-overlapping). 실내 · 건축물 등 수평 공간 중심, 빠른 처리용. "
-               "하늘과 아래쪽 촬영자가 빠짐",
+               "Four level directions, no up / down (COLMAP's non-overlapping). For level spaces (indoors, "
+               "buildings), fast. Leaves out the sky and the operator below",
                (Ring(0, 4),)),
     ViewLayout("rings16", "Two Rings · 16 Views",
-               "±35°의 두 줄 × 8(위 줄 22.5° 엇갈림, LichtFeld 360 플러그인 Medium). 위아래 방향의 coverage와 "
-               "overlap이 늘어남: dense coverage / SfM 안정성 실험용",
+               "Two rows of 8 at ±35° (the upper row turned 22.5°, LichtFeld's 360 plugin Medium). More coverage "
+               "and overlap up and down: for dense coverage / SfM stability experiments",
                (Ring(-35, 8), Ring(35, 8, 22.5))),
 )}
 MIN_VIEW_SHARE = 0.5  # a fisheye's view with less of it seen by the lens is not made (docs/specs/08 P4)

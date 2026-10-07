@@ -787,6 +787,20 @@
 - 왼쪽 칸 최소 폭 = 내용 최소 폭(프리셋을 바꿀 때마다 다시 맞춤), 가로 스크롤 없음, 접히지 않음. 창을 줄이면 오른쪽(접촉 시트·출력)이 줄어듦. 1100 px 창에서 왼쪽 463 px.
 - 테스트 1개(두 창 크기에서 내용 폭 ≤ 보이는 폭, 가로 스크롤 없음).
 
+## 115단계 (`v0.4-p115`): Export 창 가독성
+
+- 사용자 요청(10-08) "익스포트 패널 가독성이 좀 떨어지는데" → 기획(기획서 하위 문서 "Export 창 가독성 개선", 문제 EX-1~12) → 추천안대로(C-1 (a) · C-2 (a) · C-3 (a)).
+- 한 줄로 쌓이던 칸을 구역 넷으로: **1 What**(Mask) → **2 Where**(For, 프리셋 설명, Output, Dataset, Cameras) → **3 Files**(Folder, Names, Sky) → **✓ Check**(요약, 문제 목록). 장면이 아니면 Where가 없고, 세트 기능이 없으면 What이 없음(번호는 보이는 것대로).
+- 프리셋이 정한 Folder·Names·흑백·빈 마스크는 회색 입력칸 대신 읽는 글 + `preset` 표시. Custom이면 입력칸(Invert, Also empty masks는 한 줄).
+- 프리셋 설명은 첫 문장 + More ▸(펼치면 전문: 이름 규칙 따름, 백업, 확인 근거). 경로는 앞을 줄여 끝(폴더 이름)이 보이게, 전체는 툴팁.
+- New dataset의 Pinhole 설정은 한 줄 요약(`Yaw … · Pitch … · FOV 90° · Size auto → 9 views per image`) + Edit ▸(칸: Layout / Yaw / Pitch / FOV / Size, 지도). More·Edit을 연 상태는 앱을 끌 때까지 기억.
+- Dataset 경로 줄은 New dataset일 때만, 세트 폴더 안내는 내용이 있을 때만(빈 줄 없음). Sky edges는 Files의 `Sky` 줄.
+- 문제 목록 사유를 말로: `no mask → no file`, `empty mask`, `suspicious or failed (⚠ ✕)`, `file name clash`.
+- Export 버튼: `Export 183 files → masks_postshot/`, `Export 1,566 files → new dataset`, 세트 전부면 `Export → 2 folders`. 쓸 파일이 0이면 비활성.
+- 잘림(EX-3·4): 창 높이를 실제 폭에서 줄바꿈된 글 높이로 맞춤(열 때, 폭이 바뀔 때, 검사가 바뀔 때). 화면보다 길면(1280×720 등) 구역만 세로 스크롤, 버튼은 고정. 가로로는 잘리지 않게 최소 폭 = 내용 최소 폭.
+- C-3: 뷰 배치 설명(`VIEW_LAYOUTS` purpose 4개)과 Custom 툴팁의 한국어를 영어로(UI 이슈 목록 2026-10-01 항목).
+- 동작·저장 값은 그대로(위젯 이름 유지). 테스트: ERP 테스트는 Edit을 연 뒤 yaw 칸 확인, 새 테스트 1개(구역 순서, 프리셋 글 / Custom 칸, More, 버튼 글, 사유 글, 잘림 없음). 전체 284 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

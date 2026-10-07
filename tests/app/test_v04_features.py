@@ -1069,8 +1069,10 @@ def test_excluded_frames_and_a_new_dataset(qapp, win, tmp_path):
 # --- p29: a 360 scene exported as pinhole views (docs/specs/08) ---------------------------------
 
 
-def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
+def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path, monkeypatch):
     from src.app.dialogs import ExportDialog
+
+    monkeypatch.setattr(ExportDialog, "_open", {"note": False, "views": False})
     from src.core.colmap import read_cameras_full
     from tests.app.conftest import wait_until
     from tests.unit.test_reproject import make_erp_scene
@@ -1099,6 +1101,8 @@ def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path):
     dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("colmap12"))
     assert not dlg.yaws.isVisibleTo(dlg)
     dlg.view_layout.setCurrentIndex(dlg.view_layout.findData(None))  # Custom: the yaw x pitch grid
+    assert not dlg.yaws.isVisibleTo(dlg) and "Yaw 0, 90, 180, 270" in dlg.views_summary.text()  # p115: one line
+    dlg.views_edit.setChecked(True)  # Edit: the fields
     assert dlg.yaws.isVisibleTo(dlg)
     dlg.yaws.setText("0, 60, 120, 180, 240, 300")
     dlg.pitches.setText("0")
@@ -2792,3 +2796,52 @@ def test_batch_mask_dialog_settings_column_is_never_cut_off(qapp, win, tmp_path)
         assert sc.viewport().width() >= sc.widget().minimumSizeHint().width()
         assert sc.horizontalScrollBar().maximum() == 0
     d.done(0)
+
+
+# --- p115: the Export window in sections, the preset's values as text, the button says what it writes ---------
+
+
+def test_export_window_reads_in_sections(qapp, win, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QGroupBox
+
+    from src.app.dialogs import ExportDialog
+    from src.core.storage import check_export
+    from tests.unit.test_colmap import make_scene
+
+    monkeypatch.setattr(ExportDialog, "_open", {"note": False, "views": False})
+    root = make_scene(tmp_path / "scene", n=3)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    make_objects(win, 1)
+    s = win.session
+    p = s.project
+    dlg = ExportDialog(tmp_path / "x", win, check=lambda pat, ids=None: check_export(p, pat, ids),
+                       scene=win.scene, target="postshot", sets={}, save_set=lambda n: False,
+                       delete_set=lambda n: None)
+    titles = [b.title() for b in dlg.findChildren(QGroupBox)]
+    assert titles == ["1  What", "2  Where", "3  Files", "✓  Check"]  # C-1: what, where, files, the check last
+    dlg.show()
+    qapp.processEvents()
+    # a preset's values are text, not grayed-out fields (EX-5); the note's first sentence, the rest behind More
+    assert dlg.out_fixed.isVisible() and not dlg.out.isVisible() and dlg.out_fixed.path().endswith("masks_postshot")
+    assert dlg.names_fixed.text().startswith("{stem}.png · Objects white") and not dlg.pattern.isVisible()
+    assert dlg.note_head.isVisible() and not dlg.note.isVisible() and "backup" not in dlg.note_head.text()
+    dlg.note_more.linkActivated.emit("more")
+    assert dlg.note.isVisible() and "backup" in dlg.note.text() and ExportDialog._open["note"]
+    # the button says how many files go where (EX-12); reasons in words (EX-10)
+    c = dlg.check_result
+    n = len(c.with_mask) + len(c.empty) + len(c.without_mask)  # Postshot: every image
+    assert dlg.export_btn.text() == f"Export {n} files → masks_postshot/"
+    dlg.target.setCurrentIndex(dlg.target.findData("custom"))
+    qapp.processEvents()
+    assert dlg.out.isVisible() and not dlg.out_fixed.isVisible() and dlg.pattern.isVisible()
+    dlg.empty.setChecked(False)  # Custom keeps the preset's ticks until changed
+    one = len(c.with_mask) + len(c.empty)
+    assert dlg.export_btn.text() == f"Export {one} file{'s' if one != 1 else ''} → x/"
+    assert any("no mask → no file" in dlg.problems.item(i).text() for i in range(dlg.problems.count()))
+    # nothing cut off: every line fits the window (EX-3, EX-4)
+    for _ in range(3):
+        qapp.processEvents()
+    for w in (dlg.summary, dlg.note_head):
+        if w.isVisible():
+            assert w.height() >= w.heightForWidth(w.width())
