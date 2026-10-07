@@ -670,6 +670,7 @@ SHORTCUTS = (
         ("O", "Outline on / off"),
         ("Q / `", "Solo: color only the selected Objects"),
         ("H", "Hide Masks: the plain image"),
+        ("T", "While picking colors: Original, the photo alone (no tool preview either); hold: only while held"),
         ("R", "Show Changes (the edit layer's green / red tints) on / off"),
         ("Wheel", "Zoom at the cursor"),
         ("Middle-drag / Space+drag", "Pan"),

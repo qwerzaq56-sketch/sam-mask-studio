@@ -169,6 +169,7 @@ class PropertiesPanel(QWidget):
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
     color_samples_edited = pyqtSignal(object)  # the picked colors were changed by hand (tuple): an undo step
     color_pick_toggled = pyqtSignal(bool)  # By Color's picker: clicks on the image sample colors
+    original_view_toggled = pyqtSignal(bool)  # while picking: the photo alone, no overlays (BC-P3)
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
     clear_region_requested = pyqtSignal()
     auto_apply_requested = pyqtSignal()  # write the auto tool's result in and leave the tool
@@ -382,6 +383,14 @@ class PropertiesPanel(QWidget):
                                  "Shift+click adds another (sky and cloud); with Alt: the 5×5 mean around it. On by itself in Range while no color is picked. "
                                  "Ctrl+Z undoes a change to the picked colors")
         self.pick_btn.toggled.connect(self._on_pick_toggled)
+        self.original_btn = QPushButton("Original (T)")
+        self.original_btn.setCheckable(True)
+        self.original_btn.setEnabled(False)  # only while picking; picking stops -> off (BC-P3)
+        self.original_btn.setStyleSheet("QPushButton:checked { background: #e08a00; color: black; font-weight: bold; }")
+        self.original_btn.setToolTip("While picking colors: the photo alone, without mask colors, the tool's preview "
+                                     "or the legend, to judge the colors you pick. T: on / off; hold T: just "
+                                     "while held. Goes off with the picker")
+        self.original_btn.toggled.connect(self.original_view_toggled)
         self.clear_colors_btn = QPushButton("Clear")
         self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
         self.swatches = QLabel("No color picked")
@@ -459,8 +468,9 @@ class PropertiesPanel(QWidget):
         rl = QGridLayout(self.range_box)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.addWidget(self.pick_btn, 0, 0)
-        rl.addWidget(self.clear_colors_btn, 0, 1)
-        rl.addWidget(self.swatches, 1, 0, 1, 2)
+        rl.addWidget(self.original_btn, 0, 1)
+        rl.addWidget(self.swatches, 1, 0)
+        rl.addWidget(self.clear_colors_btn, 1, 1, Qt.AlignmentFlag.AlignTop)
         rl.addWidget(self.color_use, 2, 0)
         rl.addWidget(self.color_tol, 2, 1)
         rl.addWidget(self.bright_use, 3, 0)
@@ -792,6 +802,9 @@ class PropertiesPanel(QWidget):
     def _on_pick_toggled(self, on: bool) -> None:
         """The button says the state and the way out; the canvas follows."""
         self.pick_btn.setText("Stop Picking (Esc)" if on else "Pick Color")
+        if not on:
+            self.original_btn.setChecked(False)
+        self.original_btn.setEnabled(on)
         self.color_pick_toggled.emit(on)
 
     def _on_color_basis(self, _i: int = 0, emit: bool = True) -> None:

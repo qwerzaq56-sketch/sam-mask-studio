@@ -2292,3 +2292,45 @@ def test_alt_click_picks_the_mean_color(qapp, win):
     assert got[0] == ((250, 250, 250), False)
     assert got[1] == ((10, 10, 10), False)  # 250 / 25
     assert got[2] == ((10, 10, 10), True)
+
+
+def test_original_view_while_picking_colors(qapp, win, monkeypatch):
+    """BC-P3: while picking, Original (T) shows the photo alone; a tap toggles, a hold reverts on release, and it
+    goes off with the picker."""
+    import numpy as np
+    from src.app import main_window as mw
+
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    p, c = win.properties_panel, win.canvas
+    assert not p.original_btn.isEnabled()
+    win._original_key(True)  # not picking: nothing
+    win._original_key(False)
+    assert not c.original_view
+    p.tool_btns["by_color"].click()
+    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
+    assert p.pick_btn.isChecked() and p.original_btn.isEnabled()
+    c.set_image(np.full_like(c.image, 77), reset_view=False)
+    c.set_overlays([mw.Overlay(np.ones(c.image.shape[:2], bool), (255, 0, 0), "normal")])
+    pos = c.rect().center()
+    p.original_btn.click()
+    assert c.original_view
+    px = c.grab().toImage().pixelColor(pos)
+    assert (px.red(), px.green(), px.blue()) == (77, 77, 77)  # no red over the photo
+    p.original_btn.click()
+    px = c.grab().toImage().pixelColor(pos)
+    assert px.red() > px.green()  # the overlay is back
+    now = [100.0]
+    monkeypatch.setattr(mw.time, "monotonic", lambda: now[0])
+    win._original_key(True)  # tap: on, stays on
+    now[0] += 0.1
+    win._original_key(False)
+    assert c.original_view and p.original_btn.isChecked()
+    win._original_key(True)  # held: off while held, back on release
+    assert not c.original_view
+    now[0] += 1.0
+    win._original_key(False)
+    assert c.original_view
+    win.escape()  # the picker stops: Original goes with it
+    assert not p.pick_btn.isChecked() and not p.original_btn.isChecked() and not c.original_view
+    assert not p.original_btn.isEnabled()
