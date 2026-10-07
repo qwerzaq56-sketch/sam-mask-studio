@@ -378,8 +378,8 @@ class PropertiesPanel(QWidget):
         self.pick_btn = QPushButton("Pick Color")
         self.pick_btn.setCheckable(True)
         self.pick_btn.setStyleSheet("QPushButton:checked { background: #e08a00; color: black; font-weight: bold; }")
-        self.pick_btn.setToolTip("Clicking the image picks a color (no SAM point), instead of the picked ones; Shift+click "
-                                 "adds another (sky and cloud). On by itself in Range while no color is picked. "
+        self.pick_btn.setToolTip("Clicking the image picks that pixel's color (no SAM point), instead of the picked ones; "
+                                 "Shift+click adds another (sky and cloud); with Alt: the 5×5 mean around it. On by itself in Range while no color is picked. "
                                  "Ctrl+Z undoes a change to the picked colors")
         self.pick_btn.toggled.connect(self._on_pick_toggled)
         self.clear_colors_btn = QPushButton("Clear")

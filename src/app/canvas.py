@@ -85,7 +85,7 @@ def checkerboard(h: int, w: int) -> np.ndarray:
     return np.repeat(g[..., None], 3, axis=2)
 
 
-PICK_BANNER = "PICK COLOR · click: pick · Shift+click: add · Esc / the Pick button: stop"
+PICK_BANNER = "PICK COLOR · click: pick (1 px) · Shift+click: add · Alt: 5×5 mean · Esc / the Pick button: stop"
 STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
@@ -741,7 +741,8 @@ class Canvas(QWidget):
             return
         if self.color_pick_mode:
             if btn == Qt.MouseButton.LeftButton:
-                color = self.sample_color(*self.to_image(pos))
+                # one pixel; Alt: the 5×5 mean around it (noisy areas, p95)
+                color = self.sample_color(*self.to_image(pos), r=2 if mods & Qt.KeyboardModifier.AltModifier else 0)
                 if color is not None:
                     self.color_picked.emit(color, bool(mods & Qt.KeyboardModifier.ShiftModifier))
             return  # while picking colors, clicks do nothing else
