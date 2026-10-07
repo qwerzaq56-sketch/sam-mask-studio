@@ -49,7 +49,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from src.app.canvas import CUTOUT_FILLS, PREVIEW_STYLES, Canvas, Overlay
+from src.app.canvas import CUTOUT_FILLS, OVERLAP_COLOR, PREVIEW_STYLES, Canvas, Overlay
 from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
@@ -659,7 +659,8 @@ class MainWindow(QMainWindow):
         p.color_pick_toggled.connect(self.canvas.set_color_pick)
         p.original_view_toggled.connect(self.canvas.set_original_view)
         self.canvas.color_picked.connect(p.add_sample)
-        p.color_samples_edited.connect(self.session.set_color_samples)
+        self.canvas.color_picked_out.connect(p.add_sample_out)
+        p.color_samples_edited.connect(lambda colors: self.session.set_color_samples(*colors))
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
         p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))
@@ -939,6 +940,10 @@ class MainWindow(QMainWindow):
                     changed = added | removed  # light where it stays as it is, dense (below) where it changes
                     overlays.append(Overlay(ab[0] & ~changed, AUTO_ADD_COLOR, "auto_a"))
                     overlays.append(Overlay(ab[1] & ~changed, AUTO_SUB_COLOR, "auto_b"))
+                    overlap = s.auto_overlap(tool_settings)
+                    if overlap is not None:  # a picked and a left-out color both claim these: the nearer won
+                        overlays.append(Overlay(overlap, OVERLAP_COLOR, "overlap"))
+                        legend.append((OVERLAP_COLOR, 255, "Overlap: nearer color wins"))
                 overlays.append(Overlay((added | removed) & ~taken, (55, 55, 60), "guide"))  # dark gray
                 # own colors, so they are never confused with the edit layer's green / red
                 overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "auto_add"))
@@ -2225,10 +2230,11 @@ class MainWindow(QMainWindow):
 
     def _sync_color_samples(self) -> None:
         """Undo / redo may have put By Color's picked colors back: show them (p92)."""
-        p = self.properties_panel
-        if tuple(p.tool_settings()["color_samples"]) != self.session.color_samples:
-            p.set_samples(self.session.color_samples, edited=False)
-            self.log(f"Picked colors: {len(self.session.color_samples)}")
+        p, s = self.properties_panel, self.session
+        t = p.tool_settings()
+        if (t["color_samples"], t["color_samples_out"]) != (s.color_samples, s.color_samples_out):
+            p.set_samples(s.color_samples, edited=False, out=s.color_samples_out)
+            self.log(f"Picked colors: {len(s.color_samples)}, left out: {len(s.color_samples_out)}")
 
     def toggle_final(self, on: bool) -> None:
         self.canvas.set_final_preview(on)

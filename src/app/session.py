@@ -52,7 +52,7 @@ AUTO_PARAMS = {
     "close_gaps": ("gap",),
     "invert": (),
     "by_color": ("color_band", "color_band_on", "color_action", "color_samples", "color_tol", "color_use", "color_not",
-                 "bright_range", "bright_use", "bright_not", "color_invert"),
+                 "color_samples_out", "color_tol_out", "bright_range", "bright_use", "bright_not", "color_invert"),
 }
 IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
 
@@ -88,17 +88,21 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
     raise ValueError(f"Unknown auto tool: {tool}")
 
 
-RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "bright_range", "bright_use", "bright_not",
-              "color_invert")
+RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "color_samples_out", "color_tol_out",
+              "bright_range", "bright_use", "bright_not", "color_invert")
 
 
-def range_selection(image: np.ndarray, settings: dict) -> np.ndarray:
-    """By Color's A: the picked colors and / or the brightness range, each maybe turned around (Not), then Swap."""
-    sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
-                       settings.get("color_use", True), settings.get("bright_range", (0, 255)),
-                       settings.get("bright_use", False), settings.get("color_not", False),
-                       settings.get("bright_not", False))
-    return ~sel if settings.get("color_invert", False) else sel  # Swap A / B
+def range_selection(image: np.ndarray, settings: dict, with_overlap: bool = False):
+    """By Color's A: the picked colors (less the left-out ones, the nearer wins) and / or the brightness range,
+    each maybe turned around (Not), then Swap. *with_overlap*: also where both kinds of colors claim a pixel."""
+    sel, overlap = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
+                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
+                                settings.get("bright_use", False), settings.get("color_not", False),
+                                settings.get("bright_not", False), settings.get("color_samples_out", ()),
+                                settings.get("color_tol_out"), with_overlap=True)
+    if settings.get("color_invert", False):  # Swap A / B
+        sel = ~sel
+    return (sel, overlap) if with_overlap else sel
 
 
 class Engine(Protocol):
@@ -159,13 +163,14 @@ class Session:
         # gray). Nothing is written until the tool closes; switching modes keeps both.
         self.auto_tool: Optional[str] = None
         self.auto_mode = "fill"
-        # By Color Range's picked colors (the panel holds them; kept here too so a change is an undo step, p92)
-        self.color_samples: Tuple[Tuple[int, int, int], ...] = ()
+        # By Color Range's picked colors and left-out colors (the panel holds them; kept here too so a change is
+        # an undo step, p92; both in one value so one step covers either, p98)
+        self._colors: Tuple[tuple, tuple] = ((), ())
         self._picked: Optional[np.ndarray] = None  # Paint mode: the area strokes picked
         self._result: Optional[Tuple[str, np.ndarray, List[np.ndarray]]] = None  # (tool, target, masks it fits)
         self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
         self._area_cache: Optional[tuple] = None  # (base, band, By Color's Near edge area)
-        self._ab_cache: Optional[tuple] = None  # (filter settings, By Color Range's A)
+        self._ab_cache: Optional[tuple] = None  # (filter settings, image, By Color Range's A, overlap)
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -630,14 +635,26 @@ class Session:
         self._record("region")
         self.region = region
 
-    UI_STATE = {"region": "region", "picks": "_picked", "colors": "color_samples"}  # undoable UI state -> attribute
+    UI_STATE = {"region": "region", "picks": "_picked", "colors": "_colors"}  # undoable UI state -> attribute
 
-    def set_color_samples(self, colors) -> None:
-        """The picked colors changed (a click on the image, Shift+click, a swatch, Clear): one undo step."""
-        colors = tuple(tuple(int(v) for v in c) for c in colors)
-        if colors != self.color_samples:
+    @property
+    def color_samples(self) -> tuple:
+        return self._colors[0]
+
+    @property
+    def color_samples_out(self) -> tuple:
+        """By Color's left-out colors (right-click while picking, BC-P4 b)."""
+        return self._colors[1]
+
+    def set_color_samples(self, colors, out=None) -> None:
+        """The picked (and left-out, *out*; None: as they are) colors changed (a click on the image, Shift+click,
+        a swatch, Clear): one undo step."""
+        def clean(cs):
+            return tuple(tuple(int(v) for v in c) for c in cs)
+        new = (clean(colors), self._colors[1] if out is None else clean(out))
+        if new != self._colors:
             self._record("colors")
-            self.color_samples = colors
+            self._colors = new
 
     def _record(self, kind: str) -> None:
         """Remember the current *kind* value as an undo step (before it changes)."""
@@ -697,17 +714,34 @@ class Session:
         A = what the filter catches (after Swap), B = the rest. None for other tools."""
         if self.auto_tool != "by_color" or self.image is None:
             return None
-        key = tuple((k, settings.get(k)) for k in RANGE_KEYS)
-        c = self._ab_cache
-        if c is None or c[0] != key or c[1] is not self.image:
-            c = self._ab_cache = (key, self.image, range_selection(self.image, settings))
-        a = c[2]
+        a = self._range(settings)[0]
         area = self.auto_area(settings)
         if area is None and self.region is not None:
             area = self.region
         if area is None:
             return a, ~a
         return a & area, ~a & area
+
+    def _range(self, settings: dict) -> Tuple[np.ndarray, np.ndarray]:
+        """By Color Range's A and overlap (picked and left-out colors both claim it) on the whole image, cached."""
+        key = tuple((k, settings.get(k)) for k in RANGE_KEYS)
+        c = self._ab_cache
+        if c is None or c[0] != key or c[1] is not self.image:
+            c = self._ab_cache = (key, self.image) + range_selection(self.image, settings, with_overlap=True)
+        return c[2], c[3]
+
+    def auto_overlap(self, settings: dict) -> Optional[np.ndarray]:
+        """Where a picked and a left-out color both claim pixels (the nearer one decided), inside the area By
+        Color decides; None when there is none or the tool is not By Color (BC-P4 b)."""
+        if self.auto_tool != "by_color" or self.image is None:
+            return None
+        overlap = self._range(settings)[1]
+        area = self.auto_area(settings)
+        if area is None and self.region is not None:
+            area = self.region
+        if area is not None:
+            overlap = overlap & area
+        return overlap if overlap.any() else None
 
     def auto_stale(self) -> bool:
         """The mask changed by something other than this tool's strokes (undo, a click, ...)."""

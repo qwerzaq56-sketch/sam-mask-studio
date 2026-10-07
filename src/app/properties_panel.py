@@ -167,7 +167,7 @@ class PropertiesPanel(QWidget):
     brush_tool_selected = pyqtSignal(str)  # "" = no tool, else a DIRECT_TOOLS / AUTO_TOOLS name
     auto_mode_changed = pyqtSignal(str)  # "fill" | "paint"
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
-    color_samples_edited = pyqtSignal(object)  # the picked colors were changed by hand (tuple): an undo step
+    color_samples_edited = pyqtSignal(object)  # picked / left-out colors changed by hand ((in, out)): an undo step
     color_pick_toggled = pyqtSignal(bool)  # By Color's picker: clicks on the image sample colors
     original_view_toggled = pyqtSignal(bool)  # while picking: the photo alone, no overlays (BC-P3)
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
@@ -366,12 +366,14 @@ class PropertiesPanel(QWidget):
         self.color_band = SliderField(0, 300, 30, " px")
         # Range: picked colors (hue and saturation, not brightness) and a brightness range
         self._samples: List[Tuple[int, int, int]] = []
+        self._samples_out: List[Tuple[int, int, int]] = []  # left-out colors: right-click while picking (BC-P4 b)
         self.pick_btn = QPushButton("Pick Color")
         self.pick_btn.setCheckable(True)
         self.pick_btn.setStyleSheet("QPushButton:checked { background: #e08a00; color: black; font-weight: bold; }")
         self.pick_btn.setToolTip("Clicking the image picks that pixel's color (no SAM point), instead of the picked ones; "
-                                 "Shift+click adds another (sky and cloud); with Alt: the 5×5 mean around it. On by itself in Range while no color is picked. "
-                                 "Ctrl+Z undoes a change to the picked colors")
+                                 "Shift+click adds another (sky and cloud); with Alt: the 5×5 mean around it. "
+                                 "Right-click: a color to leave out (−), the same way. On by itself while no color "
+                                 "is picked. Ctrl+Z undoes a change to the colors")
         self.pick_btn.toggled.connect(self._on_pick_toggled)
         self.original_btn = QPushButton("Original (T)")
         self.original_btn.setCheckable(True)
@@ -382,7 +384,7 @@ class PropertiesPanel(QWidget):
                                      "while held. Goes off with the picker")
         self.original_btn.toggled.connect(self.original_view_toggled)
         self.clear_colors_btn = QPushButton("Clear")
-        self.clear_colors_btn.clicked.connect(lambda: self.set_samples([]))
+        self.clear_colors_btn.clicked.connect(lambda: self.set_samples([], out=[]))
         self.swatches = QLabel("No color picked")
         self.swatches.setWordWrap(True)
         # each picked color is a link: clicking it removes just that one (ui-issues 22, p90)
@@ -393,6 +395,9 @@ class PropertiesPanel(QWidget):
         self.color_tol = SliderField(1, 100, 30)
         self.color_tol.setToolTip("How far (Lab: lightness, hue and saturation) a pixel's color may be "
                                   "from a picked one")
+        self.color_tol_out = SliderField(1, 100, 30)
+        self.color_tol_out.setToolTip("How far a pixel's color may be from a left-out color (−) to be left out. "
+                                      "Near both a picked and a left-out color: the nearer one wins")
         self.color_invert = QCheckBox("Swap A / B")
         self.color_invert.setToolTip("A = what the filter catches (picked colors / brightness range), B = the rest. "
                                      "Swap: the caught pixels are B, the rest A. To turn just one condition "
@@ -410,7 +415,7 @@ class PropertiesPanel(QWidget):
         for c in (self.color_use, self.bright_use, self.color_not, self.bright_not):
             c.toggled.connect(lambda _on: self._settings_timer.start())
         for w in (self.fill_area, self.speck_area, self.grow, self.sensitivity, self.amount, self.gap,
-                  self.color_band, self.color_tol, self.bright_lo, self.bright_hi):
+                  self.color_band, self.color_tol, self.color_tol_out, self.bright_lo, self.bright_hi):
             w.valueChanged.connect(lambda _v: self._settings_timer.start())
 
         def page(rows, text: str) -> QWidget:
@@ -465,17 +470,24 @@ class PropertiesPanel(QWidget):
         rl.addWidget(self.color_use, 2, 0)
         rl.addWidget(self.color_tol, 2, 1)
         rl.addWidget(self.color_not, 2, 2)
-        rl.addWidget(self.bright_use, 3, 0)
-        rl.addWidget(self.bright_lo, 3, 1)
-        rl.addWidget(self.bright_not, 3, 2)
-        rl.addWidget(QLabel("to"), 4, 0, Qt.AlignmentFlag.AlignRight)
-        rl.addWidget(self.bright_hi, 4, 1)
-        rl.addWidget(self.color_invert, 5, 0, 1, 3)
+        self.tol_out_label = QLabel("− except within")
+        self.tol_out_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        rl.addWidget(self.tol_out_label, 3, 0)
+        rl.addWidget(self.color_tol_out, 3, 1)
+        for w in (self.tol_out_label, self.color_tol_out):
+            w.setEnabled(False)  # until a color is left out
+        rl.addWidget(self.bright_use, 4, 0)
+        rl.addWidget(self.bright_lo, 4, 1)
+        rl.addWidget(self.bright_not, 4, 2)
+        rl.addWidget(QLabel("to"), 5, 0, Qt.AlignmentFlag.AlignRight)
+        rl.addWidget(self.bright_hi, 5, 1)
+        rl.addWidget(self.color_invert, 6, 0, 1, 3)
         bf.addRow(self.range_box)
         bf.addRow(note(
             "Near edge (on): only pixels this close to the mask's edge may change; off: anywhere. Inside the "
             "region if any; Paint mode takes it only where you brush. A = the pixels like the picked colors and / or "
-            "within the brightness range (both must hold; Not turns one around), B = the rest."))
+            "within the brightness range (both must hold; Not turns one around), B = the rest. Right-click while "
+            "picking: a color to leave out (−); near a picked and a left-out color, the nearer one wins."))
         self._pages["by_color"] = self.settings_stack.addWidget(by_color)
         self.preview_label = note("")
         self.settings_box = CollapsibleBox("Settings")  # foldable: its state is kept in the settings
@@ -697,7 +709,7 @@ class PropertiesPanel(QWidget):
         auto = tool in AUTO_TOOLS
         if tool != "by_color" and self.pick_btn.isChecked():
             self.pick_btn.setChecked(False)  # the picker belongs to By Color
-        elif tool == "by_color" and not self._samples:
+        elif tool == "by_color" and not self._samples and not self._samples_out:
             # Range with nothing picked yet: clicks pick colors, not SAM points (p77). With colors already
             # picked it stays off, so an unnoticed click does not replace them (p92)
             self.pick_btn.setChecked(True)
@@ -758,6 +770,8 @@ class PropertiesPanel(QWidget):
             "color_invert": self.color_invert.isChecked(),
             "color_action": self.color_action.currentData(),
             "color_samples": tuple(self._samples),
+            "color_samples_out": tuple(self._samples_out),
+            "color_tol_out": self.color_tol_out.value(),
             "color_tol": self.color_tol.value(),
             "color_use": self.color_use.isChecked(),
             "color_not": self.color_not.isChecked(),
@@ -811,26 +825,51 @@ class PropertiesPanel(QWidget):
         """A color picked on the image: instead of the picked ones, or (*add*, Shift+click) one more."""
         self.set_samples((self._samples if add else []) + [tuple(int(v) for v in color)])
 
-    def set_samples(self, colors, edited: bool = True) -> None:
-        """*edited*: changed by hand (an undo step); False when undo / redo puts them back."""
-        before = tuple(self._samples)
+    def add_sample_out(self, color, add: bool = False) -> None:
+        """A color to leave out (right-click while picking, BC-P4 b): instead of the left-out ones, or one more."""
+        self.set_samples(self._samples, out=(self._samples_out if add else []) + [tuple(int(v) for v in color)])
+
+    def set_samples(self, colors, edited: bool = True, out=None) -> None:
+        """*out*: the left-out colors (None: as they are). *edited*: changed by hand (an undo step); False when
+        undo / redo puts them back."""
+        before = (tuple(self._samples), tuple(self._samples_out))
         self._samples = [tuple(c) for c in colors][-8:]
-        if edited and tuple(self._samples) != before:
-            self.color_samples_edited.emit(tuple(self._samples))
+        if out is not None:
+            self._samples_out = [tuple(c) for c in out][-8:]
+        now = (tuple(self._samples), tuple(self._samples_out))
+        if edited and now != before:
+            self.color_samples_edited.emit(now)
+
+        def boxes(cs, prefix: str) -> str:
+            return "".join(
+                f'<a href="{prefix}{i}" style="text-decoration: none;"><span style="background-color: rgb{c}; '
+                f'color: rgb{c};">&nbsp;&nbsp;&nbsp;&nbsp;</span></a>&nbsp;'
+                for i, c in enumerate(cs))
+        parts = []
         if self._samples:
-            boxes = "".join(
-                f'<a href="{i}" style="text-decoration: none;"><span style="background-color: rgb{c}; color: rgb{c};">'
-                f'&nbsp;&nbsp;&nbsp;&nbsp;</span></a>&nbsp;'
-                for i, c in enumerate(self._samples))
-            self.swatches.setText(boxes + f" {len(self._samples)} color(s)")
-            self.swatches.setToolTip("Click a color to remove just that one (Clear: all)")
+            parts.append(boxes(self._samples, "") + f" {len(self._samples)} color(s)")
+        if self._samples_out:
+            parts.append("<b>−</b>&nbsp;" + boxes(self._samples_out, "o") + f" {len(self._samples_out)} left out")
+        if parts:
+            self.swatches.setText("<br>".join(parts))
+            self.swatches.setToolTip("Click a color to remove just that one (Clear: all). −: left out "
+                                     "(right-click while picking)")
         else:
             self.swatches.setText("No color picked")
             self.swatches.setToolTip("")
+        has_out = bool(self._samples_out)
+        self.tol_out_label.setEnabled(has_out)
+        self.color_tol_out.setEnabled(has_out)
         self._settings_timer.start()
 
     def remove_sample(self, index) -> None:
-        """Drop one picked color (its swatch was clicked); the rest stay."""
+        """Drop one picked (``"2"``) or left-out (``"o2"``) color (its swatch was clicked); the rest stay."""
+        index = str(index)
+        if index.startswith("o"):
+            i = int(index[1:])
+            if 0 <= i < len(self._samples_out):
+                self.set_samples(self._samples, out=self._samples_out[:i] + self._samples_out[i + 1:])
+            return
         i = int(index)
         if 0 <= i < len(self._samples):
             self.set_samples(self._samples[:i] + self._samples[i + 1:])

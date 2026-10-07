@@ -1,6 +1,8 @@
-"""Mask clean-up for the edit layer: fill holes, remove specks, grow to the object's edges, split by color."""
+"""Mask clean-up for the edit layer: fill holes, remove specks, grow to the object's edges, select by color range."""
 
 from __future__ import annotations
+
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -181,6 +183,19 @@ def near_edge(mask: np.ndarray, band: int) -> np.ndarray:
     return np.where(m, inside, outside) <= band
 
 
+def _lab_distance2(lab: np.ndarray, samples) -> Optional[np.ndarray]:
+    """Squared Lab distance from every pixel to the nearest of *samples* (RGB); None without samples."""
+    if not len(samples):
+        return None
+    refs = cv2.cvtColor(np.array([samples], np.uint8), cv2.COLOR_RGB2LAB)[0].astype(np.float32)
+    refs[:, 0] *= 100 / 255
+    d = None
+    for ref in refs:
+        r = ((lab - ref) ** 2).sum(-1)
+        d = r if d is None else np.minimum(d, r)
+    return d
+
+
 def select_range(
     image: np.ndarray,
     samples=(),
@@ -190,35 +205,49 @@ def select_range(
     use_brightness: bool = False,
     not_color: bool = False,
     not_brightness: bool = False,
-) -> np.ndarray:
+    samples_out=(),
+    tolerance_out: Optional[float] = None,
+    with_overlap: bool = False,
+):
     """Pixels like the picked colors (Photoshop's Color Range, roughly), on either or both of:
 
     - color: Lab distance (lightness, hue and saturation) within *tolerance* of any of the *samples* (RGB).
       Lightness counts (p78): with it left out, white sky and dark gray-green leaves were both "colorless"
       and 40-50 % of the tree matched a whitish sky at 20.
+      *samples_out* (BC-P4 b, p98) are colors to leave out: a pixel within *tolerance_out* of one of them is
+      claimed by it. Where a pixel is near both kinds, the **nearer** one wins (a tie: left out), so a leaf pixel
+      close to the leaf color is kept even inside a cloud color's tolerance. Left-out colors alone: every pixel
+      they do not claim (the same as Not on those colors).
     - brightness: gray level within *brightness* (lo, hi), 0-255.
 
     *not_color* / *not_brightness* turn that condition around (BC-P4 a): far from every picked color / outside
     the range. All conditions in use must hold, so bright leaves under a bright sky are "brightness, not the sky's
     colors". Neither in use (or color with no samples): nothing is selected.
+    *with_overlap*: also return where both kinds of colors claim a pixel (decided by the nearer one).
     """
     img = np.ascontiguousarray(image[..., :3])
-    color_on = use_color and len(samples) > 0
+    color_on = use_color and (len(samples) > 0 or len(samples_out) > 0)
+    overlap = np.zeros(img.shape[:2], bool)
     if not color_on and not use_brightness:
-        return np.zeros(img.shape[:2], bool)
+        sel = np.zeros(img.shape[:2], bool)
+        return (sel, overlap) if with_overlap else sel
     sel = np.ones(img.shape[:2], bool)
     if color_on:
         lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB).astype(np.float32)
         lab[..., 0] *= 100 / 255  # L* in 0-100 like a*, b* (OpenCV scales it to 0-255)
-        refs = cv2.cvtColor(np.array([samples], np.uint8), cv2.COLOR_RGB2LAB)[0].astype(np.float32)
-        refs[:, 0] *= 100 / 255
-        near = np.zeros(sel.shape, bool)
-        for ref in refs:
-            near |= ((lab - ref) ** 2).sum(-1) <= float(tolerance) ** 2
+        d_in, d_out = _lab_distance2(lab, samples), _lab_distance2(lab, samples_out)
+        tol_out = tolerance if tolerance_out is None else tolerance_out
+        claimed = d_out <= float(tol_out) ** 2 if d_out is not None else np.zeros(sel.shape, bool)
+        if d_in is None:
+            near = ~claimed
+        else:
+            near_in = d_in <= float(tolerance) ** 2
+            overlap = near_in & claimed
+            near = near_in if d_out is None else near_in & ~(claimed & (d_out <= d_in))  # nearer wins; tie: out
         sel &= ~near if not_color else near
     if use_brightness:
         lo, hi = sorted(brightness)
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         inside = (gray >= lo) & (gray <= hi)
         sel &= ~inside if not_brightness else inside
-    return sel
+    return (sel, overlap) if with_overlap else sel
