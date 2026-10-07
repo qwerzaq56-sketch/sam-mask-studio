@@ -47,3 +47,25 @@ def test_near_edge_band():
     band = near_edge(m, 5)
     assert band[15:25].all() and not band[:13].any() and not band[27:].any()
     assert near_edge(m, 0).all()  # 0: everywhere
+
+
+def test_left_out_colors_the_nearer_wins():
+    """BC-P4 b (p98): a pixel near a picked and a left-out color goes to the nearer one (a tie: left out)."""
+    from src.core.refine import select_range
+
+    img = np.zeros((1, 5, 3), np.uint8)
+    img[0, 0] = (230, 200, 60)  # the leaf color itself
+    img[0, 1] = (245, 240, 200)  # whitish: near both (Lab 51 / 21), nearer the cloud
+    img[0, 2] = (250, 250, 250)  # cloud
+    img[0, 3] = (20, 40, 20)  # dark leaves: near neither
+    img[0, 4] = (240, 225, 140)  # pale leaf: near both (Lab 27 / 44), nearer the leaf
+    leaf, cloud = (230, 200, 60), (250, 250, 250)
+    sel, overlap = select_range(img, [leaf], 60, samples_out=[cloud], tolerance_out=60, with_overlap=True)
+    assert sel[0].tolist() == [True, False, False, False, True]
+    assert overlap[0, 1] and overlap[0, 4] and not overlap[0, 3]
+    # a left-out color only claims pixels within its own tolerance
+    assert select_range(img, [leaf], 60, samples_out=[cloud], tolerance_out=1)[0].tolist() == [True, True, False, False, True]
+    # left-out colors alone: everything they do not claim (the same as Not on them)
+    alone = select_range(img, (), 30, samples_out=[cloud], tolerance_out=30)
+    assert alone[0].tolist() == (~select_range(img, [cloud], 30))[0].tolist()
+

@@ -2357,3 +2357,38 @@ def test_range_not_per_condition(qapp, win):
     t = p.tool_settings()
     assert t["color_not"] and t["bright_not"] and p.color_invert.text() == "Swap A / B"
 
+
+def test_right_click_leaves_a_color_out_and_overlaps_show(qapp, win):
+    """p98 (BC-P4 b): right-click while picking = a color to leave out; its swatch removes just it; picked and
+    left-out colors change in one undo step; pixels both claim are outlined and named in the legend."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtTest import QTest
+
+    from tests.app.conftest import wait_until
+
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    s, p, c = win.session, win.properties_panel, win.canvas
+    p.tool_btns["by_color"].click()
+    assert p.pick_btn.isChecked() and not p.color_tol_out.isEnabled()
+    pos = c.rect().center()
+    x, y = (int(v) for v in c.to_image(QPointF(pos)))
+    out = tuple(int(v) for v in s.image[y, x, :3])
+    near = tuple(min(255, v + 4) for v in out)
+    QTest.mouseClick(c, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, pos)
+    t = p.tool_settings()
+    assert t["color_samples_out"] == (out,) and t["color_samples"] == ()
+    assert s.color_samples_out == (out,) and p.color_tol_out.isEnabled()
+    win.canvas.color_picked.emit(near, False)  # a picked color right next to it: they overlap
+    assert s.color_samples == (near,) and s.color_samples_out == (out,)
+    win.undo()
+    assert s.color_samples == () and p.tool_settings()["color_samples_out"] == (out,)
+    win.redo()
+    p.color_band_on.setChecked(False)
+    wait_until(qapp, lambda: any(o.style == "overlap" for o in c._overlays))
+    assert any(text.startswith("Overlap") for _, _, text in c.legend)
+    p.remove_sample("o0")
+    assert s.color_samples_out == () and s.color_samples == (near,)
+    p.clear_colors_btn.click()
+    assert s.color_samples == () and s.color_samples_out == ()
+

@@ -671,6 +671,7 @@ SHORTCUTS = (
         ("Q / `", "Solo: color only the selected Objects"),
         ("H", "Hide Masks: the plain image"),
         ("T", "While picking colors: Original, the photo alone (no tool preview either); hold: only while held"),
+        ("Right-click while picking colors", "A color to leave out (−); Shift: one more, Alt: the 5×5 mean"),
         ("R", "Show Changes (the edit layer's green / red tints) on / off"),
         ("Wheel", "Zoom at the cursor"),
         ("Middle-drag / Space+drag", "Pan"),

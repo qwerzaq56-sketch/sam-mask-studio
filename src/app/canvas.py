@@ -86,7 +86,9 @@ def checkerboard(h: int, w: int) -> np.ndarray:
 
 
 ORIGINAL_BANNER = "ORIGINAL (T)"  # BC-P3: the overlays are hidden, not gone
-PICK_BANNER = "PICK COLOR · click: pick (1 px) · Shift+click: add · Alt: 5×5 mean · T: original · Esc / the Pick button: stop"
+PICK_BANNER = ("PICK COLOR · click: pick (1 px) · right-click: leave out · Shift: add · Alt: 5×5 mean · "
+               "T: original · Esc: stop")
+OVERLAP_COLOR = (255, 230, 0)  # By Color: pixels both a picked and a left-out color claim (outlined, BC-P4 b)
 STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
@@ -105,6 +107,8 @@ def group_of(style: str) -> str:
         return "edit"
     if style == "edit_hidden":  # Hide Masks: the Object in Edit is not drawn, but strokes still start from it
         return "hidden"
+    if style == "overlap":  # outlined only (``_draw_outlines``), never filled
+        return "outline"
     if style.startswith("candidate"):
         return "candidates"
     if style in ("region", "guide"):
@@ -204,6 +208,7 @@ class Canvas(QWidget):
     zoom_changed = pyqtSignal(float)
     brush_size_changed = pyqtSignal(int)
     color_picked = pyqtSignal(object, bool)  # (r, g, b) under a click while picking colors, Shift (add a color)
+    color_picked_out = pyqtSignal(object, bool)  # ...under a right-click: a color to leave out (BC-P4 b)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -653,6 +658,9 @@ class Canvas(QWidget):
                 lines.append((self._info.outline(ov.mask), QColor(*ov.color, 150), 1.0))
         if self._region is not None:
             lines.append((self._info.outline(self._region), QColor(*REGION_COLOR), 1.0))
+        for ov in self._overlays:
+            if ov.style == "overlap":  # decided by the nearer color: worth a look
+                lines.append((self._info.outline(ov.mask), QColor(*ov.color), 1.0, Qt.PenStyle.DotLine))
         if self.outline_visible and self._edit_shown():
             if self._stroke_mask is not None:
                 lines.append((outline_polygons(self._stroke_mask), QColor(255, 255, 255), self.outline_width))
@@ -665,8 +673,8 @@ class Canvas(QWidget):
         painter.scale(scale, scale)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, scale > 1.5)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        for polys, color, width in lines:
-            pen = QPen(color, width)
+        for polys, color, width, *dash in lines:
+            pen = QPen(color, width, *dash)
             pen.setCosmetic(True)  # width in screen pixels at any zoom
             painter.setPen(pen)
             for poly in polys:
@@ -756,11 +764,12 @@ class Canvas(QWidget):
             self._seg_press = (QPointF(pos), None)  # picking colors: a Ctrl+drag only sizes the brush
             return
         if self.color_pick_mode:
-            if btn == Qt.MouseButton.LeftButton:
-                # one pixel; Alt: the 5×5 mean around it (noisy areas, p95)
+            if btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
+                # one pixel; Alt: the 5×5 mean around it (noisy areas, p95); right-click: a color to leave out
                 color = self.sample_color(*self.to_image(pos), r=2 if mods & Qt.KeyboardModifier.AltModifier else 0)
                 if color is not None:
-                    self.color_picked.emit(color, bool(mods & Qt.KeyboardModifier.ShiftModifier))
+                    signal = self.color_picked if btn == Qt.MouseButton.LeftButton else self.color_picked_out
+                    signal.emit(color, bool(mods & Qt.KeyboardModifier.ShiftModifier))
             return  # while picking colors, clicks do nothing else
         if ctrl_edit:  # a click: a piece of the image added / taken out (brush on or off); a drag: brush size
             self._seg_press = (QPointF(pos), btn)

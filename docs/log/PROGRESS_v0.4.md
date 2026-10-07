@@ -656,6 +656,15 @@
 - 테스트: `tests/unit/test_split_by_color.py` → `test_select_range.py`(near_edge 테스트 추가), 앱 테스트 Not / Swap.
 - p96 기록 때 지워진 `## 반영 안 함` 제목 줄 복구.
 
+## 98단계 (`v0.4-p98`): By Color 빼는 색(−), 겹치면 가까운 쪽 (BC-P4 b)
+
+- 색 고르기 중 **우클릭 = 빼는 색**(Shift = 하나 더, Alt = 5×5 평균, 최대 8개). 스와치 둘째 줄 `− ■ N left out`, 누르면 그 색만 지움. `Clear`는 둘 다.
+- 허용치 따로: `− except within`(빼는 색이 있을 때만 켜짐, 처음 30).
+- 규칙(10-07 결정): 넣는 색 거리 d+, 빼는 색 거리 d−. 색 조건 = `d+ ≤ 허용치 ∧ (빼는 색이 차지 안 함 또는 d+ < d−)`, 같으면 B. 빼는 색은 자기 허용치 안만 차지. 빼는 색만 있으면 = 그 색들에 Not. 그 위에 조건별 Not, Swap(p97).
+- 둘 다 차지한 픽셀은 노란 점선 윤곽(`overlap`, 채우지 않음), 범례 `Overlap: nearer color wins`.
+- 넣는 색과 빼는 색은 한 Undo 단계(세션 `_colors` = (넣는 색, 빼는 색)).
+- 배너 `right-click: leave out`, F1 목록, 키 문서.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
