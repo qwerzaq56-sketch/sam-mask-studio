@@ -163,6 +163,7 @@ class PropertiesPanel(QWidget):
     clear_points_requested = pyqtSignal()
     clear_box_requested = pyqtSignal()
     finish_requested = pyqtSignal()
+    edit_requested = pyqtSignal(int)  # the Edit Layer tab's Edit button: the Object shown (in Edit: finish), p94
     brush_tool_selected = pyqtSignal(str)  # "" = no tool, else a DIRECT_TOOLS / AUTO_TOOLS name
     auto_mode_changed = pyqtSignal(str)  # "fill" | "paint"
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
@@ -498,6 +499,12 @@ class PropertiesPanel(QWidget):
         ll.addWidget(self.apply_layer_btn, 1, 0)
         ll.addWidget(self.delete_layer_btn, 1, 1)
 
+        # the Object list's Points / Editing button, here too (p94): on while this Object is in Edit
+        self._shown_id: Optional[int] = None
+        self.edit_btn = QPushButton("Edit")
+        self.edit_btn.setCheckable(True)
+        self.edit_btn.setObjectName("layer_edit_btn")
+        self.edit_btn.clicked.connect(self._on_edit_btn)
         self.finish_btn = QPushButton("Finish Editing")
         self.finish_btn.setToolTip("Esc")
         self.finish_btn.clicked.connect(self.finish_requested)
@@ -511,6 +518,7 @@ class PropertiesPanel(QWidget):
         layer_page = QWidget()
         el = QVBoxLayout(layer_page)
         el.setContentsMargins(0, 0, 0, 0)
+        el.addWidget(self.edit_btn)
         for box in (tbox, abox, self.settings_box, lbox):
             el.addWidget(box)
         el.addStretch(1)
@@ -629,6 +637,14 @@ class PropertiesPanel(QWidget):
         else:
             self.box_label.setText("Box: —")
         editing = editing and obj is not None
+        self._shown_id = obj.id if obj is not None else None
+        self.edit_btn.setChecked(editing)
+        self.edit_btn.setText(f"Editing: {obj.name}  (Esc: finish)" if editing and obj is not None
+                              else f"Edit {obj.name}  (E)" if obj is not None else "Edit")
+        self.edit_btn.setToolTip("Finish Editing (Esc); same as the Object list's Editing button" if editing else
+                                 "Edit this Object: brush, auto tools and points (E); same as the Object list's "
+                                 "Points button")
+        self.edit_btn.setEnabled(obj is not None)
         has_points = frame is not None and (frame.has_prompts or bool(frame.layers))
         on_layer = frame is not None and 1 <= layer <= len(frame.layers)
         if frame is None:
@@ -797,6 +813,12 @@ class PropertiesPanel(QWidget):
     def _on_band_on(self, on: bool) -> None:
         self.color_band.setEnabled(on)
         self._settings_timer.start()
+
+    def _on_edit_btn(self) -> None:
+        """Start / finish editing the Object shown; the window redraws both buttons (the click's own check
+        state is not trusted: it follows the session)."""
+        if self._shown_id is not None:
+            later(self, self.edit_requested, self._shown_id)
 
     def add_sample(self, color, add: bool = False) -> None:
         """A color picked on the image: instead of the picked ones, or (*add*, Shift+click) one more."""

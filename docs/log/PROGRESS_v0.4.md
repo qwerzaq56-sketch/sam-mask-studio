@@ -630,6 +630,10 @@
 
 - By Color Range의 색 고르기가 클릭한 픽셀 하나의 색(작업 해상도). 전에는 5×5 평균이라 잎·구름 경계에서 섞인 색이 골라짐(BC-14). `Canvas.sample_color` 기본 `r=0`.
 
+## 94단계 (`v0.4-p94`): Edit Layer 탭에 Edit 버튼
+
+- Edit Layer 탭 맨 위에 `Edit <이름> (E)` / `Editing: <이름> (Esc: finish)` 버튼. 패널에 보이는 Object의 편집을 켜고 끔. Object 목록의 Points / Editing 버튼과 같은 동작(`toggle_edit`)이고, 둘 다 세션 상태를 따라 같이 눌림 / 풀림.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

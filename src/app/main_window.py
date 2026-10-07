@@ -620,6 +620,7 @@ class MainWindow(QMainWindow):
         o.include_toggled.connect(lambda oid, on: self._do(lambda: self.session.project.set_included(oid, on)))
         o.renamed.connect(lambda oid, name: self._do(lambda: self.session.project.rename(oid, name)))
         o.edit_requested.connect(self.toggle_edit)
+        self.properties_panel.edit_requested.connect(self.toggle_edit)  # the Edit Layer tab's Edit button (p94)
         o.new_requested.connect(self.new_object)
         o.merge_requested.connect(self.merge)
         o.merge_options_requested.connect(self.merge_options)

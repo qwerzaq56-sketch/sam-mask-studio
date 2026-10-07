@@ -2243,3 +2243,26 @@ def test_picked_color_is_one_pixel(qapp, win):
     c.image = img
     assert c.sample_color(10.4, 10.7) == (200, 100, 50)
     assert c.sample_color(11, 10) == (0, 0, 0)
+
+
+def test_edit_layer_tab_has_an_edit_button_in_step_with_the_object_list(qapp, win):
+    """p94: the Edit Layer tab's Edit button starts / finishes editing the Object shown, like the list's button."""
+    from PyQt6.QtWidgets import QPushButton
+
+    ids = make_objects(win, 1)
+    win.objects_panel.select_ids(ids)
+    win.refresh()
+    p = win.properties_panel
+    row_btn = lambda: win.objects_panel.findChild(QPushButton, f"edit_{ids[0]}")  # noqa: E731
+    assert p.edit_btn.isEnabled() and not p.edit_btn.isChecked()
+    p.edit_btn.click()
+    settle(qapp)
+    assert win.session.editing == ids[0]
+    assert p.edit_btn.isChecked() and row_btn().isChecked()
+    row_btn().click()  # the list's button finishes: this one follows
+    settle(qapp)
+    assert win.session.editing is None and not p.edit_btn.isChecked()
+    win.toggle_edit(ids[0])
+    p.edit_btn.click()
+    settle(qapp)
+    assert win.session.editing is None and not row_btn().isChecked()
