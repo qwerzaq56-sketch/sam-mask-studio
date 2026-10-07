@@ -883,6 +883,8 @@ class MainWindow(QMainWindow):
         if edit_layer is not None:
             if not self.act_hide_masks.isChecked():  # Hide: the plain image while editing too (tools still show)
                 overlays.append(edit_layer)
+            else:  # not drawn, but the canvas still needs it: a brush stroke starts from this mask (p82)
+                overlays.append(Overlay(edit_layer.mask, edit_layer.color, "edit_hidden"))
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             added, removed = s.auto_changes()
             if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
