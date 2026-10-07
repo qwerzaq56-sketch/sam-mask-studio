@@ -85,7 +85,8 @@ def checkerboard(h: int, w: int) -> np.ndarray:
     return np.repeat(g[..., None], 3, axis=2)
 
 
-PICK_BANNER = "PICK COLOR · click: pick (1 px) · Shift+click: add · Alt: 5×5 mean · Esc / the Pick button: stop"
+ORIGINAL_BANNER = "ORIGINAL (T)"  # BC-P3: the overlays are hidden, not gone
+PICK_BANNER = "PICK COLOR · click: pick (1 px) · Shift+click: add · Alt: 5×5 mean · T: original · Esc / the Pick button: stop"
 STYLE_BANNER = {"mask": "", "cutout": " (CUT OUT)", "outside": " (OUTSIDE)"}
 REGION_COLOR = (0, 200, 255)
 TOOL_STROKE_COLOR = (255, 210, 0)
@@ -224,6 +225,7 @@ class Canvas(QWidget):
         # tool -> the edited mask with that tool applied everywhere (live strokes: restore)
         self.tool_target_fn: Optional[Callable[[str], Optional[np.ndarray]]] = None
         self._peek = False  # the Final Mask shown while a key is held
+        self.original_view = False  # the photo alone while picking colors (BC-P3)
         self.outline_visible = True
         self.overlay_opacity = 1.0  # scales every overlay's alpha (1 = as designed)
         self.outline_width = 1.0  # screen px, independent of zoom
@@ -359,8 +361,15 @@ class Canvas(QWidget):
     def set_color_pick(self, on: bool) -> None:
         """While on, a left click reports the image's color there (``color_picked``) and does nothing else."""
         self.color_pick_mode = on
+        if not on:
+            self.original_view = False  # never left hiding the result once picking is over (BC-P3 d)
         self.update()  # the banner
         self._update_cursor()
+
+    def set_original_view(self, on: bool) -> None:
+        """Only the photo: no mask colors, tool preview, points or legend; the banner says so (BC-P3)."""
+        self.original_view = on
+        self.update()
 
     def sample_color(self, x: float, y: float, r: int = 0) -> Optional[Tuple[int, int, int]]:
         """The color of image pixel (x, y) (the mean of (2r+1)² pixels around it when *r* > 0). One pixel by
@@ -572,7 +581,10 @@ class Canvas(QWidget):
         target = QRectF(o.x(), o.y(), w * s, h * s)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, s < 1.0)
 
-        if self.showing_final:
+        if self.original_view:
+            painter.drawImage(target, self._image_q)
+            groups = ()
+        elif self.showing_final:
             # the Final Mask in black and white; editing still works on top of it
             if self._final_q is None:
                 self._final_q = self._preview_image(h, w)
@@ -585,10 +597,11 @@ class Canvas(QWidget):
             img = self._layers.get(g, ((), None))[1]
             if img is not None:
                 painter.drawImage(target, img)
-        self._draw_outlines(painter, o, s)
+        if not self.original_view:
+            self._draw_outlines(painter, o, s)
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        if self.box is not None and self.mode == Mode.EDIT:
+        if self.box is not None and self.mode == Mode.EDIT and not self.original_view:
             self._draw_box(painter, self.box, QColor(255, 220, 0))
         if self._drag_to is not None and self._press is not None and not self._brush.is_drawing:
             x0, y0 = self.to_image(self._press[0])
@@ -598,7 +611,7 @@ class Canvas(QWidget):
                 255, 255, 255
             )
             self._draw_box(painter, (x0, y0, x1, y1), color)
-        if self.mode == Mode.EDIT:
+        if self.mode == Mode.EDIT and not self.original_view:
             for i, pt in enumerate(self.points):
                 q = self.to_widget(pt.x, pt.y)
                 if i == self.selected_point:
@@ -621,10 +634,13 @@ class Canvas(QWidget):
             r = (2 * self._brush_radius() + 1) * self._scale() / 2  # what a stroke covers, in screen px
             painter.drawEllipse(self._mouse, r, r)
         pick = PICK_BANNER if self.color_pick_mode else ""
-        banner = "  ·  ".join(t for t in (f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else "", pick, self.banner) if t)
+        final = f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else ""
+        if self.original_view:
+            final = ORIGINAL_BANNER
+        banner = "  ·  ".join(t for t in (final, pick, self.banner) if t)
         if banner:
             self._draw_banner(painter, banner)
-        if self.legend and not self.showing_final:
+        if self.legend and not self.showing_final and not self.original_view:
             self._draw_legend(painter)
 
     def _draw_outlines(self, painter: QPainter, origin: QPointF, scale: float) -> None:

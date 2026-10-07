@@ -80,6 +80,7 @@ logger = get_logger(__name__)
 # not green / red: Show Changes (R) tints the edit layer's own additions / removals (80, 255, 120) / (255, 60, 60))
 AUTO_ADD_COLOR = (40, 110, 255)
 AUTO_SUB_COLOR = (255, 120, 0)
+ORIGINAL_HOLD = 0.3  # s: T held longer than this = only while held (BC-P3)
 
 SOURCE_SHORT = {  # how an Object was made, in the work bar
     Source.SAM3_DETECTION: "SAM3",
@@ -141,6 +142,7 @@ class MainWindow(QMainWindow):
         self._goto_fields: List[QLineEdit] = []  # Frame List, frame strip
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
+        self._t_press = None  # T down while picking: (when, Original before it) (BC-P3)
         self._loading_models = False
 
         self.setWindowTitle(f"SAM Mask Studio {app_version()}")
@@ -655,6 +657,7 @@ class MainWindow(QMainWindow):
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
         p.color_pick_toggled.connect(self.canvas.set_color_pick)
+        p.original_view_toggled.connect(self.canvas.set_original_view)
         self.canvas.color_picked.connect(p.add_sample)
         p.color_samples_edited.connect(self.session.set_color_samples)
         p.clear_region_requested.connect(lambda: self.on_region(None))
@@ -1226,6 +1229,16 @@ class MainWindow(QMainWindow):
             return True
         if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and event.key() == Qt.Key.Key_T
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox, QPlainTextEdit))
+            and self.isActiveWindow()
+        ):
+            if not event.isAutoRepeat():
+                self._original_key(t == QEvent.Type.KeyPress)
+            return True
+        if (
+            t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() == Qt.Key.Key_Z
             and event.modifiers() == Qt.KeyboardModifier.NoModifier
         ):
@@ -1247,6 +1260,21 @@ class MainWindow(QMainWindow):
                 QApplication.sendEvent(area.verticalScrollBar(), event)  # the panel scrolls instead
             return True
         return super().eventFilter(obj, event)
+
+    def _original_key(self, pressed: bool) -> None:
+        """T while picking colors (BC-P3): a tap turns Original on / off; held past 0.3 s it goes back on release."""
+        btn = self.properties_panel.original_btn
+        if pressed:
+            if not btn.isEnabled():
+                self._t_press = None
+                self.log("T: Original (the photo alone) works while picking colors (Pick Color)")
+                return
+            self._t_press = (time.monotonic(), btn.isChecked())
+            btn.setChecked(not btn.isChecked())
+            return
+        press, self._t_press = self._t_press, None
+        if press is not None and btn.isEnabled() and time.monotonic() - press[0] > ORIGINAL_HOLD:
+            btn.setChecked(press[1])
 
     def _hover_zone(self) -> Optional[str]:
         """The list under the mouse: ``frames`` (Frame List, Frames strip), ``objects`` or None."""
