@@ -614,6 +614,11 @@
 - By Color Range의 고른 색 썸네일이 하나씩 링크. 누르면 그 색만 빠지고 나머지는 그대로, 결과는 다시 계산(`PropertiesPanel.remove_sample`). `Clear`는 전부. ui-issues 22 완료.
 - 테스트: 가운데 색을 지우면 앞뒤 색이 남고, 다 지우면 "No color picked".
 
+## 91단계 (`v0.4-p91`): 오토 툴 색 범례 (AT-2)
+
+- 오토 툴이 켜져 있으면 캔버스 왼쪽 아래에 지금 쓰는 색과 뜻: `Adds` / `Removes`(Range: `A: adds`, `A: already in`, `B: removes`, `B: already out`), Paint면 `Not picked (Paint)`, Near edge면 `Decided here (Near edge)`. 견본은 화면과 같은 진하기. 도구를 나가거나 Mask Preview 중이면 없음(`Canvas.set_legend`, `MainWindow._auto_legend`).
+- 오토 툴 수칙 6-5로 옮기고 제안 AT-2는 뺌.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

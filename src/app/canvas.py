@@ -236,6 +236,7 @@ class Canvas(QWidget):
         self.final_preview = False
         self.mode = Mode.IDLE
         self.banner = ""
+        self.legend: List[Tuple[Tuple[int, int, int], int, str]] = []  # (color, alpha, meaning), bottom left (p91)
         self.points: Tuple[Point, ...] = ()
         self.selected_point: Optional[int] = None
         self.box: Optional[Box] = None
@@ -413,6 +414,13 @@ class Canvas(QWidget):
         """Show the Final Mask while a key is held (the toggle stays as it is)."""
         self._peek = on
         self.update()
+
+    def set_legend(self, items: Sequence[Tuple[Tuple[int, int, int], int, str]]) -> None:
+        """What the colors on the image mean right now (an auto tool's preview); empty: none."""
+        items = list(items)
+        if items != self.legend:
+            self.legend = items
+            self.update()
 
     def set_mode(self, mode: Mode, banner: str = "") -> None:
         self.mode = mode
@@ -615,6 +623,8 @@ class Canvas(QWidget):
         banner = "  ·  ".join(t for t in (f"MASK PREVIEW{STYLE_BANNER[self.preview_style]} · {self._final_label}" if self.showing_final else "", pick, self.banner) if t)
         if banner:
             self._draw_banner(painter, banner)
+        if self.legend and not self.showing_final:
+            self._draw_legend(painter)
 
     def _draw_outlines(self, painter: QPainter, origin: QPointF, scale: float) -> None:
         """Thin outlines in screen pixels: the edited mask (white) and checked candidates (their color)."""
@@ -661,6 +671,28 @@ class Canvas(QWidget):
         painter.drawRoundedRect(r, 4, 4)
         painter.setPen(QColor(255, 255, 255))
         painter.drawText(r, Qt.AlignmentFlag.AlignCenter, text)
+
+    def _draw_legend(self, painter: QPainter) -> None:
+        """One row per color in use: a swatch (as strong as on the image, over gray) and what it means."""
+        fm = painter.fontMetrics()
+        row, sw, pad = fm.height() + 4, 14, 8
+        w = sw + 8 + max(fm.horizontalAdvance(t) for _c, _a, t in self.legend) + 2 * pad
+        h = row * len(self.legend) + 2 * pad - 4
+        r = QRectF(8, self.height() - h - 8, w, h)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 170))
+        painter.drawRoundedRect(r, 4, 4)
+        for i, (color, alpha, text) in enumerate(self.legend):
+            y = r.top() + pad + i * row
+            box = QRectF(r.left() + pad, y + (fm.height() - sw) / 2, sw, sw)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(128, 128, 128))
+            painter.drawRect(box)
+            painter.setBrush(QColor(*color, alpha))
+            painter.drawRect(box)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(QRectF(box.right() + 8, y, w, fm.height()),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
 
     # ------------------------------------------------------------------
     # Mouse

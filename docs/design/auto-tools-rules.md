@@ -1,7 +1,7 @@
 # 오토 툴 수칙 (제안서)
 
 Edit Layer의 오토 툴(Object Fill · Fill Holes · Remove Specks · Grow · Shrink · Close Gaps · Invert · By Color)이 켜지고, 미리보이고,
-적용되거나 버려지는 규칙입니다. 이미 구현된 동작을 기준(`v0.4-p88`)으로, 각 규칙의 **이유**와 **출처 단계**를 같이 적었습니다.
+적용되거나 버려지는 규칙입니다. 이미 구현된 동작을 기준(`v0.4-p91`)으로, 각 규칙의 **이유**와 **출처 단계**를 같이 적었습니다.
 공통 수칙(데이터 안전, 색, 모드 표시, Mask Preview, 브러쉬)은 [`edit-tools-preview-rules.md`](edit-tools-preview-rules.md),
 By Color의 세부 동작과 피드백 항목은 [`by-color.md`](by-color.md), 키 전체는 [`keymap.md`](keymap.md).
 공유용 페이지: [360 → 3DGS 워크플로우 개선 계획](https://claude.ai/artifact/KR4Z6dSqVn8dcsBHxpKAB7) 안의 `auto.html`.
@@ -105,6 +105,11 @@ By Color Range는 판정하는 모든 픽셀을 A = 파랑 / B = 주황으로 �
 **6-4. 결과는 저절로 새로 계산된다.** 도구 밖에서 마스크가 바뀌면(Undo, 포인트 클릭, Ctrl+클릭) 결과를 다시 계산한다.
 설정 중 **그 도구가 쓰는 값**이 바뀔 때만 다시 계산한다(다른 도구의 슬라이더는 영향 없음).
 
+**6-5. 색 범례.** 오토 툴이 켜져 있으면 캔버스 왼쪽 아래에 **지금 쓰는 색만** 뜻과 함께 보인다(`p91`): `Adds` / `Removes`,
+Range면 `A: adds` / `A: already in` / `B: removes` / `B: already out`, Paint면 `Not picked (Paint)`, Near edge면 `Decided here (Near edge)`.
+도구를 나가거나 Mask Preview를 켜면 사라진다.
+- 이유: 한 색 = 한 뜻(공통 수칙 2-1)을 화면에서 바로 읽게. 색 표를 외우지 않아도 된다.
+
 ## 7. 새 오토 툴을 만들 때
 
 1. 결과는 "지금 마스크 → 새 마스크" 하나로 낸다(`compute_tool`). 넣음 / 뺌은 그 차이로 저절로 나온다.
@@ -118,7 +123,6 @@ By Color Range는 판정하는 모든 픽셀을 A = 파랑 / B = 주황으로 �
 | # | 제안 | 이유 |
 |---|---|---|
 | AT-1 | **버릴 때 한 줄 알림**: 적용 안 한 결과를 버리고 나가면 상태 표시줄에 `Dropped: +N / −N px (Ctrl+Z 없음, 다시 켜면 다시 계산)` | 4-1이 안전하지만 "왜 안 들어갔지?"가 생길 수 있음 |
-| AT-2 | **색 범례**: 오토 툴이 켜져 있을 때 캔버스 구석에 파랑 = 넣음 · 주황 = 뺌 · 회색 = 안 고름 (Range: A / B) | 색 뜻을 화면에서 바로 |
 | AT-3 | **Paint 모드 배너**: `PAINT · drag: pick · Alt: unpick · D: all / none · S: Fill` | Pick Color 배너처럼 모드와 나가는 법이 보이게 |
 | AT-4 | **Apply to All 미리보기 몇 장**: 확인 창에 3–4장 썸네일 | 수십 장에 쓰기 전에 결과를 눈으로 |
 | AT-5 | **Paint 드래그 색 정리**: 드래그 중 노랑(고르기)이 주황(뺌)과 가까움. 흰 점선 윤곽으로 | 한 색 = 한 뜻(공통 수칙 2-1) |
