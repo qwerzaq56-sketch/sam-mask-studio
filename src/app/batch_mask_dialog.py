@@ -91,7 +91,8 @@ class BatchMaskDialog(QDialog):
         self.images = QLineEdit(str(images) if images else "")
         self.scene = QLineEdit(str(scene) if scene else "")
         top.addRow("Images", _browse(self.images, self, "Image folder"))
-        self.recursive = QCheckBox("Sub-folders too (cam0/, cam1/), kept in the output")
+        self.recursive = QCheckBox("Sub-folders too (cam0/, cam1/)")
+        self.recursive.setToolTip("Mask the images in the sub-folders too; the output keeps the same sub-folders")
         self.recursive.setChecked(images is not None and Path(images).is_dir()
                                   and any(p.is_dir() for p in Path(images).iterdir()))
         top.addRow("", self.recursive)
@@ -100,6 +101,8 @@ class BatchMaskDialog(QDialog):
 
         row = QHBoxLayout()
         self.preset = QComboBox()
+        self.preset.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.preset.setMinimumContentsLength(14)
         self.preset.setToolTip("Built-in presets ship with the app; yours are in " + str(user_dir()))
         row.addWidget(QLabel("Preset"))
         row.addWidget(self.preset, 1)
@@ -161,6 +164,8 @@ class BatchMaskDialog(QDialog):
         self.sky_threshold.setSuffix(" %")
         self.sky_edges = QCheckBox("Edges at full resolution")
         self.sky_color = QComboBox()
+        self.sky_color.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.sky_color.setMinimumContentsLength(14)
         self.sky_color.setToolTip("Finish the sky with this By Color preset (saved in the app's By Color panel): "
                                   "its values go into the preset. Then SAM2 brings back the sky pieces it left out")
         self.sky_color.currentIndexChanged.connect(self._sky_color_changed)
@@ -197,12 +202,14 @@ class BatchMaskDialog(QDialog):
         tf.addRow("Compare inside", self.inside)
         form.addWidget(probe)
 
-        self.free = QCheckBox("Unload this window's SAM models first (frees the GPU; they load again later)")
+        self.free = QCheckBox("Unload the app's SAM models first")
+        self.free.setToolTip("Frees the GPU memory they hold for the run; they load again when this window closes")
         self.free.setChecked(free_models is not None)
         self.free.setVisible(free_models is not None)
         form.addWidget(self.free)
-        self.cpu = QCheckBox("Run on the CPU (slow: SAM3 very, the sky's SAM2 about 10x)")
-        self.cpu.setToolTip("--cpu: when the GPU is busy (a training) or there is none")
+        self.cpu = QCheckBox("Run on the CPU (slow)")
+        self.cpu.setToolTip("--cpu: when the GPU is busy (a training) or there is none. The sky's SAM2 is about 10x "
+                            "slower than on the GPU, SAM3 (people) much more")
         form.addWidget(self.cpu)
         self.existing = QComboBox()
         self.existing.addItem("Stop if masks are already there", "stop")
@@ -251,15 +258,26 @@ class BatchMaskDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidget(left)
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._left_scroll = scroll
         split_.addWidget(scroll)
         split_.addWidget(right)
-        split_.setSizes([440, 660])
+        split_.setCollapsible(0, False)
+        self._split = split_
         outer = QVBoxLayout(self)
         outer.addWidget(split_)
 
         self.preset.currentIndexChanged.connect(self._load)
         self._fill_presets()
         self._busy(False)
+        self._fit_left()
+        self._split.setSizes([max(440, self._left_scroll.minimumWidth()), 660])
+
+    def _fit_left(self) -> None:
+        """The settings column never narrower than what it holds (no sideways scrolling, nothing cut off)."""
+        sc = self._left_scroll
+        sc.setMinimumWidth(sc.widget().minimumSizeHint().width() + sc.verticalScrollBar().sizeHint().width()
+                           + 2 * sc.frameWidth())
 
     # --- presets -----------------------------------------------------------------------
     def _fill_presets(self, select: Optional[str] = None) -> None:
@@ -299,6 +317,8 @@ class BatchMaskDialog(QDialog):
         self.sky_tips.setChecked(sky.tree_tips)
         self._sky_rest = sky
         self._fill_sky_color(sky.color)
+        if hasattr(self, "_left_scroll"):
+            self._fit_left()
 
     def _fill_sky_color(self, color: Optional[dict]) -> None:
         """Off, the app's By Color presets, and the preset's own values when no app preset has them."""
