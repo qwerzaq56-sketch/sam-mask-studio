@@ -696,6 +696,12 @@
 - 누르면 창에서 고름: **All**(마스크가 있는 모든 프레임) / **Picked in the Frame List**(Shift-클릭 범위, Ctrl-클릭 추가; 그중 마스크가 있는 것만). 2장 넘게 골라 두었으면 Picked가 기본. 골랐는데 마스크 있는 프레임이 없으면 로그만.
 - Undo 한 번, 건너뛴 프레임 알림은 그대로. 테스트 1개 추가.
 
+## 104단계 (`v0.4-p104`): Export Current Mask (지금 이미지 한 장)
+
+- 사용자 요청(10-07): 지금 마스크 한 장만 내보내기, Final / Object 선택.
+- 파일 메뉴 `Export Current Mask…` (`Ctrl+Shift+E`). 창에서 **Mask**: Final Mask(체크된 Object 전부) / 그 Object만(편집 중인 Object, 아니면 선택한 Object 하나; 편집 중이면 기본), **Colors**: 마스크 흰색 / 반전. 그다음 저장 창(기본 이름 `<이미지>.png`, Object면 `<이미지>_<이름>.png`).
+- 원본 해상도, 일괄 Export와 같은 계산(`full_mask`, Sky 경계 설정 따름). 비어 있으면 검은 PNG를 쓰고 로그에 알림. `storage.export_one_mask`. 테스트 1개.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

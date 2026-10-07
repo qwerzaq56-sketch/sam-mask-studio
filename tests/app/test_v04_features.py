@@ -2467,3 +2467,39 @@ def test_apply_to_frames_picked_in_the_frame_list(qapp, win):
     win.choose = lambda title, text, groups, ok="OK": [1]  # nothing picked: nothing happens, a hint
     pp.apply_all_btn.click()
     assert win._busy is None and (p.get(ids[0]).mask(k1) == m[k1]).all()
+
+
+def test_export_current_mask_final_or_one_object(qapp, win, tmp_path):
+    """p104: this image's mask only, as one PNG at the original size: the Final Mask or one Object's, maybe
+    inverted."""
+    import cv2
+    import numpy as np
+
+    ids = make_objects(win, 2)
+    s = win.session
+    p = s.project
+    key = s.key
+    h0, w0 = s.original_size(key)
+    a, b = p.get(ids[0]).mask(key), p.get(ids[1]).mask(key)
+    assert win.act_export_one.isEnabled()
+    win.objects_panel.select_ids([ids[1]])
+    win.toggle_edit(ids[1])
+    asked = []
+    win.choose = lambda title, text, groups, ok="OK": asked.append(groups) or [0, 0]  # Final, white
+    win.save_path = lambda title, start: str(tmp_path / "final")  # no suffix: .png added
+    win.act_export_one.trigger()
+    assert asked[0][0][2] == 1  # editing an Object: that Object is the default
+    m = cv2.imread(str(tmp_path / "final.png"), cv2.IMREAD_GRAYSCALE)
+    assert m.shape == (h0, w0)
+    up = lambda x: cv2.resize(x.astype(np.uint8), (w0, h0), interpolation=cv2.INTER_NEAREST) > 0
+    assert ((m > 127) == up(a | b)).all()
+    win.choose = lambda title, text, groups, ok="OK": [1, 1]  # the edited Object only, inverted
+    win.save_path = lambda title, start: str(tmp_path / "one.png")
+    win.act_export_one.trigger()
+    m = cv2.imread(str(tmp_path / "one.png"), cv2.IMREAD_GRAYSCALE)
+    assert ((m < 128) == up(b)).all()
+    win.choose = lambda title, text, groups, ok="OK": None  # cancelled: nothing written
+    win.save_path = lambda title, start: str(tmp_path / "never.png")
+    win.act_export_one.trigger()
+    assert not (tmp_path / "never.png").exists()
+

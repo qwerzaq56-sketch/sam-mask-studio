@@ -618,6 +618,7 @@ SHORTCUTS = (
         ("Ctrl+O", "Open an image folder"),
         ("Ctrl+S", "Save (also autosaved)"),
         ("Ctrl+E", "Export Final Masks"),
+        ("Ctrl+Shift+E", "Export Current Mask: this image only, Final or one Object, one PNG"),
         ("", "Every command is also in the menu bar (File, Edit, View, Go, Help) with its key"),
     )),
     ("Edit", (

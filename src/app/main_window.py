@@ -68,8 +68,8 @@ from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
-from src.core.storage import check_export, default_export_dir, full_mask, has_sky
-from src.engine.imageio import read_rgb
+from src.core.storage import check_export, default_export_dir, export_one_mask, full_mask, has_sky
+from src.engine.imageio import key_stem, read_rgb
 from src.logging_config import get_logger, log_file
 from src.version import app_version
 
@@ -317,6 +317,9 @@ class MainWindow(QMainWindow):
             "&Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
         )
         self.act_export = self._action("&Export Final Masks…", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
+        self.act_export_one = self._action(
+            "Export &Current Mask…", self.export_current, ["Ctrl+Shift+E"],
+            "This image's mask only, as one PNG: the Final Mask or one Object's (p104)")
         self.act_batch_masks = self._action(
             "&Batch Masking with Presets…", self.batch_masking,
             tip="People, lens edge and sky for a whole folder from a preset, as the batch tool does it "
@@ -521,7 +524,8 @@ class MainWindow(QMainWindow):
         # --- the menu bar: every command, with its key -----------------------------------
         mb = self.menuBar()
         m = mb.addMenu("&File")
-        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, self.act_batch_masks, None,
+        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, self.act_export_one,
+                  self.act_batch_masks, None,
                   self.act_settings, None,
                   self.act_quit):
             m.addSeparator() if a is None else m.addAction(a)
@@ -817,6 +821,7 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(s.can_redo and not busy)
         self.act_save.setEnabled(has_folder)
         self.act_export.setEnabled(has_folder and not busy)
+        self.act_export_one.setEnabled(has_folder and not busy and self.session.key is not None)
         self.act_brush.setEnabled(s.mode != Mode.NEW_OBJECT and not busy)  # D not editing: edit with the brush
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel,
                   self.images_panel.frame_list):
@@ -2830,6 +2835,57 @@ class MainWindow(QMainWindow):
                 self.warn(why)
                 return
         self.run_export(dlg.jobs(), dataset=root, views=dlg.views())
+
+    def save_path(self, title: str, start: str) -> Optional[str]:
+        """Save-as dialog; tests replace this."""
+        path, _ = QFileDialog.getSaveFileName(self, title, start, "PNG (*.png)")
+        return path or None
+
+    def export_current(self) -> None:
+        """This image's mask only, as one PNG at the original resolution (p104): the Final Mask (the checked
+        Objects) or one Object's (the one being edited, else the one selected)."""
+        s = self.session
+        if s.image_dir is None or s.key is None or self._busy:
+            return
+        key = s.key
+        oid = s.editing
+        if oid is None:
+            ids = self.objects_panel.selected_ids()
+            oid = ids[0] if len(ids) == 1 else None
+        o = s.project.get(oid) if oid is not None else None
+        one = f"Object “{o.name}” only" if o is not None else "One Object only (select one Object first)"
+        picked = self.choose(
+            "Export Current Mask",
+            f"The mask of {key} only, as one PNG at the image's original size.",
+            [("Mask", ["Final Mask (all checked Objects)", one], 1 if s.editing is not None and o is not None else 0),
+             ("Colors", ["Mask white, background black", "Inverted: mask black, background white"], 0)],
+            "Choose File…",
+        )
+        if picked is None:
+            return
+        if picked[0] == 1 and o is None:
+            self.log("Export Current Mask: select one Object first (or edit it)")
+            return
+        ids = [o.id] if picked[0] == 1 else None
+        stem = key_stem(key) + (f"_{o.name}" if ids else "")
+        start = default_export_dir(s.image_dir) / f"{stem}.png"
+        path = self.save_path("Export Current Mask", str(start))
+        if path is None:
+            return
+        out = Path(path)
+        if out.suffix.lower() != ".png":
+            out = out.with_suffix(".png")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sky = self.settings.export_sky_edges and has_sky(s.project, ids)
+        try:
+            self.save()
+            filled = export_one_mask(s.project, key, s.original_size, out, ids, invert=picked[1] == 1,
+                                     image=(lambda k: read_rgb(s.image_dir / k)) if sky else None)
+        except Exception as e:  # noqa: BLE001 - a disk or format error: tell, keep working
+            self.warn(f"Export failed: {e}")
+            return
+        what = f"“{o.name}”" if ids else "Final Mask"
+        self.log(f"Exported {what} of {key} to {out}" + ("" if filled else " (empty: nothing masked there)"))
 
     def run_export(self, jobs, dataset: Optional[Path] = None, views=None) -> None:
         """Write one export or several (a list: the Final Mask and mask sets, each to its folder).

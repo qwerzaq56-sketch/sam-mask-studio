@@ -441,6 +441,21 @@ def full_mask(project: Project, key: str, original_size: Callable[[str], Tuple[i
     return out
 
 
+def export_one_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]], out: Path,
+                    ids: Optional[List[int]] = None, invert: bool = False,
+                    image: Optional[Callable[[str], np.ndarray]] = None) -> bool:
+    """One image's mask to *out* at its original resolution (p104): the Final Mask, or (*ids*) just those
+    Objects'. White = the mask (*invert*: black). Returns False when it is empty (an all-background PNG is
+    still written, so the file always matches the image)."""
+    m = full_mask(project, key, original_size, ids, image)
+    if m is None:
+        h0, w0 = original_size(key)
+        m = np.zeros((h0, w0), bool)
+    full = m.astype(np.uint8) * 255
+    _write_png(out, 255 - full if invert else full)
+    return bool(m.any())
+
+
 def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Optional[List[int]] = None) -> ExportCheck:
     """Count the images with / without a Final Mask (*ids*: a mask set's), empty masks, ⚠ / ✕ frames
     and file name clashes."""
