@@ -1431,7 +1431,7 @@ class MainWindow(QMainWindow):
             freed.append(True)
             return True
 
-        BatchMaskDialog(s.image_dir, scene, free_models, self).exec()
+        BatchMaskDialog(s.image_dir, scene, free_models, self, self.settings.color_presets).exec()
         if freed and s.image_dir is not None:
             self.ensure_models()
 

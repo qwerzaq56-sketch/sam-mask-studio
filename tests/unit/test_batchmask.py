@@ -177,7 +177,7 @@ def test_run_refuses_a_busy_gpu_before_anything(tmp_path, monkeypatch, mine):
     assert not (tmp_path / "s").exists()
 
 
-def test_run_with_by_color_sky_checks_the_gpu_for_sam2(tmp_path, monkeypatch, mine):
+def test_run_with_by_color_sky_checks_the_gpu_for_sam2(tmp_path, monkeypatch, mine, capsys):
     """p111: a preset whose sky has By Color runs SAM2 after it, so run asks for (1 GB of) free GPU too."""
     images, model = _frames(tmp_path, monkeypatch)
     sam2 = tmp_path / "sam2.pt"
@@ -195,5 +195,6 @@ def test_run_with_by_color_sky_checks_the_gpu_for_sam2(tmp_path, monkeypatch, mi
         cli.main(args + ["--out", str(tmp_path / "a")])
     monkeypatch.setattr(cli, "gpu_free_gb", lambda: 1.5)  # enough for SAM2 alone (not for SAM3)
     assert cli.main(args + ["--out", str(tmp_path / "b")]) == 0
+    assert "On the CPU" not in capsys.readouterr().out
     assert cli.main(args + ["--out", str(tmp_path / "c"), "--cpu"]) == 0
-    assert devices == ["cuda", "cpu"]
+    assert devices == ["cuda", "cpu"] and "On the CPU" in capsys.readouterr().out  # p113: said at the start

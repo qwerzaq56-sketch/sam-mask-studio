@@ -917,6 +917,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             device = _device(parser, args)
         elif preset.sky is not None and preset.sky.color is not None:  # SAM2 after By Color (p111)
             device = _device(parser, args, sam3=False, need=SKY_GPU_NEEDED)
+        if args.cpu and (preset.person is not None or (preset.sky is not None and preset.sky.color is not None)):
+            print("On the CPU: much slower than the GPU (the sky's SAM2 about 10x, SAM3 more)")
         if preset.sky is not None and not args.sky_model.is_file():
             parser.error(f"sky model not found: {args.sky_model}")
         report = run_folder(args.images, args.out, preset, recursive=args.recursive, names=args.names,

@@ -4,7 +4,8 @@ src/batchmask/) in a window.
 Not part of the editing itself: it masks a whole folder the way the batch tool will, in a separate process
 (``python -m src.cli``), so what it makes here is what the batch makes. The window only edits a preset's
 settings, runs the command and shows its output and contact sheets. Masks already in the scene stop a run
-before anything is written.
+before anything is written. The sky can be finished with one of the app's By Color presets (its values go into
+the preset: By Color, the tree tips, then SAM2 on the GPU, as ``cli sky --color-preset``; p113).
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from src.batchmask.presets import (LensStep, MaskPreset, PersonStep, SkyStep, fi
                                    split, user_dir)
 
 ROOT = Path(__file__).resolve().parents[2]
+OWN = "\0own"  # the sky's By Color item for values only the preset has (no app preset has them now)
 
 
 def _browse(edit: QLineEdit, parent: QWidget, title: str) -> QWidget:
@@ -67,11 +69,14 @@ def _browse(edit: QLineEdit, parent: QWidget, title: str) -> QWidget:
 
 class BatchMaskDialog(QDialog):
     """*images*: the folder to mask; *scene*: where ``masks/`` and ``sky_masks/`` go. *free_models*: unloads
-    the main window's SAM models (they would hold the GPU memory the batch needs)."""
+    the main window's SAM models (they would hold the GPU memory the batch needs). *color_presets*: the app's
+    By Color presets (name -> values) the sky can be finished with."""
 
     def __init__(self, images: Optional[Path] = None, scene: Optional[Path] = None,
-                 free_models: Optional[Callable[[], bool]] = None, parent=None):
+                 free_models: Optional[Callable[[], bool]] = None, parent=None,
+                 color_presets: Optional[dict] = None):
         super().__init__(parent)
+        self.color_presets = {str(k): dict(v) for k, v in (color_presets or {}).items() if isinstance(v, dict)}
         self.setWindowTitle("Batch Masking with Presets")
         self.resize(1100, 760)
         self.free_models = free_models
@@ -155,8 +160,21 @@ class BatchMaskDialog(QDialog):
         self.sky_threshold.setRange(1, 99)
         self.sky_threshold.setSuffix(" %")
         self.sky_edges = QCheckBox("Edges at full resolution")
+        self.sky_color = QComboBox()
+        self.sky_color.setToolTip("Finish the sky with this By Color preset (saved in the app's By Color panel): "
+                                  "its values go into the preset. Then SAM2 brings back the sky pieces it left out")
+        self.sky_color.currentIndexChanged.connect(self._sky_color_changed)
+        self.sky_tips = QCheckBox("Take out tree tips beyond the band")
+        self.sky_tips.setToolTip("Rough, not-sky-colored pixels up to 120 px from the tree, beyond By Color's "
+                                 "Near edge band (needs the preset's band on)")
+        self.sky_note = QLabel("")
+        self.sky_note.setWordWrap(True)
+        self.sky_note.setStyleSheet("color: gray;")
         sf.addRow("Threshold", self.sky_threshold)
         sf.addRow("", self.sky_edges)
+        sf.addRow("By Color", self.sky_color)
+        sf.addRow("", self.sky_tips)
+        sf.addRow(self.sky_note)
         form.addWidget(self.sky_box)
 
         probe = QGroupBox("Try the prompts first")
@@ -183,6 +201,9 @@ class BatchMaskDialog(QDialog):
         self.free.setChecked(free_models is not None)
         self.free.setVisible(free_models is not None)
         form.addWidget(self.free)
+        self.cpu = QCheckBox("Run on the CPU (slow: SAM3 very, the sky's SAM2 about 10x)")
+        self.cpu.setToolTip("--cpu: when the GPU is busy (a training) or there is none")
+        form.addWidget(self.cpu)
         self.existing = QComboBox()
         self.existing.addItem("Stop if masks are already there", "stop")
         self.existing.addItem("Keep masks already there, make the rest", "skip")
@@ -275,7 +296,43 @@ class BatchMaskDialog(QDialog):
         self.sky_box.setChecked(p.sky is not None)
         self.sky_threshold.setValue(sky.threshold)
         self.sky_edges.setChecked(sky.edges)
+        self.sky_tips.setChecked(sky.tree_tips)
         self._sky_rest = sky
+        self._fill_sky_color(sky.color)
+
+    def _fill_sky_color(self, color: Optional[dict]) -> None:
+        """Off, the app's By Color presets, and the preset's own values when no app preset has them."""
+        c = self.sky_color
+        c.blockSignals(True)
+        c.clear()
+        c.addItem("Off", None)
+        for name in sorted(self.color_presets, key=str.lower):
+            c.addItem(name, name)
+        if color is not None:
+            same = [n for n, v in self.color_presets.items() if v == color]
+            if same:
+                c.setCurrentIndex(c.findData(same[0]))
+            else:
+                c.addItem("By Color values in this preset", OWN)
+                c.setCurrentIndex(c.count() - 1)
+        c.blockSignals(False)
+        self._sky_color_changed()
+
+    def _sky_color(self) -> Optional[dict]:
+        name = self.sky_color.currentData()
+        if name is None:
+            return None
+        return dict(self._sky_rest.color or {}) if name == OWN else dict(self.color_presets[name])
+
+    def _sky_color_changed(self, *_a) -> None:
+        from src.core.sky_sam2 import tips_apply
+
+        color = self._sky_color()
+        self.sky_tips.setEnabled(tips_apply(color))
+        self.sky_note.setText(
+            "The sky model's mask, its edges decided at full resolution." if color is None else
+            "By Color, the tree tips, then SAM2 brings back the sky pieces By Color left out: 1 GB of GPU memory "
+            "free (else the run stops before writing anything), about 8 s a frame.")
 
     def current(self) -> MaskPreset:
         """The preset as the window shows it (the chosen one, edited)."""
@@ -290,7 +347,8 @@ class BatchMaskDialog(QDialog):
                                    radius=self.radius.value() or None))
         if self.sky_box.isChecked():
             sky = SkyStep(**dict(asdict(self._sky_rest), threshold=self.sky_threshold.value(),
-                                 edges=self.sky_edges.isChecked()))
+                                 edges=self.sky_edges.isChecked(), color=self._sky_color(),
+                                 tree_tips=self.sky_tips.isChecked()))
         p = MaskPreset(name=base.name, title=base.title, description=base.description, checked_on=list(base.checked_on),
                        person=person, lens=lens, sky=sky)
         if p != base:  # edited: what the base was checked on is not this
@@ -352,6 +410,8 @@ class BatchMaskDialog(QDialog):
         args = ["run", f[0], "--preset", str(self._preset_file())] + f[1:]
         if self.existing.currentData() == "skip":
             args.append("--skip-existing")
+        if self.cpu.isChecked():
+            args.append("--cpu")
         return args
 
     def probe_args(self) -> Optional[List[str]]:
@@ -370,6 +430,8 @@ class BatchMaskDialog(QDialog):
             args += ["--reference", self.reference.text().strip()]
             if self.inside.value():
                 args += ["--inside", str(self.inside.value())]
+        if self.cpu.isChecked():
+            args.append("--cpu")
         return args
 
     def try_prompts(self) -> None:
@@ -395,7 +457,8 @@ class BatchMaskDialog(QDialog):
             if path is None:
                 return
             name = path.stem
-        cmd = [sys.executable, "-m", "src.cli", "run", f[0], "--preset", name] + f[1:]
+        cmd = [sys.executable, "-m", "src.cli", "run", f[0], "--preset", name] + f[1:] + \
+            (["--cpu"] if self.cpu.isChecked() else [])
         text = " ".join(f'"{c}"' if " " in c else c for c in cmd)
         from PyQt6.QtWidgets import QApplication
 
@@ -405,7 +468,8 @@ class BatchMaskDialog(QDialog):
     def _start(self, args: List[str]) -> None:
         if self.proc is not None:
             return
-        uses_gpu = args[0] == "probe" or self.person_box.isChecked()
+        uses_gpu = args[0] == "probe" or self.person_box.isChecked() or \
+            (self.sky_box.isChecked() and self._sky_color() is not None)  # the sky's SAM2
         if uses_gpu and self.free.isChecked() and self.free_models is not None and self.free_models():
             self._say("Unloaded this window's SAM models (they load again when the window closes).")
         self.proc = QProcess(self)
