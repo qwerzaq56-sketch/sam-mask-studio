@@ -769,7 +769,7 @@ class PropertiesPanel(QWidget):
 
     def _on_pick_toggled(self, on: bool) -> None:
         """The button says the state and the way out; the canvas follows."""
-        self.pick_btn.setText("Picking colors: click here or Esc to stop" if on else "Pick Color")
+        self.pick_btn.setText("Stop Picking (Esc)" if on else "Pick Color")
         self.color_pick_toggled.emit(on)
 
     def _on_color_basis(self, _i: int = 0, emit: bool = True) -> None:
