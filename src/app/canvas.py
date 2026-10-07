@@ -231,6 +231,8 @@ class Canvas(QWidget):
         self.tool_target_fn: Optional[Callable[[str], Optional[np.ndarray]]] = None
         self._peek = False  # the Final Mask shown while a key is held
         self.original_view = False  # the photo alone while picking colors (BC-P3)
+        self.pick_marks: List[Tuple[float, float, Tuple[int, int, int], str]] = []  # where By Color's colors came from
+        self.last_pick: Optional[Tuple[float, float]] = None  # image px of the latest pick (for its mark)
         self.outline_visible = True
         self.overlay_opacity = 1.0  # scales every overlay's alpha (1 = as designed)
         self.outline_width = 1.0  # screen px, independent of zoom
@@ -370,6 +372,11 @@ class Canvas(QWidget):
             self.original_view = False  # never left hiding the result once picking is over (BC-P3 d)
         self.update()  # the banner
         self._update_cursor()
+
+    def set_pick_marks(self, marks) -> None:
+        """Where the picked / left-out colors were taken: (x, y, rgb, label) in image px (p99, BC-P3 f)."""
+        self.pick_marks = list(marks)
+        self.update()
 
     def set_original_view(self, on: bool) -> None:
         """Only the photo: no mask colors, tool preview, points or legend; the banner says so (BC-P3)."""
@@ -616,6 +623,7 @@ class Canvas(QWidget):
                 255, 255, 255
             )
             self._draw_box(painter, (x0, y0, x1, y1), color)
+        self._draw_pick_marks(painter)
         if self.mode == Mode.EDIT and not self.original_view:
             for i, pt in enumerate(self.points):
                 q = self.to_widget(pt.x, pt.y)
@@ -647,6 +655,30 @@ class Canvas(QWidget):
             self._draw_banner(painter, banner)
         if self.legend and not self.showing_final and not self.original_view:
             self._draw_legend(painter)
+
+    def _draw_pick_marks(self, painter: QPainter) -> None:
+        """Each picked color where it was taken: a dot in that color, ringed, with its number (− = left out).
+        Shown in Original view too, where the colors are judged."""
+        if not self.pick_marks or self.showing_final:
+            return
+        painter.save()
+        font = painter.font()
+        font.setBold(True)
+        painter.setFont(font)
+        for x, y, rgb, label in self.pick_marks:
+            q = self.to_widget(x + 0.5, y + 0.5)
+            painter.setBrush(QColor(*rgb))
+            painter.setPen(QPen(QColor(0, 0, 0), 3))
+            painter.drawEllipse(q, 6, 6)
+            painter.setPen(QPen(QColor(255, 255, 255) if not label.startswith("−") else QColor(*ALT_COLOR), 1.5))
+            painter.drawEllipse(q, 6, 6)
+            r = QRectF(q.x() + 9, q.y() - 9, 8 * len(label) + 8, 18)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 170))
+            painter.drawRoundedRect(r, 4, 4)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(r, Qt.AlignmentFlag.AlignCenter, label)
+        painter.restore()
 
     def _draw_outlines(self, painter: QPainter, origin: QPointF, scale: float) -> None:
         """Thin outlines in screen pixels: the edited mask (white) and checked candidates (their color)."""
@@ -766,7 +798,8 @@ class Canvas(QWidget):
         if self.color_pick_mode:
             if btn in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
                 # one pixel; Alt: the 5×5 mean around it (noisy areas, p95); right-click: a color to leave out
-                color = self.sample_color(*self.to_image(pos), r=2 if mods & Qt.KeyboardModifier.AltModifier else 0)
+                self.last_pick = self.to_image(pos)
+                color = self.sample_color(*self.last_pick, r=2 if mods & Qt.KeyboardModifier.AltModifier else 0)
                 if color is not None:
                     signal = self.color_picked if btn == Qt.MouseButton.LeftButton else self.color_picked_out
                     signal.emit(color, bool(mods & Qt.KeyboardModifier.ShiftModifier))

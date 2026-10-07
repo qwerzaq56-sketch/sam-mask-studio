@@ -92,17 +92,17 @@ RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "color_sam
               "bright_range", "bright_use", "bright_not", "color_invert")
 
 
-def range_selection(image: np.ndarray, settings: dict, with_overlap: bool = False):
+def range_selection(image: np.ndarray, settings: dict, with_parts: bool = False):
     """By Color's A: the picked colors (less the left-out ones, the nearer wins) and / or the brightness range,
-    each maybe turned around (Not), then Swap. *with_overlap*: also where both kinds of colors claim a pixel."""
-    sel, overlap = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
+    each maybe turned around (Not), then Swap. *with_parts*: ``(A, overlap, color)``, see ``select_range``."""
+    sel, overlap, color = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
                                 settings.get("color_use", True), settings.get("bright_range", (0, 255)),
                                 settings.get("bright_use", False), settings.get("color_not", False),
                                 settings.get("bright_not", False), settings.get("color_samples_out", ()),
-                                settings.get("color_tol_out"), with_overlap=True)
+                                settings.get("color_tol_out"), with_parts=True)
     if settings.get("color_invert", False):  # Swap A / B
         sel = ~sel
-    return (sel, overlap) if with_overlap else sel
+    return (sel, overlap, color) if with_parts else sel
 
 
 class Engine(Protocol):
@@ -722,13 +722,28 @@ class Session:
             return a, ~a
         return a & area, ~a & area
 
-    def _range(self, settings: dict) -> Tuple[np.ndarray, np.ndarray]:
-        """By Color Range's A and overlap (picked and left-out colors both claim it) on the whole image, cached."""
+    def _range(self, settings: dict) -> tuple:
+        """By Color Range's A, overlap (picked and left-out colors both claim it) and what the color condition
+        alone takes (None: not in use), on the whole image, cached."""
         key = tuple((k, settings.get(k)) for k in RANGE_KEYS)
         c = self._ab_cache
         if c is None or c[0] != key or c[1] is not self.image:
-            c = self._ab_cache = (key, self.image) + range_selection(self.image, settings, with_overlap=True)
-        return c[2], c[3]
+            c = self._ab_cache = (key, self.image) + range_selection(self.image, settings, with_parts=True)
+        return c[2], c[3], c[4]
+
+    def auto_color_cover(self, settings: dict) -> Optional[float]:
+        """The share (0-1) of the pixels By Color decides that the color condition alone takes; None when it is
+        not in use. Near 0 or 1 the colors decide nothing: the tolerance is off (p99: 100 took everything)."""
+        if self.auto_tool != "by_color" or self.image is None:
+            return None
+        color = self._range(settings)[2]
+        if color is None:
+            return None
+        area = self.auto_area(settings)
+        if area is None and self.region is not None:
+            area = self.region
+        part = color[area] if area is not None else color
+        return float(part.mean()) if part.size else None
 
     def auto_overlap(self, settings: dict) -> Optional[np.ndarray]:
         """Where a picked and a left-out color both claim pixels (the nearer one decided), inside the area By

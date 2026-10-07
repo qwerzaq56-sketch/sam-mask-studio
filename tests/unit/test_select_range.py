@@ -60,7 +60,7 @@ def test_left_out_colors_the_nearer_wins():
     img[0, 3] = (20, 40, 20)  # dark leaves: near neither
     img[0, 4] = (240, 225, 140)  # pale leaf: near both (Lab 27 / 44), nearer the leaf
     leaf, cloud = (230, 200, 60), (250, 250, 250)
-    sel, overlap = select_range(img, [leaf], 60, samples_out=[cloud], tolerance_out=60, with_overlap=True)
+    sel, overlap, _ = select_range(img, [leaf], 60, samples_out=[cloud], tolerance_out=60, with_parts=True)
     assert sel[0].tolist() == [True, False, False, False, True]
     assert overlap[0, 1] and overlap[0, 4] and not overlap[0, 3]
     # a left-out color only claims pixels within its own tolerance
@@ -68,4 +68,25 @@ def test_left_out_colors_the_nearer_wins():
     # left-out colors alone: everything they do not claim (the same as Not on them)
     alone = select_range(img, (), 30, samples_out=[cloud], tolerance_out=30)
     assert alone[0].tolist() == (~select_range(img, [cloud], 30))[0].tolist()
+
+
+def test_not_turns_only_the_picked_colors_around():
+    """p99: Not used to turn "not the sky" (left-out sky only) back into "the sky", so Brightness ∧ that was
+    the bright sky. Not touches picked colors only; left-out colors leave out either way."""
+    from src.core.refine import select_range
+
+    img = np.zeros((1, 3, 3), np.uint8)
+    img[0, 0] = (95, 165, 220)  # sky
+    img[0, 1] = (225, 195, 95)  # leaf
+    img[0, 2] = (20, 40, 20)  # dark leaf
+    sky, leaf = (95, 165, 220), (225, 195, 95)
+    only_out = select_range(img, (), 30, samples_out=[sky], tolerance_out=30)[0].tolist()
+    assert only_out == [False, True, True]
+    assert select_range(img, (), 30, samples_out=[sky], tolerance_out=30, not_color=True)[0].tolist() == only_out
+    # picked leaf, Not: far from the leaf, and the left-out sky still out
+    both = select_range(img, [leaf], 30, samples_out=[sky], tolerance_out=30, not_color=True)[0].tolist()
+    assert both == [False, False, True]
+    # the color condition alone comes back with the parts; a huge tolerance takes everything
+    _, _, color = select_range(img, [leaf], 100, with_parts=True)
+    assert color.all()
 

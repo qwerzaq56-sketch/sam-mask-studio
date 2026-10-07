@@ -207,7 +207,7 @@ def select_range(
     not_brightness: bool = False,
     samples_out=(),
     tolerance_out: Optional[float] = None,
-    with_overlap: bool = False,
+    with_parts: bool = False,
 ):
     """Pixels like the picked colors (Photoshop's Color Range, roughly), on either or both of:
 
@@ -221,16 +221,20 @@ def select_range(
     - brightness: gray level within *brightness* (lo, hi), 0-255.
 
     *not_color* / *not_brightness* turn that condition around (BC-P4 a): far from every picked color / outside
-    the range. All conditions in use must hold, so bright leaves under a bright sky are "brightness, not the sky's
+    the range. Not touches the picked colors only: left-out colors leave out either way, and with no picked
+    colors Not does nothing. All conditions in use must hold, so bright leaves under a bright sky are "brightness, not the sky's
     colors". Neither in use (or color with no samples): nothing is selected.
-    *with_overlap*: also return where both kinds of colors claim a pixel (decided by the nearer one).
+    *with_parts*: return ``(selection, overlap, color)``: also where both kinds of colors claim a pixel (decided
+    by the nearer one) and what the color condition alone takes (None when it is not in use), so a condition that
+    takes everything or nothing can be pointed out (p99).
     """
     img = np.ascontiguousarray(image[..., :3])
     color_on = use_color and (len(samples) > 0 or len(samples_out) > 0)
     overlap = np.zeros(img.shape[:2], bool)
+    near = None
     if not color_on and not use_brightness:
         sel = np.zeros(img.shape[:2], bool)
-        return (sel, overlap) if with_overlap else sel
+        return (sel, overlap, None) if with_parts else sel
     sel = np.ones(img.shape[:2], bool)
     if color_on:
         lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB).astype(np.float32)
@@ -238,16 +242,20 @@ def select_range(
         d_in, d_out = _lab_distance2(lab, samples), _lab_distance2(lab, samples_out)
         tol_out = tolerance if tolerance_out is None else tolerance_out
         claimed = d_out <= float(tol_out) ** 2 if d_out is not None else np.zeros(sel.shape, bool)
+        # Not turns the picked colors around only; left-out colors always leave out (p99: with only left-out
+        # colors, Not used to turn "not the sky" back into "the sky")
         if d_in is None:
             near = ~claimed
+        elif not_color:
+            near = (d_in > float(tolerance) ** 2) & ~claimed
         else:
             near_in = d_in <= float(tolerance) ** 2
             overlap = near_in & claimed
             near = near_in if d_out is None else near_in & ~(claimed & (d_out <= d_in))  # nearer wins; tie: out
-        sel &= ~near if not_color else near
+        sel &= near
     if use_brightness:
         lo, hi = sorted(brightness)
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         inside = (gray >= lo) & (gray <= hi)
         sel &= ~inside if not_brightness else inside
-    return (sel, overlap) if with_overlap else sel
+    return (sel, overlap, near) if with_parts else sel

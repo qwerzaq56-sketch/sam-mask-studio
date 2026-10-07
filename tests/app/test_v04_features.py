@@ -2392,3 +2392,41 @@ def test_right_click_leaves_a_color_out_and_overlaps_show(qapp, win):
     p.clear_colors_btn.click()
     assert s.color_samples == () and s.color_samples_out == ()
 
+
+def test_pick_marks_cover_warning_not_and_t_in_number_fields(qapp, win):
+    """p99: the picked colors are marked where they were taken (− for left out, gone with the color); the color
+    condition's share of the area is shown and warns near 100 %; Not waits for a picked color; T works with the
+    keyboard in a number field."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QLineEdit
+
+    from tests.app.conftest import wait_until
+
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    s, p, c = win.session, win.properties_panel, win.canvas
+    p.tool_btns["by_color"].click()
+    assert not p.color_not.isEnabled()
+    pos = c.rect().center()
+    QTest.mouseClick(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pos)
+    QTest.mouseClick(c, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, pos + QPointF(20, 0).toPoint())
+    assert p.color_not.isEnabled()
+    labels = [m[3] for m in c.pick_marks]
+    assert labels == ["1", "−1"]
+    x, y = c.to_image(QPointF(pos))
+    assert abs(c.pick_marks[0][0] - x) < 1e-6 and abs(c.pick_marks[0][1] - y) < 1e-6
+    p.remove_sample("o0")
+    assert [m[3] for m in c.pick_marks] == ["1"]
+    p.color_tol.setValue(100)
+    wait_until(qapp, lambda: "tells nothing apart" in p.color_cover.text())
+    assert p.color_cover.isVisibleTo(p)
+    spin = p.color_tol.spin  # the keyboard in a number field (or its inner editor): T still works there
+    assert not win._typing_text(spin) and not win._typing_text(spin.findChild(QLineEdit))
+    assert win._typing_text(QLineEdit())  # a text box keeps its T
+    win._original_key(True)
+    win._original_key(False)
+    assert c.original_view
+    p.clear_colors_btn.click()
+    assert c.pick_marks == []
+
