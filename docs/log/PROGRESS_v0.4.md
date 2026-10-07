@@ -573,6 +573,12 @@
 - 사용자 지시대로: **X** = 흑백에서 Final ↔ Object, 잘라보기 중이면 흑백으로(Final / Object 저장된 그대로). **C** = 잘라보기에서 안쪽 ↔ 바깥, 흑백 중이면 잘라보기로(안 / 밖 저장된 그대로). p83의 X(흑백 ↔ 잘라보기) · Shift+X 없앰. 흑백 ↔ 잘라보기는 View 메뉴에도.
 - [`design/edit-tools-preview-rules.md`](../design/edit-tools-preview-rules.md): p68–p84에서 나온 규칙(표시 ≠ 데이터, A/B 선택 규칙, 색 표, 모드 표시, 키, 브러쉬, 검증)과 제안 6개. `keymap.md`, 정답 세트 README 키 설명 갱신.
 
+## 85단계 (`v0.4-p85`): By Color 현재 동작 정리 (피드백용)
+
+- `docs/design/edit-tools-preview-rules.md` 9절: By Color Range 처리 순서(BC-1~8), Auto 방식(BC-10, 11), 기대와 어긋날 수 있는 지점(BC-12~19: 마스크 안쪽 깊은 잎은 판정 띠 밖, Near edge 끄면 하늘색 비슷한 것이 들어옴, 5×5 평균 색, 하늘 그라데이션, 작업 해상도 1024, 경계 섞인 픽셀, 적용 후 띠 이동). 사용자가 BC 번호로 피드백.
+- 같은 내용을 아티팩트 [편집 도구 · 미리보기 수칙](https://claude.ai/artifact/JEJbPmcFfefHebuFTcMDFF)로 게시, 상위 기획서(360 → 3DGS 워크플로우 개선 계획) 8.2 하위 문서 표와 머리말에 추가.
+- 코드 변경 없음.
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.
