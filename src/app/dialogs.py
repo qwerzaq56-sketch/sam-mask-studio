@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtWidgets import (
     QInputDialog,
     QButtonGroup,
@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTextBrowser,
     QVBoxLayout,
@@ -47,6 +48,56 @@ def _path_row(edit: QLineEdit, pick) -> QWidget:
     b.clicked.connect(pick)
     lay.addWidget(b)
     return w
+
+
+def _section(title: str, layout) -> QGroupBox:
+    """One of the Export window's sections (What, Where, Files, Check)."""
+    box = QGroupBox(title)
+    box.setLayout(layout)
+    return box
+
+
+def _fixed(value: QWidget) -> QWidget:
+    """A value a preset fixes: shown as text with a small "preset" tag, not as a grayed-out field (EX-5)."""
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(value, 1)
+    tag = QLabel("preset")
+    tag.setStyleSheet("color: palette(mid); border: 1px solid palette(mid); border-radius: 3px; padding: 0 4px;")
+    tag.setToolTip("Set by the trainer preset; pick Custom to change it")
+    lay.addWidget(tag, 0, Qt.AlignmentFlag.AlignTop)
+    return w
+
+
+class _PathLabel(QLabel):
+    """A path that keeps its end (the folder's name) in view: the front is cut, the whole path is the tooltip."""
+
+    def __init__(self):
+        super().__init__()
+        self._path = ""
+
+    def set_path(self, path: str) -> None:
+        self._path = path
+        self.setToolTip(path)
+        self._fit()
+        self.updateGeometry()
+
+    def path(self) -> str:
+        return self._path
+
+    def _fit(self) -> None:
+        self.setText(self.fontMetrics().elidedText(self._path, Qt.TextElideMode.ElideLeft, max(20, self.width())))
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        self._fit()
+
+    def sizeHint(self) -> QSize:
+        return QSize(min(420, self.fontMetrics().horizontalAdvance(self._path) + 4), super().sizeHint().height())
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(60, super().minimumSizeHint().height())
 
 
 class SettingsDialog(QDialog):
@@ -129,6 +180,14 @@ class OptionsDialog(QDialog):
         return [g.checkedId() for g in self._groups]
 
 
+def _first_sentence(text: str) -> str:
+    """Up to the first full stop that ends a sentence (not one inside a name like a.png)."""
+    for i, ch in enumerate(text):
+        if ch == "." and (i + 1 == len(text) or text[i + 1] == " "):
+            return text[:i + 1]
+    return text
+
+
 class ExportDialog(QDialog):
     """Final Mask PNG export options.
 
@@ -139,6 +198,7 @@ class ExportDialog(QDialog):
     """
 
     EVERY = "*"  # the Mask choice that writes the Final Mask and every set
+    _open = {"note": False, "views": False}  # More / Edit, kept open for the next window (C-2)
 
     PATTERNS = (
         ("{stem}.png  (frame_001.png)", "{stem}.png"),
@@ -152,7 +212,7 @@ class ExportDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
         self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(540)
         self._check = check
         self._scene = scene
         self._custom_dir = str(default_dir)
@@ -162,12 +222,25 @@ class ExportDialog(QDialog):
         self.target.addItem("Custom (choose below)", CUSTOM)
         i = self.target.findData(target)
         self.target.setCurrentIndex(i if i >= 0 else 0)
-        self.note = QLabel()
+        # the preset's note: its first sentence, the rest (backup, sources) behind More
+        self.note_head = QLabel()
+        self.note_head.setWordWrap(True)
+        self.note = QLabel()  # the whole note
         self.note.setWordWrap(True)
         self.note.setStyleSheet("color: gray;")
+        self.note_more = QLabel()
+        self.note_more.linkActivated.connect(lambda _l: self._toggle("note"))
+        self._note_box = QWidget()
+        nb = QVBoxLayout(self._note_box)
+        nb.setContentsMargins(0, 0, 0, 0)
+        nb.setSpacing(2)
+        for w in (self.note_head, self.note, self.note_more):
+            nb.addWidget(w)
         self._sets = sets if sets is not None else {}
         self._save_set, self._delete_set = save_set, delete_set
         self.mask = QComboBox()
+        self.mask.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.mask.setMinimumContentsLength(24)
         self.save_set_btn = QPushButton("Save Checked as Set…")
         self.save_set_btn.setToolTip("The Objects checked now, under a name: exported to <folder>_<name>")
         self.save_set_btn.clicked.connect(self._new_set)
@@ -180,7 +253,7 @@ class ExportDialog(QDialog):
         # where a preset writes: into the scene, or a new dataset (images linked, model filtered)
         self._excluded = excluded
         self.to_scene = QRadioButton("Into the scene")
-        self.to_new = QRadioButton("New dataset:")
+        self.to_new = QRadioButton("New dataset")
         self.to_scene.setChecked(True)
         self.dataset = QLineEdit(str(scene.root.parent / f"{scene.root.name}_dataset") if scene is not None else "")
         self.dataset.setToolTip("A new folder: images/ (hard links, no extra space on the same drive), "
@@ -190,7 +263,8 @@ class ExportDialog(QDialog):
         orow.setContentsMargins(0, 0, 0, 0)
         orow.addWidget(self.to_scene)
         orow.addWidget(self.to_new)
-        orow.addWidget(_path_row(self.dataset, self._pick_dataset), 1)
+        orow.addStretch(1)
+        self._dataset_row = _path_row(self.dataset, self._pick_dataset)
         # the new dataset's cameras: kept, or converted to pinhole views / one 360 image (docs/specs/08)
         models = set(scene.camera_models) if scene is not None else set()
         self._erp = "EQUIRECTANGULAR" in models
@@ -216,10 +290,11 @@ class ExportDialog(QDialog):
             self.view_layout.addItem(lay.label, key)
             self.view_layout.setItemData(self.view_layout.count() - 1, lay.purpose, Qt.ItemDataRole.ToolTipRole)
         self.view_layout.addItem("Custom", None)
-        self.view_layout.setItemData(self.view_layout.count() - 1, "사용자가 yaw × pitch를 직접 지정: 특수 촬영 환경이나 실험용",
-                                Qt.ItemDataRole.ToolTipRole)
+        self.view_layout.setItemData(self.view_layout.count() - 1,
+                                     "The yaw × pitch grid typed below: for a special rig or an experiment",
+                                     Qt.ItemDataRole.ToolTipRole)
         self.view_layout.setToolTip("Where the pinhole views look (a layout, not a camera model). No layout has been shown "
-                               "to train better; more views = more coverage / overlap and more images")
+                                    "to train better; more views = more coverage / overlap and more images")
         # what the layout is for, how many views and how much they overlap, and a map of them
         self.layout_note = QLabel("")
         self.layout_note.setWordWrap(True)
@@ -236,35 +311,71 @@ class ExportDialog(QDialog):
         self.fov = QSpinBox()
         self.fov.setRange(30, 150)
         self.fov.setValue(90)
-        self.fov.setSuffix("° FOV")
+        self.fov.setSuffix("°")
         self.side = QSpinBox()
         self.side.setRange(0, 16384)
         self.side.setSingleStep(64)
-        self.side.setSpecialValueText("auto px")
+        self.side.setSpecialValueText("auto")
         self.side.setSuffix(" px")
         self.side.setToolTip("Output width; auto = the source's own resolution at that angle")
-        self._pin_row = QWidget()
-        prow = QHBoxLayout(self._pin_row)
-        prow.setContentsMargins(0, 0, 0, 0)
-        self._yaw_label, self._pitch_label = QLabel("yaw"), QLabel("pitch")
-        self._view_widgets = (self.view_layout, self._yaw_label, self.yaws, self._pitch_label, self.pitches, self.fov)
-        for w in (self.convert,) + self._view_widgets + (self.side,):
-            prow.addWidget(w)
+        for w in (self.yaws, self.pitches):
+            w.setMinimumWidth(w.fontMetrics().horizontalAdvance("-135, -90, -45, 0, 45, 90") + 16)
+        # the views in one line; Edit opens the fields and the map (C-2)
+        self.views_summary = QLabel()
+        self.views_summary.setWordWrap(True)
+        self.views_summary.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.views_edit = QPushButton()
+        self.views_edit.setCheckable(True)
+        self.views_edit.setFlat(True)
+        self.views_edit.setChecked(self._open["views"])
+        self.views_edit.toggled.connect(lambda _on: self._toggle("views"))
+        self._cam_row = QWidget()
+        crow = QHBoxLayout(self._cam_row)
+        crow.setContentsMargins(0, 0, 0, 0)
+        crow.addWidget(self.convert)
+        crow.addStretch(1)
+        self._views_line = QWidget()
+        sl = QHBoxLayout(self._views_line)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.addWidget(self.views_summary, 1)
+        sl.addWidget(self.views_edit, 0, Qt.AlignmentFlag.AlignTop)
+        self._views_box = QWidget()
+        vb = QVBoxLayout(self._views_box)
+        vb.setContentsMargins(0, 0, 0, 0)
+        self._views_form = QFormLayout()
+        self._views_form.addRow("Layout", self.view_layout)
+        self._views_form.addRow("Yaw", self.yaws)
+        self._views_form.addRow("Pitch", self.pitches)
+        self._views_form.addRow("FOV", self.fov)
+        self._views_form.addRow("Size", self.side)
+        vb.addLayout(self._views_form)
+        vb.addWidget(self.layout_note)
+        vb.addWidget(self.view_preview)
+        # the files: fields for Custom, the preset's values as text for a preset
         self.out = QLineEdit(str(default_dir))
+        self.out_fixed = _PathLabel()
         self.pattern = QComboBox()
         for label, _ in self.PATTERNS:
             self.pattern.addItem(label)
-        self.invert = QCheckBox("Invert (object black, background white)")
-        self.empty = QCheckBox("Also write empty masks for images without Objects")
-        self.sky_edges = QCheckBox("Sky edges at full resolution (slower: reads every image)")
+        self.names_fixed = QLabel()
+        self.names_fixed.setWordWrap(True)
+        self.invert = QCheckBox("Invert (Objects black)")
+        self.invert.setToolTip("Objects black, background white")
+        self.empty = QCheckBox("Also empty masks")
+        self.empty.setToolTip("Also write a mask for the images without Objects (all white: nothing ignored there)")
+        self._colours = QWidget()
+        cl = QHBoxLayout(self._colours)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.addWidget(self.invert)
+        cl.addWidget(self.empty)
+        cl.addStretch(1)
+        self.sky_edges = QCheckBox("Edges at full resolution (slower)")
         self.sky_edges.setToolTip(
             "Sky Objects: the edge is decided again on the full-size image, pixel by pixel, by colour,\n"
             "instead of scaling the working mask up (blocky, over the outer leaves). Also finds the sky\n"
             "between leaves near the edge. Other Objects are scaled up as always. About 1 s per 4K image."
         )
         self.sky_edges.setChecked(sky_edges)
-        self.sky_edges.setVisible(sky)
-        form = QFormLayout(self)
         # the check: what gets written, and the images worth a look before exporting
         self.summary = QLabel()
         self.summary.setTextFormat(Qt.TextFormat.RichText)
@@ -273,33 +384,65 @@ class ExportDialog(QDialog):
         self.problems.setMaximumHeight(130)
         self.problems.setToolTip("Double-click: close this and open the image")
         self.problems.itemDoubleClicked.connect(self._open_problem)
-        if scene is not None:
-            form.addRow("For", self.target)
-            form.addRow(self.note)
-            form.addRow("Output", self._out_row)
-            form.addRow("", self._pin_row)
-            form.addRow("", self.layout_note)
-            form.addRow("", self.view_preview)
-        if check is not None:
-            form.addRow(self.summary)
-            form.addRow(self.problems)
+        # sections in the order of the questions (EX-1, C-1): What -> Where -> Files, the check last
+        self._body = QWidget()
+        main = QVBoxLayout(self._body)
+        main.setContentsMargins(0, 0, 0, 0)
+        number = iter(range(1, 5))
+        self._where_form: Optional[QFormLayout] = None
         if save_set is not None:
+            what = QFormLayout()
             row = QHBoxLayout()
             row.addWidget(self.mask, 1)
             row.addWidget(self.save_set_btn)
             row.addWidget(self.delete_set_btn)
-            form.addRow("Mask", row)
-        form.addRow("Folder", _path_row(self.out, self._pick))
-        form.addRow(self.folders)
-        form.addRow("File names", self.pattern)
-        form.addRow(self.invert)
-        form.addRow(self.empty)
-        form.addRow(self.sky_edges)
+            what.addRow("Mask", row)
+            main.addWidget(_section(f"{next(number)}  What", what))
+        if scene is not None:
+            self._where_form = QFormLayout()
+            self._where_form.addRow("For", self.target)
+            self._where_form.addRow(self._note_box)
+            self._where_form.addRow("Output", self._out_row)
+            self._where_form.addRow("Dataset", self._dataset_row)
+            self._where_form.addRow("Cameras", self._cam_row)
+            self._where_form.addRow("", self._views_line)
+            self._where_form.addRow(self._views_box)
+            main.addWidget(_section(f"{next(number)}  Where", self._where_form))
+        self._files_form = QFormLayout()
+        ff = self._files_form
+        self._out_edit = _path_row(self.out, self._pick)
+        self._out_preset = _fixed(self.out_fixed)
+        self._names_preset = _fixed(self.names_fixed)
+        ff.addRow("Folder", self._out_edit)
+        ff.addRow("Folder", self._out_preset)
+        ff.addRow(self.folders)
+        ff.addRow("Names", self.pattern)
+        ff.addRow("Names", self._names_preset)
+        ff.addRow("", self._colours)
+        ff.addRow("Sky", self.sky_edges)
+        ff.setRowVisible(self.sky_edges, sky)
+        main.addWidget(_section(f"{next(number)}  Files", ff))
+        if check is not None:
+            box = QVBoxLayout()
+            box.addWidget(self.summary)
+            box.addWidget(self.problems)
+            main.addWidget(_section("✓  Check", box))
+        main.addStretch(1)
+        # a short screen (1280 x 720): the sections scroll, the buttons stay
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(self._body)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export")
+        self.export_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        self.export_btn.setText("Export")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
+        self._buttons = buttons
+        outer = QVBoxLayout(self)
+        outer.addWidget(self._scroll, 1)
+        outer.addWidget(buttons)
         self.pattern.currentIndexChanged.connect(self._run_check)
         self.empty.toggled.connect(self._run_check)
         self.target.currentIndexChanged.connect(self._apply_target)
@@ -309,12 +452,23 @@ class ExportDialog(QDialog):
         for w in (self.fov, self.side):
             w.valueChanged.connect(lambda _v: self._run_check())
         self.fov.valueChanged.connect(lambda _v: self._apply_target())
+        self.side.valueChanged.connect(lambda _v: self._apply_target())
         for w in (self.yaws, self.pitches):
             w.textChanged.connect(lambda _t: self._run_check())
             w.textChanged.connect(lambda _t: self._apply_target())
         self.dataset.textChanged.connect(lambda _t: self._apply_target())
         self.mask.currentIndexChanged.connect(self._run_check)
         self.out.textChanged.connect(lambda _t: self._show_folders())
+        self.out.textChanged.connect(self.out_fixed.set_path)
+        self.out_fixed.set_path(self.out.text())
+        self._apply_target()
+
+    def _toggle(self, part: str) -> None:
+        """More / Edit: opened or closed, and kept that way for the next Export window."""
+        if part == "note":
+            self._open["note"] = not self._open["note"]
+        else:
+            self._open["views"] = self.views_edit.isChecked()
         self._apply_target()
 
     # --- mask sets -------------------------------------------------------------------------
@@ -322,7 +476,7 @@ class ExportDialog(QDialog):
     def _fill_sets(self, select: Optional[str] = None) -> None:
         self.mask.blockSignals(True)
         self.mask.clear()
-        self.mask.addItem("Final Mask (the checked Objects)", None)
+        self.mask.addItem("Final Mask — the checked Objects", None)
         for name, ids in sorted(self._sets.items()):
             self.mask.addItem(f"{name} ({len(ids)} Object{'s' if len(ids) != 1 else ''})", name)
         if self._sets:
@@ -397,8 +551,14 @@ class ExportDialog(QDialog):
 
     def views(self):
         """What the new dataset's cameras become: ``Views`` (pinhole), ``Erp`` (360) or None (kept)."""
+        if not (self._convertible and self.dataset_root() is not None):
+            return None
+        return self._typed_views()
+
+    def _typed_views(self):
+        """What the convert choice and the fields say, whether or not a new dataset is picked."""
         kind = self.convert.currentData()
-        if not (self._convertible and kind and self.dataset_root() is not None):
+        if not kind:
             return None
         if kind == "erp":
             return Erp(width=self.side.value())
@@ -431,7 +591,9 @@ class ExportDialog(QDialog):
         self.delete_set_btn.setEnabled(self.mask.currentData() not in (None, self.EVERY))
         if chosen == [None]:
             self.folders.setText("")
+            self._files_form.setRowVisible(self.folders, False)
         else:
+            self._files_form.setRowVisible(self.folders, True)
             text = "Writes: " + " · ".join(f"{n or 'Final'} → {self._folder(n).name}/" for n in chosen)
             p = self.preset()
             if p is not None and any(n is not None for n in chosen):
@@ -445,7 +607,7 @@ class ExportDialog(QDialog):
     def _apply_target(self) -> None:
         """Rows shown / hidden together, then the window sized once: one by one, every step resized the
         window below what Windows allows (word-wrapped text) and Qt warned each time (2026-10-02)."""
-        lay = self.layout()
+        lay = self._body.layout()
         if lay is None:
             self._apply_target_now()
             return
@@ -454,30 +616,76 @@ class ExportDialog(QDialog):
             self._apply_target_now()
         finally:
             lay.setEnabled(True)
-            need = lay.totalHeightForWidth(self.width()) if lay.hasHeightForWidth() else lay.totalMinimumSize().height()
-            if need > self.height():
-                self.resize(self.width(), need)
+            lay.invalidate()
             lay.activate()
+            self._fit_height(shrink=True)  # grows with an opened part, shrinks back when it closes
+            QTimer.singleShot(0, self._fit_height)  # again once the labels' new sizes are known
+
+    def _fit_height(self, shrink: bool = False) -> None:
+        """Tall enough for every word-wrapped line at the window's width now (EX-3, EX-4: nothing cut off);
+        on a short screen as tall as it can be, the sections scroll."""
+        body = self._body.layout()
+        outer = self.layout()
+        if body is None or outer is None:
+            return
+        bar = self._scroll.verticalScrollBar().sizeHint().width()
+        self._scroll.setMinimumWidth(self._body.minimumSizeHint().width() + bar)  # never cut off sideways
+        width = self._scroll.viewport().width()
+        need = body.totalHeightForWidth(width) if body.hasHeightForWidth() else body.totalSizeHint().height()
+        m = outer.contentsMargins()
+        need += self._buttons.sizeHint().height() + outer.spacing() + m.top() + m.bottom()
+        screen = self.screen()
+        if screen is not None:
+            need = min(need, screen.availableGeometry().height() - 60)  # the title bar
+        if need > self.height() or (shrink and need < self.height()):
+            self.resize(self.width(), need)
+
+    def showEvent(self, e) -> None:
+        super().showEvent(e)
+        self._fit_height()
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        if e.size().width() != e.oldSize().width():
+            self._fit_height()  # narrower: more lines
 
     def _apply_target_now(self) -> None:
-        """A preset fixes folder, names and colors (shown, grayed); Custom frees them again."""
+        """A preset fixes folder, names and colors (shown as text); Custom gives the fields back."""
         p = self.preset()
         if self.out.isEnabled():
             self._custom_dir = self.out.text()  # keep what was typed for Custom
         for w in (self.out, self.pattern, self.invert, self.empty):
             w.setEnabled(p is None)
-        self._out_row.setVisible(p is not None and self._scene is not None)
-        self.dataset.setEnabled(self.to_new.isChecked())
-        self._pin_row.setVisible(self._convertible and p is not None and self.to_new.isChecked())
-        kind = self.convert.currentData()
-        for w in self._view_widgets:
-            w.setVisible(kind == "pinhole")
+        scene = p is not None and self._scene is not None
+        new = scene and self.to_new.isChecked()
+        kind = self.convert.currentData() if self._convertible and new else None
+        wf = self._where_form
+        if wf is not None:
+            wf.setRowVisible(self._note_box, scene)
+            wf.setRowVisible(self._out_row, scene)
+            wf.setRowVisible(self._dataset_row, new)
+            wf.setRowVisible(self._cam_row, self._convertible and new)
+            wf.setRowVisible(self._views_line, kind is not None)
+            wf.setRowVisible(self._views_box, kind is not None and self._open["views"])
+        self.views_edit.blockSignals(True)
+        self.views_edit.setChecked(self._open["views"])
+        self.views_edit.blockSignals(False)
+        self.views_edit.setText("Hide ▴" if self._open["views"] else "Edit ▸")
+        vf = self._views_form
         grid = kind == "pinhole" and (self.view_layout.currentData() is None or not self._erp)
-        for w in (self._yaw_label, self.yaws, self._pitch_label, self.pitches):
-            w.setVisible(grid)
-        self.view_layout.setVisible(kind == "pinhole" and self._erp)
-        self._show_layout(kind == "pinhole" and self._convertible and self.to_new.isChecked())
-        self.side.setVisible(kind is not None)
+        vf.setRowVisible(self.view_layout, kind == "pinhole" and self._erp)
+        vf.setRowVisible(self.yaws, grid)
+        vf.setRowVisible(self.pitches, grid)
+        vf.setRowVisible(self.fov, kind == "pinhole")
+        vf.setRowVisible(self.side, kind is not None)
+        self._show_layout(kind == "pinhole")
+        self.views_summary.setText(self._views_text(kind))
+        ff = self._files_form
+        ff.setRowVisible(self._out_edit, p is None)
+        ff.setRowVisible(self._out_preset, p is not None)
+        ff.setRowVisible(self.pattern, p is None)
+        ff.setRowVisible(self._names_preset, p is not None)
+        ff.setRowVisible(self._colours, p is None)
         if p is None:
             self.out.setText(self._custom_dir)
             self.note.setText("")
@@ -492,9 +700,32 @@ class ExportDialog(QDialog):
             self.pattern.setCurrentIndex([v for _, v in self.PATTERNS].index(pattern))
             self.invert.setChecked(p.object_black)
             self.empty.setChecked(p.every_image)
+            self.names_fixed.setText(f"{pattern} · Objects {'black' if p.object_black else 'white'}"
+                                     + (" · every image" if p.every_image else " · images with a mask")
+                                     + (" (as the masks there)" if follows else ""))
             self.note.setText(f"{p.note} {follows}Masks already there for these images (a.png or a.jpg.png) are "
                               f"moved to {p.folder}_backup_<time>/ first. Checked against: {p.verified}.")
+            head = _first_sentence(p.note)
+            self.note_head.setText(head)
+            opened = self._open["note"]
+            self.note_head.setVisible(not opened)
+            self.note.setVisible(opened)
+            self.note_more.setText(f"<a href='more'>{'Less ▴' if opened else 'More ▸'}</a>")
         self._run_check()
+
+    def _views_text(self, kind) -> str:
+        """The new dataset's views in one line (the fields are behind Edit)."""
+        if kind is None:
+            return ""
+        side = "auto" if self.side.value() == 0 else f"{self.side.value()} px"
+        if kind in ("erp", "stitch"):
+            return f"Width {side}"
+        v = self._typed_views()
+        key = self.view_layout.currentData() if self._erp else None
+        where = (VIEW_LAYOUTS[key].label if key is not None
+                 else f"Yaw {self.yaws.text().strip()} · Pitch {self.pitches.text().strip()}")
+        n = self._kept_views(v)
+        return f"{where} · FOV {self.fov.value()}° · Size {side} → <b>{n} view{'s' if n != 1 else ''}</b> per image"
 
     def _scene_style(self, p) -> Optional[str]:
         """Into the scene, for a trainer that reads either naming: how the masks there are named."""
@@ -505,6 +736,7 @@ class ExportDialog(QDialog):
     def _run_check(self) -> None:
         self._show_folders()
         if self._check is None:
+            self._set_button(None)
             return
         name = self._chosen()[0] if len(self._chosen()) == 1 else None  # Every set: the Final Mask's check
         pattern = self.PATTERNS[self.pattern.currentIndex()][1]
@@ -525,7 +757,7 @@ class ExportDialog(QDialog):
         elif isinstance(v, Stitch):
             written = len(self._groups)  # one mask per moment (a moment with a ⊘ image is left out)
         rows = [
-            f"<b>{written}</b> file(s) will be written for <b>{c.images}</b> image(s)",
+            f"<b>{written:,}</b> file(s) will be written for <b>{c.images:,}</b> image(s)",
             line(missing == 0 or self.empty.isChecked(), f"Images without a mask: {missing}"
                  + ("" if missing == 0 else " (written all white: nothing ignored there)" if self.empty.isChecked()
                     else " (no file — see “Also write empty masks”)")),
@@ -537,10 +769,10 @@ class ExportDialog(QDialog):
         self.summary.setText("<br>".join(rows))
         self.problems.clear()
         reasons = (
-            (set() if self.empty.isChecked() else set(c.without_mask), "no mask"),
-            (set(c.empty), "empty"),
-            (set(c.warning), "⚠ / ✕"),
-            ({k for ks in c.clashes for k in ks}, "name clash"),
+            (set() if self.empty.isChecked() else set(c.without_mask), "no mask → no file"),
+            (set(c.empty), "empty mask"),
+            (set(c.warning), "suspicious or failed (⚠ ✕)"),
+            ({k for ks in c.clashes for k in ks}, "file name clash"),
         )
         index = {k: i for i, k in enumerate(c.keys)}
         for k in c.problems:
@@ -550,6 +782,20 @@ class ExportDialog(QDialog):
             self.problems.addItem(f"{index[k] + 1}  {k}  —  {why}")
             self.problems.item(self.problems.count() - 1).setData(Qt.ItemDataRole.UserRole, k)
         self.problems.setVisible(self.problems.count() > 0)
+        self._set_button(written)
+        if self.layout() is not None:
+            QTimer.singleShot(0, self._fit_height)  # the summary may have more lines now
+
+    def _set_button(self, written: Optional[int]) -> None:
+        """Export N files → where (EX-12); nothing to write: off."""
+        chosen = self._chosen()
+        root = self.dataset_root()
+        to = (f"{len(chosen)} folders" if len(chosen) > 1
+              else "new dataset" if root is not None
+              else f"{self._folder(chosen[0]).name}/")
+        count = "" if written is None or len(chosen) > 1 else f" {written:,} file{'s' if written != 1 else ''}"
+        self.export_btn.setText(f"Export{count} → {to}")
+        self.export_btn.setEnabled(written != 0)
 
     def _scene_rows(self, line) -> List[str]:
         """The scene's side of the check: cameras the trainer may not read, files to be backed up."""

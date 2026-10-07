@@ -56,6 +56,6 @@
 
 ## 사용자 메모
 <!-- 여기에 한 줄씩: - 무엇이 / 어디서 / (캡처 파일 이름) -->
-- Export 창 New dataset → Pinhole views의 배치 설명(목록 툴팁과 아래 회색 글)만 한국어(`COLMAP panorama SfM 방식 기반의 …`), 나머지 UI는 영어 / `src/core/reproject.py` `VIEW_LAYOUTS`의 purpose, `dialogs.py` Custom 툴팁 (설명서 그림 `docs/manual/img/03-convert-options.png`, 2026-10-01)
+- ~~Export 창 New dataset → Pinhole views의 배치 설명(목록 툴팁과 아래 회색 글)만 한국어, 나머지 UI는 영어~~ → 영어로 `v0.4-p115` (2026-10-01)
 - ~~Batch Masking 창: 왼쪽 설정 칸(기본 폭 440)보다 내용이 넓어 가로 스크롤이 생기고 긴 체크박스 글·회색 안내가 잘림~~ → 고침 `v0.4-p114` (p113 캡처 중 발견, 2026-10-08)
 - GPU 없이(CPU) 실행하면 SAM2는 동작하지만 **SAM3 Detect가 실패**: `RuntimeError: No CUDA GPUs are available`. `vendor/sam3/sam3/model/position_encoding.py`의 `torch.zeros(..., device="cuda")` 고정. README와 포터블 안내는 "GPU가 없으면 CPU로 동작" / 실행: `CUDA_VISIBLE_DEVICES=-1` (설명서 그림 작업 중 발견, 2026-10-01)
