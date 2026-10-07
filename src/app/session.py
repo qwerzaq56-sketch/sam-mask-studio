@@ -34,7 +34,8 @@ from src.core.propagation import Direction, PropagationPlan, existing_targets, g
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import (
-    close_gaps, fill_holes, grow_mask, grow_to_edges, near_edge, remove_specks, select_range, shrink_mask,
+    RANGE_KEYS, apply_by_color, close_gaps, fill_holes, grow_mask, grow_to_edges, near_edge, range_selection,
+    remove_specks, select_range, shrink_mask,
     within,
 )
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
@@ -74,36 +75,8 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
     if tool == "invert":
         return ~base
     if tool == "by_color":  # Range only (the Auto ways went in p97, BC-P5)
-        band = settings.get("color_band", 30) if settings.get("color_band_on", True) else 0  # 0: anywhere
-        sel = range_selection(image, settings)
-        # A = the selection, B = the rest (inside the Near edge area): Add puts A in, Remove takes B out
-        area = near_edge(base, band)
-        a, b = sel & area, ~sel & area
-        action = settings.get("color_action", "both")
-        if action == "add":
-            return base | a
-        if action == "remove":
-            return base & ~b
-        return (base | a) & ~b
+        return apply_by_color(base, image, settings)
     raise ValueError(f"Unknown auto tool: {tool}")
-
-
-RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "color_samples_out", "color_tol_out",
-              "bright_range", "bright_use", "bright_not", "range_join", "color_invert")
-
-
-def range_selection(image: np.ndarray, settings: dict, with_parts: bool = False):
-    """By Color's A: the picked colors (less the left-out ones, the nearer wins) and / or the brightness range,
-    each maybe turned around (Not), joined by Or (default) / And (p101), less the left-out colors, then Swap. *with_parts*: ``(A, overlap, color)``, see ``select_range``."""
-    sel, overlap, color = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
-                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
-                                settings.get("bright_use", False), settings.get("color_not", False),
-                                settings.get("bright_not", False), settings.get("color_samples_out", ()),
-                                settings.get("color_tol_out"), with_parts=True,
-                                join=settings.get("range_join", "or"))
-    if settings.get("color_invert", False):  # Swap A / B
-        sel = ~sel
-    return (sel, overlap, color) if with_parts else sel
 
 
 class Engine(Protocol):

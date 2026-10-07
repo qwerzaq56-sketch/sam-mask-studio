@@ -727,6 +727,15 @@
 - Ctrl+우클릭은 드래그를 시작하지 않음: 손이 조금 움직여도 누른 자리의 조각 빼기 한 번. 색 고르기 중 Ctrl+우클릭은 아무것도 안 함.
 - 테스트: 크기 드래그 테스트를 좌클릭으로, Ctrl+우클릭을 40 px 움직여도 크기 그대로 · 누른 자리 빼기 한 번.
 
+## 109단계 (`v0.4-p109`): `cli sky --color-preset` (By Color를 배치로)
+
+- 사용자 요청(10-07, 제안에 "둘 다 진행"): 하늘 정답을 만들 때 쓴 By Color 프리셋을 명령줄 하늘 마스크에 적용.
+- `range_selection`·`RANGE_KEYS`와 By Color의 A/B 계산(`apply_by_color`)을 `src/app/session.py`에서 `src/core/refine.py`로 옮김. 앱도 같은 함수를 부름(동작 그대로, `src.app.session`에서 import도 그대로 됨).
+- `sky --color-preset NAME|file.json`: 앱 By Color 패널의 프리셋(이름, `config.local.json`) 또는 그 설정 `.json`. 원본 크기 마스크(경계 판정 뒤, `--invert` 전)에 적용. 모르는 키는 거절. 리포트 `settings.by_color`에 설정 기록. `--no-color`로 끔.
+- 마스킹 프리셋 `SkyStep.color`(dict): `run`도 같은 방식으로 적용.
+- 측정(0022 정답 12장, CPU, 6장 31초): `cli sky` 넘침 12.8 % → 프리셋 `sky 8 colors + bright 205`로 IoU 0.980, 넘침 0.95 %(최대 7.01 % = 00155_x384_y1152), 놓침 1.06 %, F@2 0.888. 크롭에 적용했던 앞 측정(0.78 %)보다 조금 나쁨: 크롭 경계에서 Near edge 띠가 잘렸던 차이. 이 프리셋으로 정답을 만들었으니 낙관적일 수 있음 → 다른 프레임 정답(`truth/sky2`)으로 다시 잼.
+- 테스트 2개(가짜 하늘 모델: .json·이름 프리셋으로 하늘색 아닌 조각 빠짐, 모르는 이름·키 거절, 마스킹 프리셋에 color). 전체 274 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

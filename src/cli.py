@@ -6,6 +6,9 @@ Object's model and settings (src/core/special.py), its edge decided again on the
 
     python -m src.cli sky H:/scene/images --out H:/scene/sky_masks --recursive
 
+``--color-preset NAME`` then puts By Color on each full-size mask, as the app's auto tool does: a preset saved
+in the app's By Color panel (config.local.json) or a .json file of those settings (p109).
+
 ``lens``: a fisheye's image circle for every image — the Lens edge special Object's circle, found in
 each camera folder's frames (cam0/ and cam1/ may differ), pulled in by a margin over the lens rim's glow.
 
@@ -135,15 +138,19 @@ class Batch:
 def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "name", invert: bool = False,
                threshold: float = 50.0, grow: int = 0, top_only: bool = False, refine: bool = True,
                edges: bool = True, max_side: int = 1024, model_path: Path = SKY_MODEL,
-               existing: str = "stop", log=print) -> dict:
-    """The ``sky`` command; returns its report (also what ``--report`` writes)."""
+               existing: str = "stop", log=print, color: Optional[dict] = None) -> dict:
+    """The ``sky`` command; returns its report (also what ``--report`` writes). *color*: By Color settings (a
+    preset as the app saves it, see :func:`color_preset`) put on each full-size mask before ``invert``."""
+    from src.core.refine import apply_by_color, color_settings
     from src.core.sky_edges import sky_edges
     from src.core.special import SKY, SkyModel, Special, sky_maps, sky_mask
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
     b = Batch("sky", images, out, recursive, names, existing, log=log, settings={
         "threshold": threshold, "grow": grow, "top_only": top_only, "refine": refine,
-        "full_resolution_edges": edges, "max_side": max_side, "invert": invert, "model": str(model_path)})
+        "full_resolution_edges": edges, "max_side": max_side, "invert": invert, "model": str(model_path),
+        "by_color": color})
+    by_color = color_settings(color) if color is not None else None
     sp = Special.new(SKY).with_params(threshold=threshold, grow=grow, top_only=float(top_only),
                                       refine=float(refine))
     model = SkyModel(model_path)
@@ -153,6 +160,8 @@ def sky_folder(images: Path, out: Path, recursive: bool = False, names: str = "n
         prob, refined = sky_maps(model, to_working(rgb, max_side))
         m = sky_mask(refined if refine else prob, sp)
         full = sky_edges(m, rgb) if edges else resize_mask(m, rgb.shape[:2])
+        if by_color is not None:
+            full = apply_by_color(full, rgb, by_color)
         return (~full if invert else full), {"sky": round(float(full.mean()), 4)}
 
     return b.run(make, lambda note: f"sky {100 * note['sky']:.1f}%")
@@ -397,7 +406,8 @@ def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: 
         s = preset.sky
         log(f"--- sky -> {folders['sky']}")
         steps["sky"] = sky_folder(images, folders["sky"], threshold=s.threshold, grow=s.grow, top_only=s.top_only,
-                                  refine=s.refine, edges=s.edges, max_side=s.max_side, model_path=sky_model, **common)
+                                  refine=s.refine, edges=s.edges, max_side=s.max_side, model_path=sky_model,
+                                  color=s.color, **common)
     return {
         "command": "run", "version": app_version(), "images": str(images), "out": str(out),
         "preset": preset.to_dict(), "folders": {k: str(v) for k, v in folders.items()}, "steps": steps,
@@ -453,6 +463,34 @@ def _default_person():
     return PersonStep(labels=list(LABELS), attach=list(ATTACH), threshold=THRESHOLD, touch=TOUCH, grow=GROW)
 
 
+COLOR_KEYS = {"color_samples", "color_tol", "color_use", "color_not", "color_samples_out", "color_tol_out",
+              "bright_range", "bright_use", "bright_not", "range_join", "color_invert", "color_band",
+              "color_band_on", "color_action"}
+
+
+def color_preset(value: str) -> dict:
+    """By Color settings for ``sky --color-preset``: a .json file of them, else the name of a preset saved in the
+    app's By Color panel (config.local.json ``color_presets``)."""
+    p = Path(value)
+    if p.suffix.lower() == ".json":
+        if not p.is_file():
+            raise ValueError(f"no such file: {p}")
+        d = json.loads(p.read_text(encoding="utf-8"))
+    else:
+        from src.app.settings import Settings
+
+        presets = Settings.load().color_presets
+        if value not in presets:
+            raise ValueError(f"no By Color preset '{value}' (saved in the app: {', '.join(presets) or 'none'})")
+        d = presets[value]
+    if not isinstance(d, dict):
+        raise ValueError(f"By Color settings are a JSON object: {value}")
+    bad = sorted(set(d) - COLOR_KEYS)
+    if bad:
+        raise ValueError(f"unknown By Color setting(s) in {value}: {', '.join(bad)}")
+    return dict(d)
+
+
 def _settings(parser: argparse.ArgumentParser, args, step: str):
     """(*step*'s settings: the preset's, else the defaults, changed by the options given; the preset or None)."""
     from dataclasses import asdict
@@ -475,6 +513,13 @@ def _settings(parser: argparse.ArgumentParser, args, step: str):
         v = getattr(args, k, None)
         if v is not None:
             values[k] = split(v) if k in ("labels", "attach") else v
+    if getattr(args, "no_color", False):
+        values["color"] = None
+    elif getattr(args, "color_preset", None):
+        try:
+            values["color"] = color_preset(args.color_preset)
+        except ValueError as e:
+            parser.error(str(e))
     return STEPS[step](**values), preset
 
 
@@ -621,6 +666,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sky.add_argument("--no-edges", dest="edges", action="store_const", const=False,
                      help="Scale the working mask up (nearest) instead of deciding the edge at full resolution")
     sky.add_argument("--max-side", type=int, help="Working resolution's longer side (default 1024)")
+    sky.add_argument("--color-preset", help="Put By Color on each full-size mask, as the app does: a preset saved in "
+                                            "the app's By Color panel, by name, or a .json file of those settings")
+    sky.add_argument("--no-color", action="store_true", help="No By Color, even if --preset has it")
     sky.add_argument("--model", type=Path, default=SKY_MODEL, help=f"skyseg.onnx (default {SKY_MODEL})")
 
     lens = sub.add_parser("lens", help="Fisheye lens edge masks for a folder",
@@ -803,7 +851,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report = sky_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             threshold=s.threshold, grow=s.grow, top_only=s.top_only, refine=s.refine,
-            edges=s.edges, max_side=s.max_side, model_path=args.model, existing=existing,
+            edges=s.edges, max_side=s.max_side, model_path=args.model, existing=existing, color=s.color,
         )
     elif args.command == "lens":
         c, _ = _settings(parser, args, "lens")
