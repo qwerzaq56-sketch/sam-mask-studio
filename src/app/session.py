@@ -35,7 +35,7 @@ from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import (
     close_gaps, fill_holes, grow_mask, grow_to_edges, near_edge, remove_specks, select_range, shrink_mask,
-    split_by_color, take, within,
+    within,
 )
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
@@ -51,8 +51,8 @@ AUTO_PARAMS = {
     "shrink": ("amount",),
     "close_gaps": ("gap",),
     "invert": (),
-    "by_color": ("color_basis", "color_balance", "color_band", "color_band_on", "color_action", "color_samples", "color_tol",
-                 "color_use", "bright_range", "bright_use", "color_invert"),
+    "by_color": ("color_band", "color_band_on", "color_action", "color_samples", "color_tol", "color_use", "color_not",
+                 "bright_range", "bright_use", "bright_not", "color_invert"),
 }
 IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
 
@@ -73,28 +73,32 @@ def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], setti
         return close_gaps(base, settings.get("gap", 10))
     if tool == "invert":
         return ~base
-    if tool == "by_color":
+    if tool == "by_color":  # Range only (the Auto ways went in p97, BC-P5)
         band = settings.get("color_band", 30) if settings.get("color_band_on", True) else 0  # 0: anywhere
-        if settings.get("color_basis") == "range":  # the picked colors / a brightness range
-            sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
-                               settings.get("color_use", True), settings.get("bright_range", (0, 255)),
-                               settings.get("bright_use", False))
-            if settings.get("color_invert", False):  # Invert: A and B swap
-                sel = ~sel
-            # A = the selection, B = the rest (inside the Near edge area): Add puts A in, Remove takes B out
-            area = near_edge(base, band)
-            a, b = sel & area, ~sel & area
-            action = settings.get("color_action", "both")
-            if action == "add":
-                return base | a
-            if action == "remove":
-                return base & ~b
-            return (base | a) & ~b
-        else:
-            result = split_by_color(image, base, settings.get("color_basis", "color"),
-                                    settings.get("color_balance", 50), band)
-        return take(base, result, settings.get("color_action", "both"))
+        sel = range_selection(image, settings)
+        # A = the selection, B = the rest (inside the Near edge area): Add puts A in, Remove takes B out
+        area = near_edge(base, band)
+        a, b = sel & area, ~sel & area
+        action = settings.get("color_action", "both")
+        if action == "add":
+            return base | a
+        if action == "remove":
+            return base & ~b
+        return (base | a) & ~b
     raise ValueError(f"Unknown auto tool: {tool}")
+
+
+RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "bright_range", "bright_use", "bright_not",
+              "color_invert")
+
+
+def range_selection(image: np.ndarray, settings: dict) -> np.ndarray:
+    """By Color's A: the picked colors and / or the brightness range, each maybe turned around (Not), then Swap."""
+    sel = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
+                       settings.get("color_use", True), settings.get("bright_range", (0, 255)),
+                       settings.get("bright_use", False), settings.get("color_not", False),
+                       settings.get("bright_not", False))
+    return ~sel if settings.get("color_invert", False) else sel  # Swap A / B
 
 
 class Engine(Protocol):
@@ -690,17 +694,13 @@ class Session:
 
     def auto_ab(self, settings: dict) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """By Color Range's (A, B) where it decides (the Near edge area if on, inside the region if any):
-        A = what the filter catches (after Invert), B = the rest. None for other tools and the Auto ways."""
-        if self.auto_tool != "by_color" or settings.get("color_basis") != "range" or self.image is None:
+        A = what the filter catches (after Swap), B = the rest. None for other tools."""
+        if self.auto_tool != "by_color" or self.image is None:
             return None
-        key = tuple((k, settings.get(k)) for k in
-                    ("color_samples", "color_tol", "color_use", "bright_range", "bright_use", "color_invert"))
+        key = tuple((k, settings.get(k)) for k in RANGE_KEYS)
         c = self._ab_cache
         if c is None or c[0] != key or c[1] is not self.image:
-            sel = select_range(self.image, settings.get("color_samples", ()), settings.get("color_tol", 20),
-                               settings.get("color_use", True), settings.get("bright_range", (0, 255)),
-                               settings.get("bright_use", False))
-            c = self._ab_cache = (key, self.image, ~sel if settings.get("color_invert", False) else sel)
+            c = self._ab_cache = (key, self.image, range_selection(self.image, settings))
         a = c[2]
         area = self.auto_area(settings)
         if area is None and self.region is not None:

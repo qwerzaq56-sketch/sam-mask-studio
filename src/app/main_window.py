@@ -964,7 +964,7 @@ class MainWindow(QMainWindow):
         """The colors an auto tool's preview uses right now and what they mean (AT-2, p91); none without a tool."""
         if s.auto_tool is None:
             return []
-        if s.auto_tool == "by_color" and tool_settings.get("color_basis") == "range":
+        if s.auto_tool == "by_color":
             items = [(AUTO_ADD_COLOR, 150, "A: adds"), (AUTO_ADD_COLOR, 60, "A: already in"),
                      (AUTO_SUB_COLOR, 130, "B: removes"), (AUTO_SUB_COLOR, 60, "B: already out")]
         else:

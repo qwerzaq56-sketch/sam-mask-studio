@@ -1873,20 +1873,22 @@ def test_batch_mask_dialog_edits_a_preset_and_builds_the_commands(qapp, win, tmp
 
 
 def test_by_color_auto_tool_redraws_the_edge(qapp, win):
-    """p68: By Color decides the pixels near the mask's edge again by the image's colors (a preview first)."""
+    """p68: By Color decides the pixels near the mask's edge again by the image (a preview first). p97: Range only
+    (the Auto ways are gone), here a brightness range."""
     ids = make_objects(win, 1)
     s = win.session
     win.toggle_edit(ids[0])
     before = s.editing_frame().mask.copy()
     p = win.properties_panel
-    p.color_basis.setCurrentIndex(p.color_basis.findData("brightness"))
+    p.bright_use.setChecked(True)
+    p.bright_lo.setValue(100)
     p.tool_btns["by_color"].click()
     assert s.auto_tool == "by_color" and "By Color" in p.settings_box.title()
     from tests.app.conftest import wait_until
 
     wait_until(qapp, lambda: s.auto_changes()[0] is not None)  # computed off the UI thread (reads the image)
     assert (s.editing_frame().mask == before).all()  # a preview until applied
-    assert p.tool_settings()["color_basis"] == "brightness"
+    assert p.tool_settings()["bright_use"] and "color_basis" not in p.tool_settings()
 
 
 def image_array(q, h, w):
@@ -1972,8 +1974,7 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     win.toggle_edit(ids[0])
     before = s.editing_frame().mask.copy()
     p.tool_btns["by_color"].click()
-    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
-    assert p.range_box.isVisibleTo(p) and not p.balance_row.isVisibleTo(p)
+    assert p.range_box.isVisibleTo(p)
     assert p.pick_btn.isChecked() and c.color_pick_mode  # p77: Range turns the picker on by itself
     assert "Esc" in p.pick_btn.text()  # p79: the button says it is picking and how to stop
     win.act_escape.trigger()  # the first Esc only stops picking
@@ -2115,7 +2116,6 @@ def test_brush_down_to_one_pixel_and_ctrl_drag_sizes(qapp, win):
     qapp.processEvents()
     assert (s.editing_frame().mask & ~before).sum() == 1  # one pixel
     p.tool_btns["by_color"].click()
-    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
     assert c.color_pick_mode
     ctrl = Qt.KeyboardModifier.ControlModifier
     pos = c.rect().center()
@@ -2213,7 +2213,6 @@ def test_picked_colors_undo_and_the_picker_stays_off_over_them(qapp, win):
     win.toggle_edit(ids[0])
     p = win.properties_panel
     p.tool_btns["by_color"].click()
-    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
     assert p.pick_btn.isChecked()  # nothing picked yet: on
     win.canvas.color_picked.emit((10, 20, 30), False)
     win.canvas.color_picked.emit((200, 210, 220), True)
@@ -2308,7 +2307,6 @@ def test_original_view_while_picking_colors(qapp, win, monkeypatch):
     win._original_key(False)
     assert not c.original_view
     p.tool_btns["by_color"].click()
-    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
     assert p.pick_btn.isChecked() and p.original_btn.isEnabled()
     c.set_image(np.full_like(c.image, 77), reset_view=False)
     c.set_overlays([mw.Overlay(np.ones(c.image.shape[:2], bool), (255, 0, 0), "normal")])
@@ -2334,3 +2332,28 @@ def test_original_view_while_picking_colors(qapp, win, monkeypatch):
     win.escape()  # the picker stops: Original goes with it
     assert not p.pick_btn.isChecked() and not p.original_btn.isChecked() and not c.original_view
     assert not p.original_btn.isEnabled()
+
+
+def test_range_not_per_condition(qapp, win):
+    """p97 (BC-P4 a): each Range condition has its own Not; Swap still flips A and B as a whole."""
+    import numpy as np
+    from src.app.session import range_selection
+
+    img = np.zeros((2, 3, 3), np.uint8)
+    img[:, 0] = (250, 250, 250)  # bright white cloud
+    img[:, 1] = (230, 200, 60)  # bright yellow leaves
+    img[:, 2] = (20, 40, 20)  # dark leaves
+    base = {"color_samples": ((250, 250, 250),), "color_tol": 20, "color_use": True,
+            "bright_range": (140, 255), "bright_use": True}
+    assert range_selection(img, base)[0].tolist() == [True, False, False]  # bright and cloud-colored
+    leaves = range_selection(img, {**base, "color_not": True})  # bright, not the cloud's color
+    assert leaves[0].tolist() == [False, True, False]
+    dark = range_selection(img, {**base, "color_use": False, "bright_not": True})
+    assert dark[0].tolist() == [False, False, True]
+    assert range_selection(img, {**base, "color_not": True, "color_invert": True})[0].tolist() == [True, False, True]
+    p = win.properties_panel
+    p.color_not.setChecked(True)
+    p.bright_not.setChecked(True)
+    t = p.tool_settings()
+    assert t["color_not"] and t["bright_not"] and p.color_invert.text() == "Swap A / B"
+
