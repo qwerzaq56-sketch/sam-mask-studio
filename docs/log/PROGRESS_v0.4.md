@@ -543,6 +543,9 @@
 - Range에 **Invert selection**: 고른 색·밝기 범위 밖이 선택(잎을 고르고 Invert하면 나머지 = 하늘).
 - Pick Color 상태: 켜지면 버튼이 주황 'Picking colors: click here or Esc to stop', 캔버스 배너 'PICK COLOR · click: pick · Shift+click: add · Esc / the Pick button: stop'. **Esc 첫 번째는 피커만 끔**(도구·편집은 그대로).
 
+### 80단계 · Pick Color 버튼 글자 짧게 (`v0.4-p80`, 2026-10-07)
+- 켜졌을 때 글자가 버튼 폭에서 잘림 → 'Stop Picking (Esc)'. 자세한 안내는 캔버스 배너에.
+
 ## 진행 예정
 - 하늘: 사용자가 `0022/truth/sky/review`로 후보 12장 검수(틀린 것만 앱에서 고침) → `images_masks/`로 확정 → `truth score`로 예전 Export · `cli sky` · 경계 재판정 끔/켬 비교, 넘침 < 0.5 % 확인 → M3(원본 해상도 줄이기·경계 띠), 제안서 S2.
 - 사람: 다른 데이터셋으로 프롬프트 확인(M5), `probe`로.
