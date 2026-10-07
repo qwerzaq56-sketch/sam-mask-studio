@@ -649,6 +649,17 @@ class MainWindow(QMainWindow):
         p.layer_selected.connect(lambda n: (self.session.select_layer(n), self.refresh()))
         p.load_color_presets(self.settings.color_presets)  # By Color presets live in the settings file (p105)
         p.color_presets_changed.connect(self._save_color_presets)
+        # By Color's settings as last left come back at the next start (p106); kept a moment after each change
+        if self.settings.color_last:
+            p.apply_color_preset(self.settings.color_last, edited=False)
+            t = p.tool_settings()
+            self.session._colors = (tuple(t["color_samples"]), tuple(t["color_samples_out"]))  # no undo step
+        self._color_last_timer = QTimer(self)
+        self._color_last_timer.setSingleShot(True)
+        self._color_last_timer.setInterval(1000)
+        self._color_last_timer.timeout.connect(self._keep_color_last)
+        p.auto_settings_changed.connect(self._color_last_timer.start)
+        p.color_samples_edited.connect(lambda _c: self._color_last_timer.start())
         p.add_layer_requested.connect(lambda: self._do(self.session.add_layer))
         p.toggle_layer_requested.connect(lambda: self._do(self.session.toggle_layer_subtract))
         p.remove_layer_requested.connect(lambda: self._do(self.session.remove_layer))
@@ -1375,6 +1386,7 @@ class MainWindow(QMainWindow):
         for t in self._tasks:
             t.wait(10000)
         self.save()
+        self._keep_color_last()
         self.images_panel.shutdown()
         QApplication.instance().removeEventFilter(self)
         super().closeEvent(event)
@@ -2837,6 +2849,13 @@ class MainWindow(QMainWindow):
                 self.warn(why)
                 return
         self.run_export(dlg.jobs(), dataset=root, views=dlg.views())
+
+    def _keep_color_last(self) -> None:
+        """Remember By Color's settings (the picked colors too) for the next start (p106)."""
+        values = self.properties_panel.color_preset_values()
+        if values != self.settings.color_last:
+            self.settings.color_last = values
+            self.settings.save(self.settings_path)
 
     def _save_color_presets(self, presets: dict) -> None:
         self.settings.color_presets = presets

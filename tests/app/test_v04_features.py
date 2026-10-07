@@ -151,7 +151,7 @@ def test_folded_frame_list_starts_narrow(qapp, folder, tmp_path):
 
     from src.app.main_window import MainWindow
     from src.app.settings import Settings
-    from tests.app.test_gui import FakeEngine, fake_propagate
+    from tests.fakes import FakeEngine, fake_propagate
 
     w = MainWindow(
         settings=Settings(sam2_checkpoint=str(tmp_path / "none.pt"), frame_list_names=False),
@@ -2541,4 +2541,37 @@ def test_by_color_presets_save_apply_delete(qapp, win, tmp_path):
     p.delete_preset_btn.click()
     assert Settings.load(win.settings_path).color_presets == {}
     assert not p.delete_preset_btn.isEnabled()
+
+
+def test_by_color_settings_come_back_at_the_next_start(qapp, folder, tmp_path):
+    """p106: By Color's settings as last left (the picked colors too) are kept in the settings file and put back
+    when the app starts again, without an undo step."""
+    from src.app.main_window import MainWindow
+    from src.app.settings import Settings
+    from tests.app.conftest import wait_until
+    from tests.fakes import FakeEngine, fake_propagate
+
+    path = tmp_path / "config.json"
+
+    def make(settings):  # a fake engine: no model, no GPU
+        return MainWindow(settings=settings, engine=FakeEngine(), propagate_fn=fake_propagate, settings_path=path)
+
+    w1 = make(Settings(sam2_checkpoint=str(tmp_path / "none.pt")))
+    p = w1.properties_panel
+    p.set_samples([(126, 169, 220)], out=[(250, 250, 250)])
+    p.color_tol.setValue(40)
+    p.bright_use.setChecked(True)
+    p.bright_lo.setValue(205)
+    p.range_join.setCurrentIndex(p.range_join.findData("or"))
+    wait_until(qapp, lambda: Settings.load(path).color_last.get("color_tol") == 40, timeout=5)
+    w1.close()
+    last = Settings.load(path).color_last
+    assert last["color_samples"] == [[126, 169, 220]] and last["bright_range"] == [205, 255]
+    w2 = make(Settings.load(path))
+    t = w2.properties_panel.tool_settings()
+    assert t["color_samples"] == ((126, 169, 220),) and t["color_samples_out"] == ((250, 250, 250),)
+    assert t["color_tol"] == 40 and t["bright_use"] and t["bright_range"] == (205, 255) and t["range_join"] == "or"
+    assert w2.session.color_samples == ((126, 169, 220),)
+    assert not w2.session._ui_undo  # put back, not an edit to undo
+    w2.close()
 
