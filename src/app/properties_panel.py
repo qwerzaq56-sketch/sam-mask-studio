@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHeaderView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -168,6 +169,7 @@ class PropertiesPanel(QWidget):
     auto_mode_changed = pyqtSignal(str)  # "fill" | "paint"
     auto_settings_changed = pyqtSignal()  # an auto tool's parameter moved (settled for a moment)
     color_samples_edited = pyqtSignal(object)  # picked / left-out colors changed by hand ((in, out)): an undo step
+    color_presets_changed = pyqtSignal(object)  # By Color presets saved / deleted: {name: settings} to keep (p105)
     color_pick_toggled = pyqtSignal(bool)  # By Color's picker: clicks on the image sample colors
     original_view_toggled = pyqtSignal(bool)  # while picking: the photo alone, no overlays (BC-P3)
     region_mode_toggled = pyqtSignal(bool)  # a drag on the image sets the tool region
@@ -470,6 +472,26 @@ class PropertiesPanel(QWidget):
         by_color = QWidget()
         bf = QFormLayout(by_color)
         bf.setContentsMargins(0, 0, 0, 0)
+        # presets (p105): every By Color setting, the picked and left-out colors too, under a name
+        self._color_presets: dict = {}
+        self.color_preset = QComboBox()
+        self.color_preset.setToolTip("Pick a saved preset to use it: colors, tolerances, brightness, Join, Not, "
+                                     "Swap, Changes and Near edge (Ctrl+Z undoes its colors)")
+        self.color_preset.activated.connect(self._on_preset_picked)
+        self.save_preset_btn = QPushButton("Save…")
+        self.save_preset_btn.setToolTip("Save these By Color settings (with the picked colors) as a preset")
+        self.save_preset_btn.clicked.connect(self.save_color_preset)
+        self.delete_preset_btn = QPushButton("Delete")
+        self.delete_preset_btn.setToolTip("Delete the preset shown")
+        self.delete_preset_btn.clicked.connect(self.delete_color_preset)
+        prow = QWidget()
+        pl = QHBoxLayout(prow)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.addWidget(self.color_preset, 1)
+        pl.addWidget(self.save_preset_btn)
+        pl.addWidget(self.delete_preset_btn)
+        bf.addRow("Preset", prow)
+        self._fill_presets()
         bf.addRow("Changes", self.color_action)
         self.color_band_on = QCheckBox("Near edge")
         self.color_band_on.setChecked(True)
@@ -886,6 +908,93 @@ class PropertiesPanel(QWidget):
         self.color_tol_out.setEnabled(has_out)
         self.color_not.setEnabled(bool(self._samples))  # Not turns the picked colors around only (p99)
         self._settings_timer.start()
+
+    # --- By Color presets (p105) -------------------------------------------------------------------------
+
+    PRESET_KEYS = ("color_action", "color_band", "color_band_on", "color_samples", "color_samples_out", "color_tol",
+                   "color_tol_out", "color_use", "color_not", "bright_range", "bright_use", "bright_not",
+                   "range_join", "color_invert")
+
+    def load_color_presets(self, presets: dict) -> None:
+        """The saved presets (from the settings file)."""
+        self._color_presets = {str(k): dict(v) for k, v in (presets or {}).items() if isinstance(v, dict)}
+        self._fill_presets()
+
+    def _fill_presets(self, current: Optional[str] = None) -> None:
+        c = self.color_preset
+        c.blockSignals(True)
+        c.clear()
+        if not self._color_presets:
+            c.addItem("(no presets: Save… keeps these settings)", None)
+        for name in sorted(self._color_presets, key=str.lower):
+            c.addItem(name, name)
+        if current is not None and c.findData(current) >= 0:
+            c.setCurrentIndex(c.findData(current))
+        c.blockSignals(False)
+        self.delete_preset_btn.setEnabled(bool(self._color_presets))
+
+    def color_preset_values(self) -> dict:
+        """These By Color settings as a preset (JSON-friendly)."""
+        t = self.tool_settings()
+        out = {k: t[k] for k in self.PRESET_KEYS}
+        for k in ("color_samples", "color_samples_out", "bright_range"):
+            out[k] = [list(c) for c in out[k]] if k != "bright_range" else list(out[k])
+        return out
+
+    def apply_color_preset(self, values: dict) -> None:
+        """Put a preset's settings in (missing keys keep their value); the colors change as one undo step."""
+        v = values
+        if "color_action" in v and self.color_action.findData(v["color_action"]) >= 0:
+            self.color_action.setCurrentIndex(self.color_action.findData(v["color_action"]))
+        if "range_join" in v and self.range_join.findData(v["range_join"]) >= 0:
+            self.range_join.setCurrentIndex(self.range_join.findData(v["range_join"]))
+        for k, w in (("color_band_on", self.color_band_on), ("color_use", self.color_use),
+                     ("bright_use", self.bright_use), ("bright_not", self.bright_not),
+                     ("color_invert", self.color_invert)):
+            if k in v:
+                w.setChecked(bool(v[k]))
+        for k, w in (("color_band", self.color_band), ("color_tol", self.color_tol),
+                     ("color_tol_out", self.color_tol_out)):
+            if k in v:
+                w.setValue(int(v[k]))
+        if "bright_range" in v and len(v["bright_range"]) == 2:
+            self.bright_lo.setValue(int(v["bright_range"][0]))
+            self.bright_hi.setValue(int(v["bright_range"][1]))
+        if "color_samples" in v or "color_samples_out" in v:
+            cin = [tuple(int(x) for x in c) for c in v.get("color_samples", self._samples)]
+            cout = [tuple(int(x) for x in c) for c in v.get("color_samples_out", self._samples_out)]
+            self.set_samples(cin, out=cout)  # emits color_samples_edited: one undo step
+        if "color_not" in v:  # after the colors: Not waits for a picked color
+            self.color_not.setChecked(bool(v["color_not"]) and self.color_not.isEnabled())
+        self._settings_timer.start()
+
+    def _on_preset_picked(self, index: int) -> None:
+        name = self.color_preset.itemData(index)
+        if name in self._color_presets:
+            self.apply_color_preset(self._color_presets[name])
+
+    def ask_preset_name(self, default: str) -> Optional[str]:
+        """The name to save under; tests replace this."""
+        name, ok = QInputDialog.getText(self, "Save By Color Preset", "Preset name (the same name replaces it):",
+                                        text=default)
+        return name.strip() if ok and name.strip() else None
+
+    def save_color_preset(self) -> None:
+        current = self.color_preset.currentData()
+        name = self.ask_preset_name(current or "")
+        if name is None:
+            return
+        self._color_presets[name] = self.color_preset_values()
+        self._fill_presets(name)
+        self.color_presets_changed.emit(dict(self._color_presets))
+
+    def delete_color_preset(self) -> None:
+        name = self.color_preset.currentData()
+        if name not in self._color_presets:
+            return
+        del self._color_presets[name]
+        self._fill_presets()
+        self.color_presets_changed.emit(dict(self._color_presets))
 
     def set_color_cover(self, share: Optional[float]) -> None:
         """How much of the area By Color decides the color condition alone takes (None: not in use); a warning
