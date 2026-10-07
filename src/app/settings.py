@@ -44,6 +44,9 @@ class Settings:
     color_presets: dict = field(default_factory=dict)  # By Color filter presets: name -> its settings (p105)
     color_last: dict = field(default_factory=dict)  # By Color's settings as last left, put back at start (p106)
 
+    def __post_init__(self) -> None:
+        self.removed_presets: set = set()  # By Color presets deleted here: not merged back from the file (p107)
+
     @staticmethod
     def load(path: Path = DEFAULT_PATH) -> "Settings":
         s = Settings()
@@ -60,7 +63,22 @@ class Settings:
                 logger.warning("settings_unreadable", path=str(path), error=str(e))
         return s
 
+    def _merge_presets(self, path: Path) -> None:
+        """By Color presets in the file but not here (written while this app ran, e.g. by another app or by
+        hand) are kept, unless deleted here (p107)."""
+        try:
+            on_disk = json.loads(path.read_text(encoding="utf-8")).get("color_presets") or {}
+        except (ValueError, OSError, AttributeError):
+            return
+        if not isinstance(on_disk, dict):
+            return
+        for name, values in on_disk.items():
+            if name not in self.color_presets and name not in self.removed_presets and isinstance(values, dict):
+                self.color_presets[name] = values
+
     def save(self, path: Path = DEFAULT_PATH) -> None:
+        if path.is_file():
+            self._merge_presets(path)
         data = asdict(self)
         for name in PATH_FIELDS:  # relative inside the app folder, so the folder can be moved (portable)
             value = data[name]

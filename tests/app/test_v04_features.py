@@ -2575,3 +2575,31 @@ def test_by_color_settings_come_back_at_the_next_start(qapp, folder, tmp_path):
     assert not w2.session._ui_undo  # put back, not an edit to undo
     w2.close()
 
+
+def test_presets_written_while_the_app_runs_are_kept(qapp, win):
+    """p107: a By Color preset put in the settings file while the app runs (another app, by hand) is kept when
+    the app saves its settings; one deleted in the app does not come back from the file."""
+    import json
+
+    from src.app.settings import Settings
+
+    p = win.properties_panel
+    path = win.settings_path
+    win.settings.save(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["color_presets"] = {"outside": {"color_tol": 7, "color_samples": [[1, 2, 3]]}}
+    path.write_text(json.dumps(data), encoding="utf-8")  # written while the app runs
+    p.color_tol.setValue(44)
+    win._keep_color_last()  # the app saves its settings: the file's preset stays
+    assert "outside" in Settings.load(path).color_presets
+    assert Settings.load(path).color_last["color_tol"] == 44
+    p.ask_preset_name = lambda default: "mine"
+    p.save_preset_btn.click()  # the panel now lists both
+    assert set(Settings.load(path).color_presets) == {"outside", "mine"}
+    assert {p.color_preset.itemData(i) for i in range(p.color_preset.count())} == {"outside", "mine"}
+    p.color_preset.setCurrentIndex(p.color_preset.findData("outside"))
+    p.delete_preset_btn.click()
+    assert set(Settings.load(path).color_presets) == {"mine"}
+    p.color_tol.setValue(45)
+    win._keep_color_last()
+    assert set(Settings.load(path).color_presets) == {"mine"}  # deleted here: not merged back

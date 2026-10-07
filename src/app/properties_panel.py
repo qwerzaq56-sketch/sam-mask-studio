@@ -915,10 +915,10 @@ class PropertiesPanel(QWidget):
                    "color_tol_out", "color_use", "color_not", "bright_range", "bright_use", "bright_not",
                    "range_join", "color_invert")
 
-    def load_color_presets(self, presets: dict) -> None:
-        """The saved presets (from the settings file)."""
+    def load_color_presets(self, presets: dict, current: Optional[str] = None) -> None:
+        """The saved presets (from the settings file); *current* stays shown."""
         self._color_presets = {str(k): dict(v) for k, v in (presets or {}).items() if isinstance(v, dict)}
-        self._fill_presets()
+        self._fill_presets(current)
 
     def _fill_presets(self, current: Optional[str] = None) -> None:
         c = self.color_preset
