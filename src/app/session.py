@@ -159,6 +159,7 @@ class Session:
         self._result: Optional[Tuple[str, np.ndarray, List[np.ndarray]]] = None  # (tool, target, masks it fits)
         self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
         self._area_cache: Optional[tuple] = None  # (base, band, By Color's Near edge area)
+        self._ab_cache: Optional[tuple] = None  # (filter settings, By Color Range's A)
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -674,6 +675,27 @@ class Session:
         if c is None or c[0] is not base or c[1] != band:
             c = self._area_cache = (base, band, near_edge(base, band))
         return c[2] & self.region if self.region is not None else c[2]
+
+    def auto_ab(self, settings: dict) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+        """By Color Range's (A, B) where it decides (the Near edge area if on, inside the region if any):
+        A = what the filter catches (after Invert), B = the rest. None for other tools and the Auto ways."""
+        if self.auto_tool != "by_color" or settings.get("color_basis") != "range" or self.image is None:
+            return None
+        key = tuple((k, settings.get(k)) for k in
+                    ("color_samples", "color_tol", "color_use", "bright_range", "bright_use", "color_invert"))
+        c = self._ab_cache
+        if c is None or c[0] != key or c[1] is not self.image:
+            sel = select_range(self.image, settings.get("color_samples", ()), settings.get("color_tol", 20),
+                               settings.get("color_use", True), settings.get("bright_range", (0, 255)),
+                               settings.get("bright_use", False))
+            c = self._ab_cache = (key, self.image, ~sel if settings.get("color_invert", False) else sel)
+        a = c[2]
+        area = self.auto_area(settings)
+        if area is None and self.region is not None:
+            area = self.region
+        if area is None:
+            return a, ~a
+        return a & area, ~a & area
 
     def auto_stale(self) -> bool:
         """The mask changed by something other than this tool's strokes (undo, a click, ...)."""

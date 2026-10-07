@@ -58,6 +58,8 @@ ALPHA = {
     "region": 70,  # where the edit-layer tools act
     "auto_add": 150,  # an auto tool's result: pixels it adds
     "auto_sub": 130,  # ...and removes
+    "auto_a": 60,  # By Color Range: A where nothing changes (light blue; the changes are dense)
+    "auto_b": 60,  # ...and B (light orange)
     "area": 45,  # where By Color decides pixels again (Near edge): faint, under the mask colors
     "guide": 210,  # an auto tool's result, not picked yet (Paint mode): dark and dense to stand out
 }
@@ -94,8 +96,11 @@ CUTOUT_GRAYS = (102, 153)  # the cut-out previews' checkerboard: gray, unlike sk
 ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is held
 
 
+BLENDED = ("auto_a", "auto_b", "auto_add", "auto_sub")  # blended over the layers below (the mask shows through, p86)
+
+
 def group_of(style: str) -> str:
-    if style in ("edit", "layer_add", "layer_sub", "auto_add", "auto_sub"):
+    if style in ("edit", "layer_add", "layer_sub", "auto_a", "auto_b", "auto_add", "auto_sub"):
         return "edit"
     if style == "edit_hidden":  # Hide Masks: the Object in Edit is not drawn, but strokes still start from it
         return "hidden"
@@ -156,7 +161,15 @@ def compose(overlays: Sequence[Overlay], hw: Tuple[int, int], info: Optional[Mas
         x, y, bw, bh = info.rect(m)
         if bw == 0 or bh == 0:
             continue
-        rgba[y : y + bh, x : x + bw][m[y : y + bh, x : x + bw]] = (*ov.color, ALPHA.get(ov.style, 105))
+        sel = m[y : y + bh, x : x + bw]
+        if ov.style in BLENDED:  # over what is there (the mask stays visible under it), not instead of it
+            dst = rgba[y : y + bh, x : x + bw][sel].astype(np.float32)
+            a_s, a_d = ALPHA[ov.style] / 255.0, dst[:, 3:] / 255.0
+            a_o = a_s + a_d * (1 - a_s)
+            rgb = (np.float32(ov.color) * a_s + dst[:, :3] * a_d * (1 - a_s)) / np.maximum(a_o, 1e-6)
+            rgba[y : y + bh, x : x + bw][sel] = np.concatenate([rgb, a_o * 255], 1).round().astype(np.uint8)
+        else:
+            rgba[y : y + bh, x : x + bw][sel] = (*ov.color, ALPHA.get(ov.style, 105))
     return rgba
 
 

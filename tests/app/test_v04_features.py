@@ -2031,6 +2031,18 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     assert not s.auto_changes()[1].any()
     result("remove", 0, invert=True)  # Invert: everything is B, all of the mask goes
     assert (s.auto_changes()[1] == before).all()
+    for action, invert in (("both", False), ("add", True)):
+        # p86: the preview paints A / B, not only the changes: every pixel is one of them (light where it
+        # stays, dense where it changes), so pixels already in / out of the mask no longer look like neither
+        result(action, 128, invert)
+        wait_until(qapp, lambda: not win._auto_pending())  # the A / B shown belong to the result shown
+        win.refresh()
+        A = (g8 >= 128) != invert
+        drawn = {st: [o.mask for o in c._overlays if o.style == st] for st in ("auto_a", "auto_b", "auto_add", "auto_sub")}
+        assert all(len(v) == 1 for v in drawn.values())
+        a_shown, b_shown = drawn["auto_a"][0] | drawn["auto_add"][0], drawn["auto_b"][0] | drawn["auto_sub"][0]
+        assert (a_shown == A).all() and (b_shown == ~A).all()
+        assert not (drawn["auto_a"][0] & drawn["auto_add"][0]).any() and not (drawn["auto_b"][0] & drawn["auto_sub"][0]).any()
     p.color_invert.setChecked(False)
     p.color_band_on.setChecked(True)  # p79: the Near edge area is shown (faint white, under the mask colors)
     p.color_band.spin.setValue(5)

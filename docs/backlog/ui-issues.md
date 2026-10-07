@@ -7,6 +7,7 @@
 - 파일은 UTF-8로 저장해 주세요(메모장이면 "다른 이름으로 저장" → 인코딩 UTF-8).
 
 ## 열린 이슈
+- 22. (대기, 2026-10-07 요청) By Color Range: 고른 색 썸네일을 누르면 그 색만 지워지게 (지금은 `Clear`로 전부만) / `properties_panel.py` `swatches`, 제안서 BC-1
 
 - 21. Mask Preview 켠 상태에서 Paint 브러쉬로 칠한 것이 잠깐 안 보였다가 나중에 보임 (사용자 메모, `ideas.md`에서 옮김). 재현 조건 모름: 다시 보이면 도구 / Preview 모드(Final, Object) / 편집 중이던 Object가 체크돼 있었는지 적기.
 
