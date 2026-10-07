@@ -144,3 +144,47 @@ def test_lens_without_a_circle_fails_those_images(tmp_path):
     out = tmp_path / "m"
     assert cli.main(["lens", str(flat), "--out", str(out)]) == 1
     assert not out.exists() or not any(out.iterdir())
+
+
+def test_sky_color_preset_takes_out_what_is_not_sky_colored(scene, tmp_path, monkeypatch):
+    """p109: --color-preset puts By Color on the full-size mask, the way the app's auto tool does."""
+    images, model = scene
+    for p in images.rglob("*.jpg"):  # a bright, not sky-colored patch the (fake) model calls sky
+        rgb = cv2.imdecode(np.fromfile(str(p), np.uint8), 1)[..., ::-1].copy()
+        rgb[20:60, 100:160] = (230, 150, 120)
+        cv2.imencode(".png", rgb[..., ::-1])[1].tofile(str(p.with_suffix(".png")))
+        p.unlink()
+    settings = {"color_samples": [[170, 195, 235]], "color_tol": 10, "color_use": True, "bright_use": False,
+                "color_action": "remove", "color_band_on": False}
+    preset = tmp_path / "blue.json"
+    preset.write_text(json.dumps(settings), encoding="utf-8")
+    base = ["sky", str(images / "cam0"), "--model", str(model), "--names", "stem"]
+    assert cli.main(base + ["--out", str(tmp_path / "plain")]) == 0
+    assert read(tmp_path / "plain" / "00000.png")[40, 130] == 255  # without it the patch is sky
+    report = tmp_path / "r.json"
+    assert cli.main(base + ["--out", str(tmp_path / "a"), "--color-preset", str(preset), "--report", str(report)]) == 0
+    m = read(tmp_path / "a" / "00000.png")
+    assert m[40, 130] == 0 and m[10, 20] == 255 and m[80, 300] == 255 and m[150:].max() == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["settings"]["by_color"] == settings
+
+    # by name: a preset saved in the app's By Color panel
+    from src.app import settings as app_settings
+
+    monkeypatch.setattr(app_settings.Settings, "load", staticmethod(
+        lambda *a, **k: app_settings.Settings(color_presets={"blue": settings})))
+    assert cli.main(base + ["--out", str(tmp_path / "b"), "--color-preset", "blue"]) == 0
+    assert (read(tmp_path / "b" / "00000.png") == m).all()
+    with pytest.raises(SystemExit):
+        cli.main(base + ["--out", str(tmp_path / "c"), "--color-preset", "nope"])
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"colour_tol": 3}), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        cli.main(base + ["--out", str(tmp_path / "c"), "--color-preset", str(bad)])
+    assert not (tmp_path / "c").exists() or not any((tmp_path / "c").iterdir())
+
+
+def test_a_mask_preset_carries_by_color_for_sky():
+    from src.batchmask.presets import MaskPreset
+
+    p = MaskPreset.from_dict({"name": "sky-blue", "sky": {"color": {"color_tol": 7}}})
+    assert p.sky.color == {"color_tol": 7}

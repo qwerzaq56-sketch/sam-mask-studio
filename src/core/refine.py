@@ -271,3 +271,52 @@ def select_range(
     if out is not None:
         sel &= ~out
     return (sel, overlap, near) if with_parts else sel
+
+
+# --- By Color as a whole (the app's auto tool and the ``sky --color-preset`` command, p109) ------------------
+
+RANGE_KEYS = ("color_samples", "color_tol", "color_use", "color_not", "color_samples_out", "color_tol_out",
+              "bright_range", "bright_use", "bright_not", "range_join", "color_invert")
+
+
+def range_selection(image: np.ndarray, settings: dict, with_parts: bool = False):
+    """By Color's A: the picked colors (less the left-out ones, the nearer wins) and / or the brightness range,
+    each maybe turned around (Not), joined by Or (default) / And (p101), less the left-out colors, then Swap.
+    *with_parts*: ``(A, overlap, color)``, see :func:`select_range`."""
+    sel, overlap, color = select_range(image, settings.get("color_samples", ()), settings.get("color_tol", 20),
+                                settings.get("color_use", True), settings.get("bright_range", (0, 255)),
+                                settings.get("bright_use", False), settings.get("color_not", False),
+                                settings.get("bright_not", False), settings.get("color_samples_out", ()),
+                                settings.get("color_tol_out"), with_parts=True,
+                                join=settings.get("range_join", "or"))
+    if settings.get("color_invert", False):  # Swap A / B
+        sel = ~sel
+    return (sel, overlap, color) if with_parts else sel
+
+
+def apply_by_color(base: np.ndarray, image: np.ndarray, settings: dict) -> np.ndarray:
+    """By Color on *base* (*image* RGB, same size): A = the selection, B = the rest, both only inside the Near edge
+    area (``color_band`` px around *base*'s edge, or anywhere); Changes: Add puts A in, Remove takes B out, both
+    does both."""
+    band = settings.get("color_band", 30) if settings.get("color_band_on", True) else 0  # 0: anywhere
+    sel = range_selection(image, settings)
+    area = near_edge(base, band)
+    a, b = sel & area, ~sel & area
+    action = settings.get("color_action", "both")
+    if action == "add":
+        return base | a
+    if action == "remove":
+        return base & ~b
+    return (base | a) & ~b
+
+
+def color_settings(values: dict) -> dict:
+    """A By Color preset as saved (lists, from JSON) in the form the functions above take (tuples)."""
+    v = dict(values)
+    for k in ("color_samples", "color_samples_out"):
+        if k in v:
+            v[k] = tuple(tuple(int(x) for x in c) for c in v[k])
+    if "bright_range" in v:
+        v["bright_range"] = tuple(int(x) for x in v["bright_range"])
+    return v
+

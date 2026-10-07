@@ -65,6 +65,8 @@ class SkyStep:
     refine: bool = True
     edges: bool = True
     max_side: int = 1024
+    # By Color on the full-size mask (p109): the settings as the app saves a By Color preset, None = none
+    color: Optional[dict] = None
 
 
 STEPS = {"person": PersonStep, "lens": LensStep, "sky": SkyStep}

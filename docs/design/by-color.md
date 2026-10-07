@@ -87,6 +87,7 @@ Shift+클릭 = 하나 **추가**(최대 8개, 넘으면 오래된 것부터 버�
 담는 것: 고른 색 · 빼는 색, 두 허용치, Color within / Not, 밝기 범위 / 사용 / Not, Join, Swap, Changes, Near edge(켬·폭). 앱 설정 파일(`config.local.json`의 `color_presets`)에 있어 다른 폴더·프로젝트에서도 씀. 프리셋이 넣는 색은 Undo 한 번.
 **마지막 설정 유지(`p106`)**: 프리셋과 별개로, By Color 설정(고른 색 포함)을 바꿀 때마다 1초 뒤와 앱을 닫을 때 `color_last`에 적어 두고, 다음 시작 때 그대로 되돌림(Undo 단계 없음).
 **앱이 켜진 동안 파일에 들어온 프리셋 유지(`p107`)**: 앱이 설정을 저장할 때 파일의 `color_presets`와 합침(앱에서 지운 이름만 빼고). 앱이 켜진 채 다른 앱·손으로 넣은 프리셋이 덮여 사라지던 문제(10-07 실제로 겪음).
+**명령줄에서도(`p109`)**: `python -m src.cli sky … --color-preset "<프리셋 이름 또는 .json>"` = 원본 크기 하늘 마스크에 이 도구를 한 번(Near edge·Changes 포함, 앱과 같은 함수 `src/core/refine.py` `apply_by_color`).
 - 피드백:
 
 ### 2-2. Auto: Color / Auto: Brightness — **지움 (`v0.4-p97`, BC-P5 a)**
