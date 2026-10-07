@@ -50,16 +50,16 @@ Object를 만들고 → **Points** (`E`) · **Brush** (`D`) · 오토 툴로 다
 ### 명령줄 (창 없이, 배치용)
 
 ```
-python -m src.cli sky <이미지 폴더> --out <마스크 폴더> [--recursive] [--color-preset "<By Color 프리셋>"]
+python -m src.cli sky <이미지 폴더> --out <마스크 폴더> [--recursive] [--color-preset "<By Color 프리셋>" [--cpu]]
 python -m src.cli lens <이미지 폴더> --out <마스크 폴더> [--recursive] [--and-with <사람 마스크 폴더>]
 python -m src.cli person <이미지 폴더> --out <사람 마스크 폴더> [--recursive]
 ```
 
 - `sky`: 폴더의 모든 이미지에 하늘 마스크(흰색 = 하늘, `--invert`면 검정). 원본 해상도로, 경계는 원본 이미지에서 다시 판정(Export의 "Sky edges at full resolution"과 같음).
-- `sky --color-preset`: 원본 크기 하늘 마스크에 By Color를 앱의 오토 툴과 똑같이 한 번 적용. 앱 By Color 패널에 저장한 프리셋 이름(`config.local.json`) 또는 그 설정을 담은 `.json` 파일. 마스킹 프리셋의 `sky.color`에 넣어도 됨, `--no-color`로 끔. 0022 정답 12장: 프리셋 `sky 8 colors + bright 205`로 넘침 12.8 % → 0.95 %(이 프리셋으로 정답을 만들었으니 낙관적일 수 있음). 함께 띠 밖 나무 끝(띠 30 px 밖에서 하늘로 칠해진 거친·하늘색 아닌 잎)도 뺌(p110, 넘침 0.95 → 0.85 %), `--no-tree-tips`로 끔.
+- `sky --color-preset`: 원본 크기 하늘 마스크에 By Color를 앱의 오토 툴과 똑같이 한 번 적용. 앱 By Color 패널에 저장한 프리셋 이름(`config.local.json`) 또는 그 설정을 담은 `.json` 파일. 마스킹 프리셋의 `sky.color`에 넣어도 됨, `--no-color`로 끔. 0022 정답 12장: 프리셋 `sky 8 colors + bright 205`로 넘침 12.8 % → 0.95 %(이 프리셋으로 정답을 만들었으니 낙관적일 수 있음). 함께 띠 밖 나무 끝(띠 30 px 밖에서 하늘로 칠해진 거친·하늘색 아닌 잎)도 뺌(p110, 넘침 0.95 → 0.85 %), `--no-tree-tips`로 끔. 그 뒤 **SAM2**가 프리셋에 없는 색이라 빠진 하늘 덩어리를 되살림(p111, 원본 해상도 타일마다 확실한 하늘 한가운데를 Ctrl+클릭하듯): 놓침 1.13 → 0.34 %, 넘침 0.85 → 0.93 %, 경계 F@2 0.885 → 0.937. 이 단계는 끌 수 없고 **GPU를 씀**(sam2.1 tiny, 약 0.6 GB, 빈 메모리 1 GB 미만이면 시작 안 함 → 학습·뷰어를 끄고 돌릴 것). `--cpu`로 CPU에서 돌리면 약 10배 느림.
 - 파일 이름 `00011.jpg.png`(`--names stem`이면 `00011.png`), `cam0/` 같은 하위 폴더 유지(`--recursive`).
 - `--out`에 이미 있는 마스크는 바꾸지 않음. 이어서 하려면 `--skip-existing`, 바꾸려면 `--overwrite`.
-- GPU를 쓰지 않음(CPU). 3840² 어안 한 장에 약 2.6초. `--report run.json`으로 장별 하늘 비율과 시간.
+- 프리셋 없이는 GPU를 쓰지 않음(CPU). 3840² 어안 한 장에 약 2.6초. `--color-preset`과 함께면 SAM2 때문에 GPU를 쓰고 한 장에 약 7.5초(RTX 2060 SUPER). `--report run.json`으로 장별 하늘 비율과 시간.
 - `lens`: 피시아이 원 밖을 검정(무시), 안을 흰색으로. 원은 카메라 폴더(`cam0/`, `cam1/`)마다 16장에서 찾고, 렌즈 테두리의 번진 띠를 덮도록 반경의 2%만큼 안으로 당김(`--margin`). `--radius`/`--cx`/`--cy`로 직접 지정, `--and-with`로 사람 마스크(흰색 = 학습)와 곱해서 `masks/` 한 폴더로. 188장에 18초.
 - `person`: 사람과 들고 있는 것(셀카봉, 가방)을 검정으로(`masks/` 규칙). SAM3 글자 프롬프트 "person", "black pole"("selfie stick"보다 훨씬 잘 잡힘), 사람·봉에 닿은 "bag". 1024 px에서 2 px 넓힘(`--grow`). **GPU 사용**(약 4.2 GB, 장당 약 1.9초): 빈 GPU 메모리가 5 GB 미만이면 시작하지 않음(학습 중 보호, `--gpu-anyway`로 무시).
 - 장면의 `masks/` 한 번에: `person --out people` → `lens --and-with people --out masks`.
