@@ -647,6 +647,8 @@ class MainWindow(QMainWindow):
         p.variant_selected.connect(self.on_properties_variant)
         p.point_selected.connect(self.on_point_selected)
         p.layer_selected.connect(lambda n: (self.session.select_layer(n), self.refresh()))
+        p.load_color_presets(self.settings.color_presets)  # By Color presets live in the settings file (p105)
+        p.color_presets_changed.connect(self._save_color_presets)
         p.add_layer_requested.connect(lambda: self._do(self.session.add_layer))
         p.toggle_layer_requested.connect(lambda: self._do(self.session.toggle_layer_subtract))
         p.remove_layer_requested.connect(lambda: self._do(self.session.remove_layer))
@@ -2835,6 +2837,11 @@ class MainWindow(QMainWindow):
                 self.warn(why)
                 return
         self.run_export(dlg.jobs(), dataset=root, views=dlg.views())
+
+    def _save_color_presets(self, presets: dict) -> None:
+        self.settings.color_presets = presets
+        self.settings.save(self.settings_path)
+        self.log(f"By Color presets: {', '.join(sorted(presets, key=str.lower)) or 'none'}")
 
     def save_path(self, title: str, start: str) -> Optional[str]:
         """Save-as dialog; tests replace this."""

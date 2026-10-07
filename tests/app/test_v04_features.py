@@ -2503,3 +2503,42 @@ def test_export_current_mask_final_or_one_object(qapp, win, tmp_path):
     win.act_export_one.trigger()
     assert not (tmp_path / "never.png").exists()
 
+
+def test_by_color_presets_save_apply_delete(qapp, win, tmp_path):
+    """p105: By Color settings (the picked colors too) saved under a name in the settings file, put back by
+    picking it, deleted; the colors it puts in are one undo step."""
+    from src.app.settings import Settings
+
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    s, p = win.session, win.properties_panel
+    p.tool_btns["by_color"].click()
+    p.set_samples([(126, 169, 220)], out=[(250, 250, 250)])
+    p.color_tol.setValue(40)
+    p.bright_use.setChecked(True)
+    p.bright_lo.setValue(205)
+    p.range_join.setCurrentIndex(p.range_join.findData("or"))
+    p.color_band_on.setChecked(False)
+    p.ask_preset_name = lambda default: "sky"
+    p.save_preset_btn.click()
+    saved = Settings.load(win.settings_path).color_presets
+    assert saved["sky"]["color_samples"] == [[126, 169, 220]] and saved["sky"]["bright_range"] == [205, 255]
+    assert saved["sky"]["color_tol"] == 40 and saved["sky"]["range_join"] == "or" and not saved["sky"]["color_band_on"]
+    # other settings, then the preset back
+    p.set_samples([(10, 20, 30)], out=[])
+    p.color_tol.setValue(12)
+    p.bright_use.setChecked(False)
+    p.color_band_on.setChecked(True)
+    p.range_join.setCurrentIndex(p.range_join.findData("and"))
+    p.color_preset.activated.emit(p.color_preset.findData("sky"))
+    t = p.tool_settings()
+    assert t["color_samples"] == ((126, 169, 220),) and t["color_samples_out"] == ((250, 250, 250),)
+    assert t["color_tol"] == 40 and t["bright_use"] and t["bright_range"] == (205, 255)
+    assert t["range_join"] == "or" and not t["color_band_on"]
+    assert s.color_samples == ((126, 169, 220),) or list(s.color_samples) == [(126, 169, 220)]
+    win.undo()  # the colors the preset put in: one undo step
+    assert list(p.tool_settings()["color_samples"]) == [(10, 20, 30)]
+    p.delete_preset_btn.click()
+    assert Settings.load(win.settings_path).color_presets == {}
+    assert not p.delete_preset_btn.isEnabled()
+

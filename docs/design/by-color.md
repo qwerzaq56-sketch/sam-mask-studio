@@ -83,6 +83,10 @@ Shift+클릭 = 하나 **추가**(최대 8개, 넘으면 오래된 것부터 버�
 `Apply to Frames…`(`p103` 전 Apply to All Frames): 같은 설정·같은 고른 색으로 이 Object의 다른 프레임(전부 또는 Frame List에서 고른 것)에도 적용(프레임마다 그 프레임 마스크의 경계로 띠를 다시 잡음).
 - 피드백:
 
+**BC-9b. 프리셋 (`p105`, 사용자 요청 10-07).** 설정 맨 위 `Preset` 줄: 목록에서 고르면 바로 적용, `Save…` = 이름 붙여 저장(같은 이름은 덮어씀), `Delete` = 보이는 프리셋 지움.
+담는 것: 고른 색 · 빼는 색, 두 허용치, Color within / Not, 밝기 범위 / 사용 / Not, Join, Swap, Changes, Near edge(켬·폭). 앱 설정 파일(`config.local.json`의 `color_presets`)에 있어 다른 폴더·프로젝트에서도 씀. 프리셋이 넣는 색은 Undo 한 번.
+- 피드백:
+
 ### 2-2. Auto: Color / Auto: Brightness — **지움 (`v0.4-p97`, BC-P5 a)**
 
 By Color는 이제 Range뿐이다(`By` 목록, Balance 없음). 아래는 기록으로 남김.

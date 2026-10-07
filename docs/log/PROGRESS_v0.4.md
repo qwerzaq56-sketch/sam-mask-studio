@@ -702,6 +702,13 @@
 - 파일 메뉴 `Export Current Mask…` (`Ctrl+Shift+E`). 창에서 **Mask**: Final Mask(체크된 Object 전부) / 그 Object만(편집 중인 Object, 아니면 선택한 Object 하나; 편집 중이면 기본), **Colors**: 마스크 흰색 / 반전. 그다음 저장 창(기본 이름 `<이미지>.png`, Object면 `<이미지>_<이름>.png`).
 - 원본 해상도, 일괄 Export와 같은 계산(`full_mask`, Sky 경계 설정 따름). 비어 있으면 검은 PNG를 쓰고 로그에 알림. `storage.export_one_mask`. 테스트 1개.
 
+## 105단계 (`v0.4-p105`): By Color 프리셋
+
+- 사용자 요청(10-07): By Color 필터 프리셋 저장.
+- By Color 설정 맨 위 `Preset` 줄: 목록에서 고르면 바로 적용, `Save…`(이름, 같은 이름은 덮어씀), `Delete`(보이는 것).
+- 담는 것: 고른 색 · 빼는 색, 두 허용치, Color / 밝기의 사용 · Not, 밝기 범위, Join, Swap, Changes, Near edge(켬 · 폭). 앱 설정 파일 `config.local.json`의 `color_presets` (다른 폴더 · 프로젝트에서도). 넣은 색은 Undo 한 번(기존 색 바꾸기와 같은 단계).
+- 테스트 1개(저장 → 다른 설정 → 불러오기 → Undo → 삭제).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
