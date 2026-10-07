@@ -97,6 +97,8 @@ ALT_COLOR = (255, 70, 70)  # brush circle / region box while Alt (subtract) is h
 def group_of(style: str) -> str:
     if style in ("edit", "layer_add", "layer_sub", "auto_add", "auto_sub"):
         return "edit"
+    if style == "edit_hidden":  # Hide Masks: the Object in Edit is not drawn, but strokes still start from it
+        return "hidden"
     if style.startswith("candidate"):
         return "candidates"
     if style in ("region", "guide"):
@@ -297,7 +299,7 @@ class Canvas(QWidget):
                 layers.append(Overlay(self._tool_area, color, "region"))
             return layers
         layers = [o for o in self._overlays if group_of(o.style) == group]
-        if group == "edit" and self._stroke_mask is not None:
+        if group == "edit" and self._stroke_mask is not None and self._edit_shown():
             # a live stroke replaces the edit fill; Paint drops the (now stale) tints, but Restore
             # keeps them, trimmed to what is still added / removed, so its effect shows as it paints
             color = next((o.color for o in layers if o.style == "edit"), (255, 255, 255))
@@ -457,10 +459,14 @@ class Canvas(QWidget):
         self.update()
 
     def edit_mask(self) -> Optional[np.ndarray]:
+        """The mask of the Object in Edit, drawn or not (Hide Masks): what a brush stroke starts from."""
         for o in self._overlays:
-            if o.style == "edit":
+            if o.style in ("edit", "edit_hidden"):
                 return o.mask
         return None
+
+    def _edit_shown(self) -> bool:
+        return any(o.style == "edit" for o in self._overlays)
 
     # ------------------------------------------------------------------
     # Geometry
@@ -596,7 +602,7 @@ class Canvas(QWidget):
                 lines.append((self._info.outline(ov.mask), QColor(*ov.color, 150), 1.0))
         if self._region is not None:
             lines.append((self._info.outline(self._region), QColor(*REGION_COLOR), 1.0))
-        if self.outline_visible:
+        if self.outline_visible and self._edit_shown():
             if self._stroke_mask is not None:
                 lines.append((outline_polygons(self._stroke_mask), QColor(255, 255, 255), self.outline_width))
             elif self.edit_mask() is not None:

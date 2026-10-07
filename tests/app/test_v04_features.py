@@ -2020,3 +2020,36 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     assert not [o for o in c._overlays if o.style == "area"]
     p.tool_btns["paint"].click()  # another tool: the picker stops
     assert not p.pick_btn.isChecked() and not c.color_pick_mode
+
+
+def test_brush_with_hide_masks_keeps_the_mask(qapp, win):
+    """p82: with Hide Masks on (and the cut-out preview outside), a brush stroke added to the mask: it used to
+    start from an empty one (the hidden Object gave the canvas no mask), so the old mask was lost."""
+    import numpy as np
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    from tests.app.test_gui import canvas_pos
+
+    ids = make_objects(win, 1)
+    s, c = win.session, win.canvas
+    win.toggle_edit(ids[0])
+    before = s.editing_frame().mask.copy()
+    assert before.any()
+    win.act_hide_masks.trigger()
+    win.settings.cutout_side = "outside"
+    win.act_preview_style.trigger()  # C: cut out, outside
+    win.act_final.trigger()  # V: Mask Preview on
+    assert c.preview_style == "outside" and c.showing_final
+    assert not [o for o in c._overlays if o.style == "edit"]  # nothing drawn...
+    assert c.edit_mask() is not None  # ...but the stroke still starts from the mask
+    win.set_brush_tool("paint")
+    c.set_brush_size(20)
+    h, w = before.shape
+    y, x = np.argwhere(~before)[0]
+    QTest.mousePress(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, canvas_pos(win, x, y))
+    QTest.mouseRelease(c, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, canvas_pos(win, x, y))
+    qapp.processEvents()
+    after = s.editing_frame().mask
+    assert (after & before).sum() == before.sum()  # nothing of the old mask lost
+    assert after[y, x]  # and the stroke added
