@@ -759,6 +759,18 @@
 - 사용자 의견(메모): GPU 없는 환경용으로 SAM2 없이 다른 방식으로 계산하는 프리셋을 따로 둘 수도 있음 → 나중 과제.
 - 테스트 4개(가짜 SAM: 타일마다 확실한 하늘에 클릭, `allowed` 안에만 더함, 얇은 하늘은 클릭 안 함, 타일 시작점; cli: SAM2 장치 기록·GPU 바쁘면 거절·`--cpu`·프리셋 없으면 SAM2 안 부름; run: 1 GB 확인). 테스트의 하늘 명령은 가짜 SAM2만 씀.
 
+## 112단계 (`v0.4-p112`): Sky 특수 Object에 마무리(By Color + 나무 끝 + SAM2)
+
+- 사용자 요청(10-08): "앱에도 넣어줘, UX 검증 기획서 쓰고 진행". 기획: 기획서 하늘 페이지 → "하늘 마무리 앱 연결 · UX 검증"(V1–V12, 이 단계 V1–V9).
+- `src/core/sky_sam2.py` `finish_sky(full, rgb, color, tree_tips, engine)`: cli의 마무리(By Color → 띠 밖 나무 끝 → SAM2 타일)를 한 함수로, `cli sky`와 앱이 함께 부름. `tips_apply`(나무 끝이 도는 조건), `SKY_SAM2`(tiny 경로), `SKY_GPU_NEEDED`도 여기로.
+- `Special.finish`: 마무리 설정을 JSON으로(`name`, By Color 프리셋 **값**, `tree_tips`). 프리셋을 나중에 고치거나 지워도 Object 결과는 그대로. 프로젝트에 저장.
+- Properties → Special(Sky): **Finish** 줄 — By Color(Off + 저장된 프리셋, 값이 달라졌으면 "(kept in this Object)"), "Take out tree tips beyond the band"(프리셋의 띠가 켜졌을 때만), 안내 `Finished on N of M covered frame(s)`.
+- 무거운 계산은 **Make Sky Masks 때만**: 모델 맵이 없는 프레임 → 모델, 마무리 안 된 프레임 → SAM2 tiny를 따로 올려 마무리하고 내림. 진행 표시, **Stop**(지금 프레임까지, 다시 누르면 이어서). GPU 빈 메모리 1 GB 미만이면 묻기(CPU로 / 취소), CUDA가 없으면 CPU로 알리고 진행.
+- 결과는 설정 지문(Threshold·Grow·Refine·Top only·프리셋 값·나무 끝·규칙 상수·SAM2 모델·작업 해상도)별로 `<프로젝트>/special/sky_finished/<지문>/full|work/`에 캐시. 설정을 옮기면 그 설정의 마무리가 없어 모델 마스크가 보이고, 되돌리면 계산 없이 바로 마무리 결과.
+- Export(Final Mask, 한 장, 변환): 마무리된 Sky는 캐시된 원본 해상도 마스크를 그대로(`full_mask(..., finished=)`). 마무리 안 된 프레임은 전처럼.
+- 검증 V4(실제 GPU, 0022 2장 00585·00957): 앱 Export = `cli sky --color-preset` = p111 출력, **차이 0 px**. 앱 마무리 2장 19 s(SAM2 올리는 시간 포함).
+- 테스트 1개(가짜 마무리·가짜 SAM2): 마무리 없음은 전과 같음, 설정만으로는 안 돎, Stop 뒤 이어 하기, 설정 이동/복귀, Export 원본 해상도, GPU 바쁨 → 취소/CPU, 프리셋 변경 뒤 값 유지, 저장, Apply.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

@@ -10,6 +10,8 @@ That keeps the interaction rules testable without a display or a GPU.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Protocol, Sequence, Set, Tuple
@@ -22,6 +24,7 @@ from src.core.project import (
     EditLayer,
     FrameState,
     FrameStatus,
+    MaskObject,
     Point,
     Project,
     PromptLayer,
@@ -32,7 +35,7 @@ from src.core.project import (
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.special import LABELS as SPECIAL_LABELS
-from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
+from src.core.special import LENS_EDGE, SKY, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import (
     RANGE_KEYS, apply_by_color, close_gaps, fill_holes, grow_mask, grow_to_edges, near_edge, range_selection,
     remove_specks, select_range, shrink_mask,
@@ -1085,19 +1088,77 @@ class Session:
         return done
 
     def _sky_map(self, key: str, refined: bool) -> Optional[np.ndarray]:
-        import cv2
+        return _read_gray(self.sky_cache(key, refined))
 
-        path = self.sky_cache(key, refined)
-        if not path.is_file():
+    # the finish (By Color + tree tips + SAM2 at full resolution, as `cli sky --color-preset`): slow (seconds a
+    # frame), so it runs on Make Masks only and is kept per settings ("fingerprint"); moving a setting shows
+    # the model's mask until the frames are finished again, going back shows the kept finish at once
+    def sky_finish_print(self, sp: Special) -> str:
+        """The finish's fingerprint: every value its pixels depend on."""
+        from src.core.refine import TREE_TIPS
+        from src.core.sky_sam2 import SAM2_TILES, SKY_SAM2
+
+        fin = sp.finish_values or {}
+        d = {k: sp.get(k) for k in ("threshold", "refine", "grow", "top_only")}
+        d.update(color=fin.get("color"), tree_tips=bool(fin.get("tree_tips", True)), tips=TREE_TIPS,
+                 tiles=SAM2_TILES, sam2=SKY_SAM2.name, max_side=self.max_side)
+        return hashlib.sha1(json.dumps(d, sort_keys=True).encode()).hexdigest()[:12]
+
+    def sky_finished(self, key: str, fingerprint: str, full: bool) -> Path:
+        """Image *key*'s finished sky: at its original resolution (*full*, what Export writes) or the working size."""
+        return self.store.root / "special" / "sky_finished" / fingerprint / ("full" if full else "work") / f"{key}.png"
+
+    def sky_unfinished(self, keys: Iterable[str], sp: Special) -> List[str]:
+        """The *keys* without *sp*'s finish ([] when it has none)."""
+        if sp.kind != SKY or not sp.finish:
+            return []
+        fp = self.sky_finish_print(sp)
+        return [k for k in keys if not self.sky_finished(k, fp, False).is_file()]
+
+    def finish_sky(self, keys: Sequence[str], sp: Special, engine, progress=None, cancelled=None) -> int:
+        """Finish *sp*'s sky on *keys* (their sky maps made) with SAM2 *engine* and keep it, at the original
+        resolution and the working size (safe off the UI thread: reads images, writes cache files only). The
+        same pixels as ``cli sky --color-preset`` (src/core/sky_sam2.py ``finish_sky``). Returns how many."""
+        from src.core.sky_edges import sky_edges
+        from src.core.sky_sam2 import finish_sky
+
+        fin = sp.finish_values
+        fp = self.sky_finish_print(sp)
+        done = 0
+        for n, key in enumerate(keys):
+            if cancelled is not None and cancelled():
+                break
+            prob = self._sky_map(key, bool(sp.get("refine")))
+            if prob is not None:
+                rgb = read_rgb(self.paths[self.keys.index(key)])
+                full, _clicks = finish_sky(sky_edges(sky_mask(prob, sp), rgb), rgb, fin["color"],
+                                           bool(fin.get("tree_tips", True)), engine)
+                size = working_size(rgb.shape[0], rgb.shape[1], self.max_side)
+                _write_mask(self.sky_finished(key, fp, True), full)
+                _write_mask(self.sky_finished(key, fp, False), resize_mask(full, size))  # last: it marks "done"
+                done += 1
+            if progress:
+                progress(n + 1, len(keys))
+        return done
+
+    def finished_sky_full(self, key: str, o: MaskObject) -> Optional[np.ndarray]:
+        """A Sky Object's finished mask of *key* at the original resolution (Export), None = not finished."""
+        sp = o.special
+        if sp is None or sp.kind != SKY or not sp.finish or key not in sp.keys:
             return None
-        data = np.fromfile(str(path), dtype=np.uint8)
-        return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE) if data.size else None
+        m = _read_gray(self.sky_finished(key, self.sky_finish_print(sp), True))
+        return None if m is None else m > 127
 
     def special_mask(self, key: str, sp: Special) -> Optional[np.ndarray]:
         """*sp*'s mask on image *key* at the working size (None: the sky map is not made yet)."""
         size = working_size(*self.original_size(key), self.max_side)
         if sp.kind == LENS_EDGE:
             return lens_edge_mask(size[0], size[1], sp)
+        if sp.finish:
+            done = _read_gray(self.sky_finished(key, self.sky_finish_print(sp), False))
+            if done is not None:
+                m = done > 127
+                return m if m.shape == tuple(size) else resize_mask(m, size)
         prob = self._sky_map(key, bool(sp.get("refine")))
         if prob is None:
             return None
@@ -1111,7 +1172,9 @@ class Session:
         o = self.project.get(obj_id)
         if o is None or o.special is None:
             return False
-        sp = o.special.with_params(**params) if params else o.special
+        params = dict(params or {})
+        sp = o.special.with_finish(params.pop("finish")) if "finish" in params else o.special
+        sp = sp.with_params(**params) if params else sp
         if keys is not None:
             sp = sp.with_keys(set(sp.keys) | set(keys), self.keys)
         frames: Dict[str, Optional[FrameState]] = {}
@@ -1389,4 +1452,24 @@ class Session:
         """Write the masks (*keys*: only those images, e.g. the ones a new dataset keeps)."""
         assert self.image_dir is not None
         return export_final_masks(self.project, self.image_dir, self.original_size, options, keys=keys,
-                                  progress=progress)
+                                  progress=progress, finished=self.finished_sky_full)
+
+
+def _read_gray(path: Path) -> Optional[np.ndarray]:
+    import cv2
+
+    if not path.is_file():
+        return None
+    data = np.fromfile(str(path), dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE) if data.size else None
+
+
+def _write_mask(path: Path, mask: np.ndarray) -> None:
+    """A bool mask as a PNG, written whole or not at all."""
+    import cv2
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ok, buf = cv2.imencode(".png", mask.astype(np.uint8) * 255)
+    tmp = path.with_name(path.name + ".tmp")
+    buf.tofile(str(tmp))
+    tmp.replace(path)

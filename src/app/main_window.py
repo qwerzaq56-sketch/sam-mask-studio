@@ -648,6 +648,7 @@ class MainWindow(QMainWindow):
         p.point_selected.connect(self.on_point_selected)
         p.layer_selected.connect(lambda n: (self.session.select_layer(n), self.refresh()))
         p.load_color_presets(self.settings.color_presets)  # By Color presets live in the settings file (p105)
+        p.special.set_color_presets(self.settings.color_presets)  # the Sky Object's finish uses them too (p112)
         self._shown_presets = set(self.settings.color_presets)  # the names the panel lists (p107)
         p.color_presets_changed.connect(self._save_color_presets)
         # By Color's settings as last left come back at the next start (p106); kept a moment after each change
@@ -723,6 +724,7 @@ class MainWindow(QMainWindow):
         sp.generate_requested.connect(self.special_generate)
         sp.detect_requested.connect(self.special_detect)
         sp.apply_requested.connect(self.special_apply)
+        sp.stop_requested.connect(self.special_stop)
         self.objects_panel.special_requested.connect(self.add_special)
         self.objects_panel.visibility_changed.connect(self._update_overlays)
 
@@ -810,12 +812,15 @@ class MainWindow(QMainWindow):
             editing=shown is not None and shown is editing_obj,
             layer=s.current_layer() if shown is not None and shown is editing_obj else 0,
         )
-        note = ""
+        note, finished = "", None
         if shown is not None and shown.special is not None and shown.special.kind == SKY:
             ok = Path(self.settings.sky_checkpoint).is_file()
             note = "Model: ✓ " + Path(self.settings.sky_checkpoint).name if ok else \
                 "Model missing: skyseg.onnx (Settings)"
-        self.properties_panel.special.show_object(shown, len(s.keys), note)
+            sp = shown.special
+            if sp.finish:
+                finished = len(sp.keys) - len(s.sky_unfinished(sp.keys, sp))
+        self.properties_panel.special.show_object(shown, len(s.keys), note, finished)
         self.detection_panel.set_detections(s.detections, s.detection_checked)
         if not s.detections and self.detection_panel.select_btn.isChecked():
             self.detection_panel.select_btn.blockSignals(True)  # nothing left to pick (added / discarded)
@@ -2138,46 +2143,116 @@ class MainWindow(QMainWindow):
             self.log("No frames: pick them in the Frame List (Shift/Ctrl-click) first")
             return
         keys = [s.keys[i] for i in rows]
-        todo = s.sky_missing(keys) if o.special.kind == SKY else []
-        if not todo:
+        sky = o.special.kind == SKY
+        self.properties_panel.special.flush()  # a setting moved just before: the finish is for it
+        o = self._special_obj()
+        todo = s.sky_missing(keys) if sky else []
+        unfinished = s.sky_unfinished(keys, o.special) if sky else []
+        if not todo and not unfinished:
             s.update_special(o.id, keys=keys)
             self.log(f"{o.name}: masks made on {len(keys)} frame(s) (Ctrl+Z undoes it)")
             self.refresh()
             return
         path = Path(self.settings.sky_checkpoint)
-        if not path.is_file():
+        if todo and not path.is_file():
             self.warn(f"The sky model is not there:\n{path}\n\nDownload skyseg.onnx (about 170 MB) from "
                       "https://huggingface.co/JianyuanWang/skyseg into checkpoints/sky/, or set its path in Settings.")
             return
-        oid, total = o.id, len(todo)
-        state = {"n": 0}
-        self._busy = f"Sky: 0 / {total}…"
+        device = self._sky_finish_device() if unfinished else None
+        if unfinished and device is None:
+            return
+        oid, sp = o.id, o.special
+        state = {"what": "Sky", "n": 0, "total": len(todo)}
+        self._busy = f"Sky: 0 / {len(todo)}…"
+        self._sky_stop = False
+        stopped = lambda: self._sky_stop  # noqa: E731
 
         def work():
-            if getattr(self, "_sky_model", None) is None or self._sky_model_path != path:
-                self._sky_model, self._sky_model_path = SkyModel(path), path
-            return s.compute_sky(todo, self._sky_model, progress=lambda n, t: state.update(n=n))
+            made = finished = 0
+            if todo:
+                if getattr(self, "_sky_model", None) is None or self._sky_model_path != path:
+                    self._sky_model, self._sky_model_path = SkyModel(path), path
+                made = s.compute_sky(todo, self._sky_model, progress=lambda n, t: state.update(n=n),
+                                     cancelled=stopped)
+            if unfinished and not stopped():
+                state.update(what="Loading SAM2 for the sky finish", n=0, total=0)
+                from src import cli  # (the same SAM2 the command line loads)
+
+                eng = cli._sam2_engine(device)
+                try:
+                    state.update(what="Sky finish", total=len(unfinished))
+                    finished = s.finish_sky(unfinished, sp, eng, progress=lambda n, t: state.update(n=n),
+                                            cancelled=stopped)
+                finally:
+                    if hasattr(eng, "release"):
+                        eng.release()
+            return made, finished
+
+        def show():
+            t = state["total"]
+            self.mode_label.setText(f"{state['what']}: {state['n']} / {t}…" if t else f"{state['what']}…")
 
         timer = QTimer(self)
         timer.setInterval(300)
-        timer.timeout.connect(lambda: self.mode_label.setText(f"Sky: {state['n']} / {total}…"))
+        timer.timeout.connect(show)
         timer.start()
+        self.properties_panel.special.set_running(bool(unfinished))
 
-        def done(n):
+        def end():
             timer.stop()
             self._busy = None
+            self.properties_panel.special.set_running(False)
+
+        def done(result):
+            end()
+            made, finished = result
             s.update_special(oid, keys=keys)
-            self.log(f"Sky model run on {n} frame(s); masks on {len(keys)} frame(s) (Ctrl+Z undoes them)")
+            parts = ([f"sky model run on {made} frame(s)"] if todo else []) + \
+                ([f"finished (By Color + SAM2 on {device}) on {finished} of {len(unfinished)}"] if unfinished else [])
+            self.log(f"{'Stopped: ' if self._sky_stop else ''}Sky: {'; '.join(parts)}; masks on {len(keys)} "
+                     f"frame(s) (Ctrl+Z undoes them)")
             self.refresh()
 
         def failed(msg):
-            timer.stop()
-            self._busy = None
+            end()
             self.refresh()
             self.warn(f"Sky masks failed: {msg}")
 
         self._start(Task(work), done, failed)
         self.refresh()
+
+    def special_stop(self) -> None:
+        """Stop the sky's Make Masks after the frame it is on (the frames done stay)."""
+        if self._busy and not getattr(self, "_sky_stop", True):
+            self._sky_stop = True
+            self.properties_panel.special.stop_btn.setEnabled(False)
+            self.log("Stopping the sky after this frame — the frames done stay")
+
+    def gpu_free_gb(self) -> Optional[float]:
+        """Free GPU memory in GB, None without CUDA; tests replace this."""
+        from src.cli import gpu_free_gb
+
+        return gpu_free_gb()
+
+    def _sky_finish_device(self) -> Optional[str]:
+        """Where SAM2 finishes the sky: cuda when 1 GB is free, else the CPU if the user says so (None: not)."""
+        from src.core.sky_sam2 import SKY_GPU_NEEDED, SKY_SAM2
+
+        if not SKY_SAM2.is_file():
+            self.warn(f"The sky finish needs SAM2 tiny, which is not there:\n{SKY_SAM2}")
+            return None
+        free = self.gpu_free_gb()
+        if free is None:
+            self.log("No CUDA GPU: SAM2 finishes the sky on the CPU (about 10x slower)")
+            return "cpu"
+        if free >= SKY_GPU_NEEDED:
+            return "cuda"
+        if self.ask("Sky Finish", f"Only {free:.1f} GB of GPU memory is free ({SKY_GPU_NEEDED:.0f} GB needed): "
+                    "another job (a training? a viewer?) is using the GPU.\n\nFree the GPU and try again, or run "
+                    "SAM2 on the CPU (about 10x slower).", "Run on the CPU"):
+            return "cpu"
+        self.log("Sky finish not started: the GPU is busy")
+        return None
 
     def special_detect(self) -> None:
         """Lens edge: the image circle found in (up to 8 of) the covered frames, else the open one."""
@@ -2867,6 +2942,7 @@ class MainWindow(QMainWindow):
         s.save(self.settings_path)  # keeps presets the file got meanwhile (p107)
         presets = s.color_presets
         self.properties_panel.load_color_presets(presets, self.properties_panel.color_preset.currentData())
+        self.properties_panel.special.set_color_presets(presets)
         self._shown_presets = set(presets)
         self.log(f"By Color presets: {', '.join(sorted(presets, key=str.lower)) or 'none'}")
 
@@ -2914,7 +2990,8 @@ class MainWindow(QMainWindow):
         try:
             self.save()
             filled = export_one_mask(s.project, key, s.original_size, out, ids, invert=picked[1] == 1,
-                                     image=(lambda k: read_rgb(s.image_dir / k)) if sky else None)
+                                     image=(lambda k: read_rgb(s.image_dir / k)) if sky else None,
+                                     finished=s.finished_sky_full)
         except Exception as e:  # noqa: BLE001 - a disk or format error: tell, keep working
             self.warn(f"Export failed: {e}")
             return
@@ -2973,7 +3050,8 @@ class MainWindow(QMainWindow):
                 masks = [MaskJob(o.out_dir, o.name_pattern, o.invert, o.include_empty,
                                  lambda k, ids=o.object_ids, sky=o.sky_edges: full_mask(
                                      s.project, k, s.original_size, ids,
-                                     (lambda key: read_rgb(s.image_dir / key)) if sky else None))
+                                     (lambda key: read_rgb(s.image_dir / key)) if sky else None,
+                                     s.finished_sky_full))
                          for o in jobs]
                 if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
                     groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]

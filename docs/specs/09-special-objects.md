@@ -38,6 +38,12 @@
   - **Refine edges**(기본 켬).
   - **Only sky touching the top edge**: 위 가장자리에 닿은 조각만(창문, 물, 반사 제거). 360(ERP)에 맞음, 피시아이에는 끄기.
 - "커브"는 따로 두지 않음: 이진 마스크에서는 커브를 거친 뒤 자르는 것이 임계값 하나를 옮기는 것과 같음.
+- **Finish**(p112, By Color + SAM2, 원본 해상도): `cli sky --color-preset`과 같은 마무리(`src/core/sky_sam2.py` `finish_sky`,
+  같은 픽셀). By Color 프리셋을 고르면 그 **값**이 Object에 저장됨. 나무 끝 빼기는 프리셋의 Near edge 띠가 켜져 있을 때만.
+  - 장당 약 8 s(GPU)라 **Make Sky Masks 때만** 돎. 설정을 옮기면 마무리 안 된 프레임은 모델 마스크로 보이고 안내 줄에
+    `Finished on N of M`. 결과는 설정 지문별로 `<프로젝트>/special/sky_finished/`에 캐시(되돌리면 바로).
+  - SAM2 tiny를 따로 올렸다 내림(약 0.6 GB). GPU 빈 메모리 1 GB 미만이면 CPU(약 10배 느림)로 할지 물음. **Stop** = 지금 프레임까지.
+  - Export는 마무리된 프레임의 원본 해상도 마스크를 그대로 씀. Apply하면 작업 해상도 마스크만 남음.
 
 ## 4. Fisheye Lens Edge
 

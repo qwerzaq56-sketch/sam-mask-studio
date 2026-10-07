@@ -2611,3 +2611,118 @@ def test_presets_written_while_the_app_runs_are_kept(qapp, win):
     p.color_tol.setValue(45)
     win._keep_color_last()
     assert set(Settings.load(path).color_presets) == {"mine"}  # deleted here: not merged back
+
+
+# --- p112: the Sky Object's finish (By Color + tree tips + SAM2, as cli sky --color-preset) ----------------
+
+
+def test_sky_finish_runs_on_make_masks_and_is_kept_per_settings(qapp, win, tmp_path, monkeypatch):
+    import numpy as np
+
+    import src.cli as cli
+    import src.core.sky_sam2 as sky_sam2
+    from src.core.special import SKY
+    from src.core.storage import ProjectStore, full_mask
+    from tests.app.conftest import wait_until
+    from tests.fakes import FakeEngine
+
+    class TopHalf:
+        def probability(self, rgb):
+            p = np.zeros(rgb.shape[:2], np.uint8)
+            p[: rgb.shape[0] // 2] = 230
+            return p
+
+    calls, devices, released = [], [], []
+
+    def fake_finish(full, rgb, color, tree_tips, engine):  # stands in for By Color + tips + SAM2: all sky
+        calls.append((full.shape, color["tol"], tree_tips))
+        if len(calls) == stop_after[0]:
+            win._sky_stop = True  # as if Stop was pressed during this frame
+        return np.ones_like(full), 3
+
+    def fake_engine(device):
+        devices.append(device)
+        eng = FakeEngine()
+        eng.release = lambda: released.append(device)
+        return eng
+
+    stop_after = [0]
+    monkeypatch.setattr(sky_sam2, "finish_sky", fake_finish)
+    monkeypatch.setattr(cli, "_sam2_engine", fake_engine)
+    tiny = tmp_path / "sam2.1_hiera_tiny.pt"
+    tiny.write_bytes(b"")
+    monkeypatch.setattr(sky_sam2, "SKY_SAM2", tiny)
+    win.gpu_free_gb = lambda: 7.0
+
+    s = win.session
+    win.add_special(SKY)
+    [o] = s.project.objects
+    win.settings.sky_checkpoint = str(tmp_path / "sky.onnx")
+    keys = s.keys[1:4]
+    s.compute_sky(keys, TopHalf())
+    win.images_panel.list.clearSelection()
+    for r in range(1, 4):
+        win.images_panel.list.item(r).setSelected(True)
+    win.special_generate("selected", 0, -1)  # V1: no finish, as before
+    o = s.project.get(o.id)
+    model_mask = o.mask(keys[0])
+    assert model_mask[1, 1] and not model_mask[-2, 1] and not devices
+
+    panel = win.properties_panel.special
+    blue = {"tol": 7, "color_band": 30, "color_band_on": True}
+    panel.set_color_presets({"blue": blue})
+    panel.finish.setCurrentIndex(panel.finish.findData("blue"))
+    finish = panel.values()["finish"]
+    assert finish == {"name": "blue", "color": blue, "tree_tips": True} and panel.tips.isEnabled()
+    win.special_params(o.id, {"finish": finish})
+    o = s.project.get(o.id)
+    assert (o.mask(keys[0]) == model_mask).all()  # set, not run yet: the model's mask
+    assert "Finished on 0 of 3" in panel.finish_note.text()
+
+    # V6: stopped after the first frame, then Make Masks goes on with the others
+    stop_after[0] = 1
+    win.special_generate("selected", 0, -1)
+    wait_until(qapp, lambda: not win._busy)
+    assert len(calls) == 1 and devices == ["cuda"] and released == ["cuda"]
+    assert "Finished on 1 of 3" in panel.finish_note.text() and "Stopped" in win.log_view.toPlainText()
+    stop_after[0] = 0
+    win.special_generate("selected", 0, -1)
+    wait_until(qapp, lambda: not win._busy)
+    assert len(calls) == 3 and calls[0][2] is True and "Finished on 3 of 3" in panel.finish_note.text()
+    o = s.project.get(o.id)
+    assert all(o.mask(k).all() for k in keys)  # V2
+    full = s.finished_sky_full(keys[0], o)
+    assert full.shape == s.original_size(keys[0]) and full.all()
+    assert full_mask(s.project, keys[0], s.original_size, None, None, s.finished_sky_full).all()  # Export
+
+    # V3: a new setting shows the model's mask; back to the old one, the kept finish at once
+    win.special_params(o.id, {"threshold": 95})
+    assert not s.project.get(o.id).frames and "Finished on 0 of 3" in panel.finish_note.text()
+    win.special_params(o.id, {"threshold": 50})
+    assert all(s.project.get(o.id).mask(k).all() for k in keys) and len(calls) == 3
+
+    # V5: the GPU busy: asked; no = nothing done, yes = the CPU
+    win.special_params(o.id, {"grow": 2})
+    win.gpu_free_gb = lambda: 0.3
+    win.ask = lambda *a: False
+    win.special_generate("selected", 0, -1)
+    assert not win._busy and len(calls) == 3 and "GPU is busy" in win.log_view.toPlainText()
+    win.ask = lambda *a: True
+    win.special_generate("selected", 0, -1)
+    wait_until(qapp, lambda: not win._busy)
+    assert devices[-1] == "cpu" and len(calls) == 6
+
+    # V8: the preset changed later: the Object keeps its values
+    panel.set_color_presets({"blue": dict(blue, tol=20)})
+    assert panel.finish.currentData() != "blue" and "kept in this Object" in panel.finish.currentText()
+    assert panel.values()["finish"]["color"] == blue
+
+    # V7: saved with the project
+    win.save(force=True)
+    back = ProjectStore(s.image_dir, s.max_side).load(list(s.keys)).get(o.id)
+    assert back.special.finish_values == {"name": "blue", "color": blue, "tree_tips": True}
+
+    # V9: Apply keeps the finished masks
+    win.special_apply()
+    o = s.project.get(o.id)
+    assert o.special is None and o.mask(keys[0]).all()

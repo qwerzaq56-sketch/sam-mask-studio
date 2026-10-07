@@ -416,11 +416,14 @@ def has_sky(project: Project, ids: Optional[List[int]] = None) -> bool:
 
 def full_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]],
               ids: Optional[List[int]] = None,
-              image: Optional[Callable[[str], np.ndarray]] = None) -> Optional[np.ndarray]:
+              image: Optional[Callable[[str], np.ndarray]] = None,
+              finished: Optional[Callable[[str, MaskObject], Optional[np.ndarray]]] = None) -> Optional[np.ndarray]:
     """The Final Mask (*ids*: a mask set's) of *key* at the image's original resolution (bool); None = no mask.
 
     *image*: key -> the full-resolution RGB image; given, the Sky Objects' edges are decided again on it
-    (:func:`sky_edges`) instead of being scaled up, the other Objects are scaled up as always."""
+    (:func:`sky_edges`) instead of being scaled up, the other Objects are scaled up as always.
+    *finished*: (key, Object) -> a Sky Object's finished mask, already at the original resolution
+    (``Session.finished_sky_full``), used as it is; None for the others."""
     h0, w0 = original_size(key)
 
     def up(m: np.ndarray) -> np.ndarray:
@@ -429,25 +432,35 @@ def full_mask(project: Project, key: str, original_size: Callable[[str], Tuple[i
         return m
 
     use = project.members(ids)
-    sky = union(o.mask(key) for o in project.objects if use(o) and is_sky(o)) if image is not None else None
+    done = {}
+    if finished is not None:
+        for o in project.objects:
+            if use(o) and is_sky(o) and (f := finished(key, o)) is not None:
+                done[o.id] = up(f)
+    objects = [o for o in project.objects if use(o) and o.id not in done]
+    sky = union(o.mask(key) for o in objects if is_sky(o)) if image is not None else None
     if sky is None or not sky.any():
-        m = project.final_mask(key, ids)
-        return None if m is None else up(m)
-    rgb = image(key)
-    out = sky_edges(sky, rgb) if rgb.shape[:2] == (h0, w0) else up(sky)
-    rest = union(o.mask(key) for o in project.objects if use(o) and not is_sky(o))
-    if rest is not None:
-        out = out | up(rest)
+        m = union(o.mask(key) for o in objects)
+        out = None if m is None else up(m)
+    else:
+        rgb = image(key)
+        out = sky_edges(sky, rgb) if rgb.shape[:2] == (h0, w0) else up(sky)
+        rest = union(o.mask(key) for o in objects if not is_sky(o))
+        if rest is not None:
+            out = out | up(rest)
+    for f in done.values():
+        out = f if out is None else out | f
     return out
 
 
 def export_one_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]], out: Path,
                     ids: Optional[List[int]] = None, invert: bool = False,
-                    image: Optional[Callable[[str], np.ndarray]] = None) -> bool:
+                    image: Optional[Callable[[str], np.ndarray]] = None,
+                    finished: Optional[Callable[[str, MaskObject], Optional[np.ndarray]]] = None) -> bool:
     """One image's mask to *out* at its original resolution (p104): the Final Mask, or (*ids*) just those
     Objects'. White = the mask (*invert*: black). Returns False when it is empty (an all-background PNG is
     still written, so the file always matches the image)."""
-    m = full_mask(project, key, original_size, ids, image)
+    m = full_mask(project, key, original_size, ids, image, finished)
     if m is None:
         h0, w0 = original_size(key)
         m = np.zeros((h0, w0), bool)
@@ -489,8 +502,10 @@ def export_final_masks(
     options: ExportOptions,
     keys: Optional[List[str]] = None,
     progress: Optional[Callable[[int, int], None]] = None,
+    finished: Optional[Callable[[str, MaskObject], Optional[np.ndarray]]] = None,
 ) -> List[Path]:
-    """Write each image's Final Mask at its original resolution. Returns written paths."""
+    """Write each image's Final Mask at its original resolution (*finished*: see :func:`full_mask`). Returns
+    written paths."""
     if keys is None:
         keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
     if options.backup:
@@ -499,7 +514,7 @@ def export_final_masks(
     image = (lambda k: read_rgb(image_dir / k)) if options.sky_edges else None
     for i, key in enumerate(keys):
         h0, w0 = original_size(key)
-        m = full_mask(project, key, original_size, options.object_ids, image)
+        m = full_mask(project, key, original_size, options.object_ids, image, finished)
         if m is None:
             if not options.include_empty:
                 continue
