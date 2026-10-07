@@ -643,10 +643,20 @@
 - 사용자 요청: 컬러피커로 고를 때 원본 색을 토글하며 보고 싶음.
 - Pick Color 옆 `Original (T)` 버튼(픽커가 켜져 있을 때만). 켜면 캔버스에 사진만: Object 색, 에딧 레이어, 오토 툴 A / B·회색·Near edge, Region, 포인트, 후보, 범례를 그리지 않음. 배너 앞에 `ORIGINAL (T)`(`Canvas.set_original_view`).
 - `T`: 짧게 = 켜기 / 끄기, 0.3초 넘게 누르고 있으면 떼는 순간 원래대로(`MainWindow._original_key`). 픽커가 꺼져 있으면 로그로 안내만.
-- 픽커를 끄면(Esc, 오토 툴 나가기, Auto 방식으로 바꾸기) Original도 꺼짐. 켜는 건 자동으로 안 함(p92).
+- 픽커를 끄면(Esc, 오토 툴 나가기) Original도 꺼짐. 켜는 건 자동으로 안 함(p92).
 - 고르는 값은 전처럼 원본 픽셀(표시만 바뀜). 픽커 배너에 `T: original`, F1 목록에 T.
 - Clear 버튼은 스와치 옆으로.
- (리뷰 평가 결과)
+
+## 97단계 (`v0.4-p97`): By Color = Range만, 조건별 Not (BC-P5 a, BC-P4 a)
+
+- 사용자 평가: Auto: Color / Auto: Brightness는 결과가 형편없음. 밝기로 잡으면 잎은 잘 잡히나 밝은 하늘·구름도 같이 잡힘 → 밝기로 잡고 하늘색은 빼고 싶음.
+- `By` 목록과 Balance를 없애고 By Color는 Range만(`split_by_color`, `take`와 그 테스트 지움). 오토 툴 설정은 저장되지 않아 옮길 값 없음.
+- `Color within`, `Brightness from` 줄마다 `Not`: 그 조건만 뒤집음(`select_range(not_color, not_brightness)`, 설정 `color_not`, `bright_not`). 조건끼리는 전처럼 AND. 예: `밝기 140–255` ∧ `Not 하늘·구름색`.
+- 전체 Invert는 `Swap A / B`로 이름만 바꿈(설정 키 `color_invert` 그대로). 계산은 `session.range_selection` 하나로 모음(미리보기 A / B와 적용이 같은 함수).
+- 테스트: `tests/unit/test_split_by_color.py` → `test_select_range.py`(near_edge 테스트 추가), 앱 테스트 Not / Swap.
+- p96 기록 때 지워진 `## 반영 안 함` 제목 줄 복구.
+
+## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
 - 내부 구조 개편: 이미 Object × Frame × Mask 구조
