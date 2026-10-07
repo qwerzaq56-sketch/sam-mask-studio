@@ -2231,3 +2231,15 @@ def test_picked_colors_undo_and_the_picker_stays_off_over_them(qapp, win):
     p.tool_btns["by_color"].click()
     assert not p.pick_btn.isChecked()
     assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 210, 220))
+
+
+def test_picked_color_is_one_pixel(qapp, win):
+    """p93: the picker takes the clicked pixel's color, not a 5×5 mean."""
+    import numpy as np
+
+    c = win.canvas
+    img = np.zeros((20, 20, 3), np.uint8)
+    img[10, 10] = (200, 100, 50)
+    c.image = img
+    assert c.sample_color(10.4, 10.7) == (200, 100, 50)
+    assert c.sample_color(11, 10) == (0, 0, 0)

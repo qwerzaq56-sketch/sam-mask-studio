@@ -362,8 +362,9 @@ class Canvas(QWidget):
         self.update()  # the banner
         self._update_cursor()
 
-    def sample_color(self, x: float, y: float, r: int = 2) -> Optional[Tuple[int, int, int]]:
-        """The mean color around image pixel (x, y), (2r+1)² pixels."""
+    def sample_color(self, x: float, y: float, r: int = 0) -> Optional[Tuple[int, int, int]]:
+        """The color of image pixel (x, y) (the mean of (2r+1)² pixels around it when *r* > 0). One pixel by
+        default (p93): a 5×5 mean picked mixed colors at leaf and cloud edges (BC-14)."""
         if self.image is None:
             return None
         h, w = self.image.shape[:2]
