@@ -19,10 +19,10 @@
                                             그 밖: D 브러쉬   F 기준(◎)으로   H Hide Masks
 
    Z  X  C  V  B  N  M  ,  .  /
-   Z  X  ·  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X Final↔Object   V Mask Preview   N New Object   , . 키프레임
+   Z  X  C  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X 흑백(Final↔Object)   C 잘라보기(안↔밖)   V Mask Preview   N New Object   , . 키프레임
 ```
 
-`·` = 비어 있음. 비어 있는 글자: **W T Y U I P J K L C B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
+`·` = 비어 있음. 비어 있는 글자: **W T Y U I P J K L B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
 (`S` `G`는 오토 툴이 켜져 있을 때만. `W` `S`는 마우스가 목록이나 캔버스 위에 있을 때 이동 키: 아래 "이동". 목록 위에서는 `A` `D`도 이동으로 바뀝니다.
 Shift+A = 오토 툴 전체 선택 / 해제.)
 
@@ -76,7 +76,8 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 |---|---|
 | Z (누르고 있기) | Mask Preview 잠깐 보기 |
 | V | Mask Preview(흑백) 켜기 / 끄기 (누르고 있어도 한 번만) |
-| X | Mask Preview 대상 전환: Final Mask ↔ 선택한 Object (메뉴 `Toggle Final / Object Mask`, 툴바 `Preview: Final / Object` 버튼) |
+| X | Mask Preview **흑백**: Final Mask ↔ 선택한 Object 전환. 잘라보기 중이면 흑백으로(Final / Object는 저장된 그대로) |
+| C | Mask Preview **잘라보기**: 안쪽(마스크가 담은 것) ↔ 바깥(남긴 것) 전환. 흑백 중이면 잘라보기로(안 / 밖은 저장된 그대로) |
 | O | Outline 켜기 / 끄기 |
 | Q / ` | Solo 켜기 / 끄기 (선택한 Object만 색칠) |
 | H | Hide Masks 켜기 / 끄기 (맨 이미지) |
@@ -98,7 +99,7 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | Shift+Enter | 오토 툴 Apply & Close (Enter는 Apply & Continue) |
 | Alt+드래그 | Paint 빼기 · 오토 툴 선택 해제 · Region Box 빼기 |
 | Shift+드래그 | 브러쉬를 켜지 않고 칠하기 |
-| Alt+우클릭 드래그 좌우 | 브러쉬 크기 (Photoshop과 같음, 원은 누른 자리에 고정) |
+| Ctrl+드래그 좌우 | 브러쉬 크기 (오른쪽 = 크게, 원은 누른 자리에 고정. 움직이지 않고 떼면 Ctrl+클릭 = 이미지 조각 더하기 / 빼기). 가장 작게 = 이미지 1 px |
 | Ctrl+휠 / Shift+휠 | 브러쉬 크기 |
 
 ### Select on Image (디텍션 후보 고르기)
@@ -117,7 +118,7 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | (장기) | 단축키 직접 바꾸기(커스텀 매핑) | 사용자 메모 2026-09-30 |
 
 ## 변경 기록
-
+- `v0.4-p84`: `X` = 흑백(Final ↔ Object), `C` = 잘라보기(안 ↔ 밖), 서로 오가면 각자 상태를 기억. 브러쉬 크기 = Ctrl+드래그 좌우(p83, Alt+우클릭 드래그 대신).
 - `v0.4-p55`: 오토 툴 **F = Apply & Close**(전엔 Continue), **G = Apply & Continue**, **S = Fill / D = Paint**(Paint에서 D 다시 = 전체 선택 / 해제),
   Fill ↔ Paint를 오가도 Paint의 선택 유지. A = 취소는 그대로(A 취소 · S D 모드 · F 확인 · G 계속).
 - `v0.4-p49`: Edit 안에서 **E = 포인트, D = 브러쉬** 도구, 같은 키를 다시 누르면 편집 끝. 오토 툴에서 **D = Paint / Fill**,

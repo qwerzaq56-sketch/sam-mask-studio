@@ -408,10 +408,10 @@ class MainWindow(QMainWindow):
             True,
         )
         # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
-        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.toggle_preview_mode, ["Shift+X"])
+        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.key_x, ["X"])
         self._show_preview_mode()
         # how Mask Preview looks: the mask, or the image cut out by it (inside / outside)
-        self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout, ["X"])
+        self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout)  # X / C go there too
         self.act_cutout_side = self._action("Cut Out: Inside / Outside", self.toggle_cutout_side, ["C"])
         self.act_cutout_checker = self._action(
             "Cut Out Background: Checkerboard", self.toggle_cutout_checker,
@@ -2134,8 +2134,17 @@ class MainWindow(QMainWindow):
     def toggle_final(self, on: bool) -> None:
         self.canvas.set_final_preview(on)
 
+    def key_x(self) -> None:
+        """X (p84): in black and white, the Final Mask <-> the selected Object's mask; in a cut-out, back to
+        black and white as it was (Final or Object kept)."""
+        if self.settings.preview_style != "mask":
+            self.settings.preview_style = "mask"
+            self._set_preview_style()
+        else:
+            self.toggle_preview_mode()
+
     def toggle_preview_mode(self) -> None:
-        """X: Mask Preview shows the Final Mask <-> the selected Object's mask."""
+        """Mask Preview shows the Final Mask <-> the selected Object's mask (kept for the cut-outs too)."""
         self.settings.preview_object = not self.settings.preview_object
         self.settings.save(self.settings_path)
         self._show_preview_mode()
@@ -2143,15 +2152,15 @@ class MainWindow(QMainWindow):
         self.canvas.update()
 
     def toggle_cutout(self) -> None:
-        """X: Mask Preview shows the mask in black and white <-> the image cut out by it (the rest the mask's
-        black / white, or a checkerboard), on the side C picks. Only the style: V toggles the preview itself, Z peeks."""
+        """The View menu's Mask / Cut Out: black and white <-> the image cut out by the mask (the rest the mask's
+        black / white, or a checkerboard), on the side kept. Only the style: V toggles the preview itself, Z peeks."""
         cur = self.settings.preview_style
         self.settings.preview_style = self.settings.cutout_side if cur == "mask" else "mask"
         self._set_preview_style()
 
     def toggle_cutout_side(self) -> None:
-        """C: the cut-out preview shows the image inside the mask <-> outside it; from black and white (X) it
-        goes to the cut-out first, on the side it had."""
+        """C (p84): in a cut-out, inside the mask <-> outside it; in black and white, to the cut-out on the side
+        kept (inside or outside)."""
         if self.settings.preview_style == "mask":
             self.settings.preview_style = self.settings.cutout_side
         else:
@@ -2178,9 +2187,10 @@ class MainWindow(QMainWindow):
         self.act_preview_style.setIconText(
             {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
         self.act_preview_style.setToolTip(
-            "How Mask Preview (V, hold Z) looks. X: the mask in black and white <-> the image cut out by it "
-            "(the rest black / white as in the mask, or a checkerboard: View menu). C: cut out inside the mask "
-            "(what it holds: leaves in a sky mask) <-> outside it (what it left: sky it missed)")
+            "How Mask Preview (V, hold Z) looks. X: black and white (Final <-> Object mask; from a cut-out: back "
+            "to it). C: the image cut out by the mask (inside <-> outside: what it holds / what it left; from black "
+            "and white: to the cut-out). Each remembers its state. The rest: the mask's black / white, or a "
+            "checkerboard (View menu)")
 
     def _show_preview_mode(self) -> None:
         """The toolbar button names the mode in use; the menu entry keeps its command name."""
