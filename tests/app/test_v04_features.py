@@ -1992,7 +1992,9 @@ def test_by_color_range_with_picker_and_remove_only(qapp, win):
     p.tool_btns["object_fill"].click()
     assert not c.color_pick_mode
     p.tool_btns["by_color"].click()
-    assert c.color_pick_mode  # back in Range: on again
+    assert not c.color_pick_mode  # back in Range with a color picked: off, a click won't replace it (p92)
+    p.pick_btn.click()
+    assert c.color_pick_mode
     c.color_picked.emit((10, 20, 30), False)
     c.color_picked.emit((200, 200, 200), True)  # Shift: one more
     assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 200, 200))
@@ -2202,3 +2204,30 @@ def test_auto_tool_shows_a_color_legend(qapp, win):
     win.canvas.grab()  # draws without error
     win.escape()  # leave the tool
     assert win.canvas.legend == []
+
+
+def test_picked_colors_undo_and_the_picker_stays_off_over_them(qapp, win):
+    """p92: a change to the picked colors is an undo step; with colors picked, reopening By Color does not turn
+    the picker on by itself (an unnoticed click replaced them)."""
+    ids = make_objects(win, 1)
+    win.toggle_edit(ids[0])
+    p = win.properties_panel
+    p.tool_btns["by_color"].click()
+    p.color_basis.setCurrentIndex(p.color_basis.findData("range"))
+    assert p.pick_btn.isChecked()  # nothing picked yet: on
+    win.canvas.color_picked.emit((10, 20, 30), False)
+    win.canvas.color_picked.emit((200, 210, 220), True)
+    win.canvas.color_picked.emit((90, 90, 90), False)  # a plain click replaces both
+    assert p.tool_settings()["color_samples"] == ((90, 90, 90),)
+    win.undo()
+    assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 210, 220))
+    win.redo()
+    assert p.tool_settings()["color_samples"] == ((90, 90, 90),)
+    win.undo()
+    p.clear_colors_btn.click()
+    win.undo()
+    assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 210, 220))
+    win.escape()  # leave the tool, come back: colors kept, picker off
+    p.tool_btns["by_color"].click()
+    assert not p.pick_btn.isChecked()
+    assert p.tool_settings()["color_samples"] == ((10, 20, 30), (200, 210, 220))

@@ -155,6 +155,8 @@ class Session:
         # gray). Nothing is written until the tool closes; switching modes keeps both.
         self.auto_tool: Optional[str] = None
         self.auto_mode = "fill"
+        # By Color Range's picked colors (the panel holds them; kept here too so a change is an undo step, p92)
+        self.color_samples: Tuple[Tuple[int, int, int], ...] = ()
         self._picked: Optional[np.ndarray] = None  # Paint mode: the area strokes picked
         self._result: Optional[Tuple[str, np.ndarray, List[np.ndarray]]] = None  # (tool, target, masks it fits)
         self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
@@ -624,7 +626,14 @@ class Session:
         self._record("region")
         self.region = region
 
-    UI_STATE = {"region": "region", "picks": "_picked"}  # undoable UI state -> attribute
+    UI_STATE = {"region": "region", "picks": "_picked", "colors": "color_samples"}  # undoable UI state -> attribute
+
+    def set_color_samples(self, colors) -> None:
+        """The picked colors changed (a click on the image, Shift+click, a swatch, Clear): one undo step."""
+        colors = tuple(tuple(int(v) for v in c) for c in colors)
+        if colors != self.color_samples:
+            self._record("colors")
+            self.color_samples = colors
 
     def _record(self, kind: str) -> None:
         """Remember the current *kind* value as an undo step (before it changes)."""
@@ -632,9 +641,12 @@ class Session:
         self._ui_redo.clear()
 
     def _forget(self, kind: Optional[str] = None) -> None:
-        """Drop the history of *kind* (all UI state when None): it no longer means anything."""
-        self._ui_undo = [e for e in self._ui_undo if kind is not None and e[1] != kind]
-        self._ui_redo = [e for e in self._ui_redo if kind is not None and e[2] != kind]
+        """Drop the history of *kind* (all UI state but the picked colors when None): it no longer means
+        anything. The picked colors stay with the tool across frames and edit targets, so does their history."""
+        def keep(k: str) -> bool:
+            return k == "colors" if kind is None else k != kind
+        self._ui_undo = [e for e in self._ui_undo if keep(e[1])]
+        self._ui_redo = [e for e in self._ui_redo if keep(e[2])]
 
     def _reset_region(self) -> None:
         """Leaving the edit target ends its region, the region's history and any auto-tool result."""
