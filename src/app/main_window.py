@@ -3074,7 +3074,7 @@ class MainWindow(QMainWindow):
                 if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
                     groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]
                     report.append(stitch_to_erp(s.image_dir, self.scene.model_dir, dataset, groups, views.width, masks,
-                                                progress=step("Stitching images and masks")))
+                                                progress=step("Stitching images and masks"), views=views.views))
                 else:
                     report.append(convert(s.image_dir, self.scene.model_dir, dataset, keep, views, masks,
                                           progress=step("Converting images and masks")))
@@ -3094,7 +3094,7 @@ class MainWindow(QMainWindow):
             if report and views is not None:
                 r = report[0]
                 self.log(f"Converted dataset {dataset}: {r.images_in} image(s) → {r.views_out} "
-                         f"{'pinhole view(s)' if isinstance(views, Views) else '360 image(s)'} {r.side} px wide, "
+                         f"{'pinhole view(s)' if isinstance(views, Views) or getattr(views, 'views', None) else '360 image(s)'} {r.side} px wide, "
                          f"3D points {r.points_kept} kept / {r.points_dropped} removed"
                          + (f"; {r.views_dropped} view(s) the fisheye could not fill were left out"
                             if getattr(r, "views_dropped", 0) else "")

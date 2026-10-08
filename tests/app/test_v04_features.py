@@ -1269,6 +1269,53 @@ def test_dual_fisheye_scene_stitched_from_the_export(qapp, win, tmp_path):
     assert sorted(p.name for p in (new / "masks").iterdir()) == ["000.jpg.png", "002.jpg.png"]
 
 
+def test_camera_pairs_to_pinhole_views_from_the_export(qapp, win, tmp_path, monkeypatch):
+    """p122 (export plan 10, V-2): a rig's moments as pinhole views with the 360 layouts."""
+    from src.app.dialogs import ExportDialog
+    from src.core.colmap import read_cameras_full, read_image_names_bin
+    from src.core.reproject import Stitch
+    from tests.app.conftest import wait_until
+    from tests.unit.test_reproject import make_dual_fisheye_scene
+
+    monkeypatch.setattr(ExportDialog, "_open", {"note": False, "views": True})
+    root = tmp_path / "rig"
+    make_dual_fisheye_scene(root, frames=2)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    s = win.session
+    s.start_new_object()
+    s.click(80, 80)
+    s.finish_editing()
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="brush")
+    dlg.to_new.setChecked(True)
+    new = tmp_path / "pin"
+    dlg.dataset.setText(str(new))
+    dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    assert dlg.view_layout.itemData(0) == "fish9"  # one lens: the lens's layouts
+    i = dlg.convert.findData("pairs")
+    assert "Pinhole views from camera pairs (2 moments)" == dlg.convert.itemText(i)
+    dlg.convert.setCurrentIndex(i)
+    keys = [dlg.view_layout.itemData(k) for k in range(dlg.view_layout.count())]
+    assert keys == ["colmap12", "cube6", "horizon4", "rings16", None]  # a pair sees the whole sphere
+    assert dlg.view_layout.isVisibleTo(dlg) and dlg.fov.isVisibleTo(dlg)
+    dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("cube6"))
+    dlg.side.setValue(64)
+    v = dlg.views()
+    assert isinstance(v, Stitch) and v.views is not None and len(v.views.pairs()) == 6
+    assert "per moment" in dlg.views_summary.text() and "6 views" in dlg.views_summary.text()
+    assert len(dlg.view_preview._views) == 6 and "per moment" in dlg.layout_note.text()
+    dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    dlg.convert.setCurrentIndex(i)
+    assert dlg.view_layout.currentData() == "cube6"  # remembered for this list
+    win.run_export(dlg.jobs(), dataset=new, views=dlg.views())
+    wait_until(qapp, lambda: not win._busy)
+    names = read_image_names_bin(new / "sparse" / "0" / "images.bin")
+    assert len(names) == 12 and names[0] == "000_y000_p00.jpg"  # 2 moments x 6 views
+    assert [c.model for c in read_cameras_full(new / "sparse" / "0").values()] == ["PINHOLE"]
+    assert len(list((new / "masks").iterdir())) == 12
+    assert "→ 12 pinhole view(s) 64 px wide" in win.log_view.toPlainText()
+
+
 # --- p34: the selected Objects on many picked frames at once (clear, copy the mask) ------------------
 
 
