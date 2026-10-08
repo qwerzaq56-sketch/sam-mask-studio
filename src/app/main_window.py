@@ -58,7 +58,7 @@ from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
 from src.core.special import LABELS as SPECIAL_LABELS
-from src.core.special import LENS_EDGE, SKY, SkyModel, detect_lens_circle
+from src.core.special import LENS_EDGE, LENS_MARGIN, SKY, SkyModel, detect_lens_circle
 from src.app.session import IMAGE_TOOLS, Mode, Session
 from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
@@ -2271,7 +2271,8 @@ class MainWindow(QMainWindow):
         return None
 
     def special_detect(self) -> None:
-        """Lens edge: the image circle found in (up to 8 of) the covered frames, else the open one."""
+        """Lens edge: the image circle found in (up to 8 of) the covered frames, else the open one, pulled in
+        by LENS_MARGIN over the lens's soft rim (as the ``lens`` command does)."""
         s = self.session
         o = self._special_obj()
         if o is None or self._busy or o.special.kind != LENS_EDGE:
@@ -2282,9 +2283,12 @@ class MainWindow(QMainWindow):
         if found is None:
             self.log("No image circle found: the images have no black edge to see")
             return
+        circle = found["radius"]
+        found["radius"] = round(circle * (1 - LENS_MARGIN / 100.0), 1)
         s.update_special(o.id, params=found)
-        self.log(f"Image circle: radius {found['radius']} %, center {found['cx']:+} / {found['cy']:+} % "
-                 f"(from {len(pick)} frame(s))")
+        self.log(f"Image circle: radius {circle} %, center {found['cx']:+} / {found['cy']:+} % "
+                 f"(from {len(pick)} frame(s)); masked from {found['radius']} %, {LENS_MARGIN:g} % in over the "
+                 "soft rim")
         self.refresh()
 
     def special_apply(self) -> None:

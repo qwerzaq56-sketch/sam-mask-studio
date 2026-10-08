@@ -62,11 +62,11 @@ import cv2
 import numpy as np
 
 from src.core.sky_sam2 import SKY_GPU_NEEDED, SKY_SAM2
+from src.core.special import LENS_MARGIN  # % of the radius: the soft, dark rim (p127: 2 -> 5)
 from src.version import app_version
 
 ROOT = Path(__file__).resolve().parents[1]
 SKY_MODEL = ROOT / "checkpoints" / "sky" / "skyseg.onnx"
-LENS_MARGIN = 2.0  # % of the radius: the lens rim's glow, about 40 px on a 3840² OSMO 360 fisheye
 LENS_SAMPLES = 16  # frames per camera folder the circle is found in
 SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
 SAM2_MODEL = SKY_SAM2  # SAM2 tiny: the engine wants a path; sky after By Color loads it
@@ -839,7 +839,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _common(lens, "White = outside the circle (the edge to ignore), black = inside")
     _preset_option(lens)
     lens.add_argument("--margin", type=float,
-                      help=f"Pull the circle in by this %% of its radius, over the rim's glow (default {LENS_MARGIN})")
+                      help=f"Pull the circle in by this %% of its radius, over the soft, dark rim (default {LENS_MARGIN:g})")
     lens.add_argument("--samples", type=int,
                       help=f"Frames per camera folder the circle is found in (default {LENS_SAMPLES})")
     lens.add_argument("--radius", type=float, help="Set the circle instead of finding it: radius in %% of the "
