@@ -334,11 +334,11 @@ class ExportDialog(QDialog):
         crow.setContentsMargins(0, 0, 0, 0)
         crow.addWidget(self.convert)
         crow.addStretch(1)
-        self._views_line = QWidget()
-        sl = QHBoxLayout(self._views_line)
+        crow.addWidget(self.views_edit)
+        self._views_line = QWidget()  # in a box: a form row sizes a word-wrapped label by its narrow size hint
+        sl = QVBoxLayout(self._views_line)
         sl.setContentsMargins(0, 0, 0, 0)
-        sl.addWidget(self.views_summary, 1)
-        sl.addWidget(self.views_edit, 0, Qt.AlignmentFlag.AlignTop)
+        sl.addWidget(self.views_summary)
         self._views_box = QWidget()
         vb = QVBoxLayout(self._views_box)
         vb.setContentsMargins(0, 0, 0, 0)
@@ -405,7 +405,7 @@ class ExportDialog(QDialog):
             self._where_form.addRow("Output", self._out_row)
             self._where_form.addRow("Dataset", self._dataset_row)
             self._where_form.addRow("Cameras", self._cam_row)
-            self._where_form.addRow("", self._views_line)
+            self._where_form.addRow(self._views_line)
             self._where_form.addRow(self._views_box)
             main.addWidget(_section(f"{next(number)}  Where", self._where_form))
         self._files_form = QFormLayout()
@@ -480,7 +480,9 @@ class ExportDialog(QDialog):
         for name, ids in sorted(self._sets.items()):
             self.mask.addItem(f"{name} ({len(ids)} Object{'s' if len(ids) != 1 else ''})", name)
         if self._sets:
-            self.mask.addItem("Every set, one folder each (and the Final Mask)", self.EVERY)
+            self.mask.addItem("Every set + the Final Mask", self.EVERY)
+            self.mask.setItemData(self.mask.count() - 1, "One folder each: <folder>, <folder>_<set>, …",
+                                  Qt.ItemDataRole.ToolTipRole)
         i = self.mask.findData(select) if select is not None else 0
         self.mask.setCurrentIndex(max(0, i))
         self.mask.blockSignals(False)
@@ -666,6 +668,7 @@ class ExportDialog(QDialog):
             wf.setRowVisible(self._dataset_row, new)
             wf.setRowVisible(self._cam_row, self._convertible and new)
             wf.setRowVisible(self._views_line, kind is not None)
+            self.views_edit.setVisible(kind is not None)
             wf.setRowVisible(self._views_box, kind is not None and self._open["views"])
         self.views_edit.blockSignals(True)
         self.views_edit.setChecked(self._open["views"])
