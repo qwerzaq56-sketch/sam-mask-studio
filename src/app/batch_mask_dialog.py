@@ -74,7 +74,7 @@ class BatchMaskDialog(QDialog):
 
     def __init__(self, images: Optional[Path] = None, scene: Optional[Path] = None,
                  free_models: Optional[Callable[[], bool]] = None, parent=None,
-                 color_presets: Optional[dict] = None):
+                 color_presets: Optional[dict] = None, cpu: bool = False):
         super().__init__(parent)
         self.color_presets = {str(k): dict(v) for k, v in (color_presets or {}).items() if isinstance(v, dict)}
         self.setWindowTitle("Batch Masking with Presets")
@@ -210,6 +210,7 @@ class BatchMaskDialog(QDialog):
         self.cpu = QCheckBox("Run on the CPU (slow)")
         self.cpu.setToolTip("--cpu: when the GPU is busy (a training) or there is none. The sky's SAM2 is about 10x "
                             "slower than on the GPU, SAM3 (people) much more")
+        self.cpu.setChecked(cpu)  # the app runs SAM on the CPU (p120): the batch too, to begin with
         form.addWidget(self.cpu)
         self.existing = QComboBox()
         self.existing.addItem("Stop if masks are already there", "stop")

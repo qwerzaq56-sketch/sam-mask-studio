@@ -2908,3 +2908,69 @@ def test_export_bars_and_views_line_fit(qapp, win, tmp_path, monkeypatch):
     line = dlg.views_summary
     assert "12 views" in line.text() and line.height() <= line.heightForWidth(line.width()) + 2  # no empty space
     assert dlg.views_edit.isVisible()
+
+
+# --- p120: Run SAM on the CPU (a training keeps the GPU) ---------------------------
+
+
+def test_run_sam_on_the_cpu_from_settings_or_the_command_line(qapp, folder, tmp_path, monkeypatch):
+    from src.app.batch_mask_dialog import BatchMaskDialog
+    from src.app.dialogs import SettingsDialog
+    from src.app.main_window import MainWindow
+    from src.app.settings import Settings
+    from tests.app.conftest import wait_until
+    from tests.fakes import FakeEngine, fake_propagate
+
+    ckpt = tmp_path / "sam2.pt"
+    ckpt.write_bytes(b"x")
+    made = []
+
+    def factory(settings, device):
+        made.append(device)
+        e = FakeEngine(sam2=False)
+        e.device = device
+        e.load_sam2 = lambda: setattr(e, "sam2_ready", True)
+        return e
+
+    path = tmp_path / "config.json"
+    w = MainWindow(settings=Settings(sam2_checkpoint=str(ckpt)), engine_factory=factory, propagate_fn=fake_propagate,
+                   settings_path=path, cpu=True)  # main.py --cpu
+    try:
+        assert w.device() == "cpu" and w.windowTitle().endswith("(CPU)")
+        w.open_folder(folder)
+        wait_until(qapp, lambda: w.session.engine is not None and w.session.engine.sam2_ready)
+        assert made == ["cpu"] and "(CPU)" in w.windowTitle()
+        # the sky finish does not even ask the GPU how much memory is free
+        monkeypatch.setattr(w, "gpu_free_gb", lambda: (_ for _ in ()).throw(AssertionError("asked the GPU")))
+        from src.core import sky_sam2
+        monkeypatch.setattr(sky_sam2, "SKY_SAM2", ckpt)
+        assert w._sky_finish_device() == "cpu"
+        # the batch window starts with its --cpu ticked
+        seen = {}
+        monkeypatch.setattr(BatchMaskDialog, "exec", lambda self: seen.setdefault("cpu", self.cpu.isChecked()))
+        w.batch_masking()
+        assert seen == {"cpu": True}
+    finally:
+        w._autosave.stop()
+        w.close()
+
+    # Settings: saved, and switching reloads SAM2 on the other device
+    w = MainWindow(settings=Settings(sam2_checkpoint=str(ckpt)), engine_factory=factory, propagate_fn=fake_propagate,
+                   settings_path=path)
+    try:
+        made.clear()
+        w.open_folder(folder)
+        wait_until(qapp, lambda: w.session.engine is not None and w.session.engine.sam2_ready)
+        assert made == ["cuda"] and "(CPU)" not in w.windowTitle()
+
+        def tick(self):
+            self.cpu.setChecked(True)
+            return SettingsDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(SettingsDialog, "exec", tick)
+        w.show_settings()
+        wait_until(qapp, lambda: w.session.engine is not None and w.session.engine.sam2_ready)
+        assert made == ["cuda", "cpu"] and Settings.load(path).use_cpu and "(CPU)" in w.windowTitle()
+    finally:
+        w._autosave.stop()
+        w.close()

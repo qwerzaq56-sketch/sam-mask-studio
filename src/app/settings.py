@@ -25,6 +25,7 @@ class Settings:
     sam3_checkpoint: str = str(ROOT / "checkpoints" / "sam3" / "sam3.pt")
     sky_checkpoint: str = str(ROOT / "checkpoints" / "sky" / "skyseg.onnx")  # the Sky special Object's model
     max_side: int = DEFAULT_MAX_SIDE
+    use_cpu: bool = False  # SAM2 / SAM3 on the CPU: the GPU is left to a training (p120; also main.py --cpu)
     last_dir: Optional[str] = None
     autosave_ms: int = 1500
     outline_visible: bool = True  # white outline around the edited mask

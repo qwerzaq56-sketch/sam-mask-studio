@@ -77,11 +77,15 @@ cd /d "%~dp0app"
 if errorlevel 1 pause
 """
 
+LAUNCHER_CPU = LAUNCHER.replace("rem SAM Mask Studio (portable).", "rem SAM Mask Studio (portable), SAM on the CPU: "
+                                "the GPU is left to a training.").replace("-m src.main %*", "-m src.main --cpu %*")
+
 README = """SAM Mask Studio {version} (portable)
 =====================================
 
 실행: "SAM Mask Studio.bat" 더블클릭
       (이미지 폴더를 끌어다 놓아도 됩니다: bat 파일 위에 폴더를 드롭)
+      "SAM Mask Studio (CPU).bat": SAM을 CPU로 (학습 중 GPU를 비워 둠, 클릭 · 전파는 느림, 브러시는 같음)
 
 요구 사항
 - Windows 10 / 11 (64비트)
@@ -267,6 +271,7 @@ def main() -> int:
         how = link_or_copy(REPO / "checkpoints" / rel, app / "checkpoints" / rel)
         log(f"    {rel}: {how}")
     (out / "SAM Mask Studio.bat").write_text(LAUNCHER.replace("\n", "\r\n"), encoding="ascii")
+    (out / "SAM Mask Studio (CPU).bat").write_text(LAUNCHER_CPU.replace("\n", "\r\n"), encoding="ascii")
     torch_version = next((p.name.split("-")[1] for p in SITE.glob("torch-*.dist-info")), "?")
     (out / "README.txt").write_text(
         README.format(version=version, torch=torch_version).replace("\n", "\r\n"), encoding="utf-8-sig"

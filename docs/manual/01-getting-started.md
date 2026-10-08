@@ -97,6 +97,7 @@ File → **Settings…** 에서 모델 파일 위치를 정합니다.
 | **SAM3 checkpoint** | `checkpoints/sam3/sam3.pt` | 글자로 찾기. 가중치는 Hugging Face `facebook/sam3`에서 접근 승인을 받아야 받을 수 있습니다 |
 | **Sky model (ONNX)** | `checkpoints/sky/skyseg.onnx` | Sky 특수 Object용(약 170 MB, Hugging Face `JianyuanWang/skyseg`). 없으면 Sky만 못 씁니다 |
 | **Working max side (px)** | 1024 | 편집 해상도의 상한. VRAM이 부족하면 낮추세요. **Export는 항상 원본 해상도**입니다 |
+| **Run SAM on the CPU** | 끔 | SAM2(클릭 · 전파 · Sky 마무리)와 SAM3(Detect)를 CPU로. 학습이 GPU를 쓰는 동안 브러시로 손질할 때. 클릭 · 전파는 매우 느림(SAM2 약 10배), 브러시 · 지우개는 같음. 켜면 창 제목에 `(CPU)`. 한 번만: `run.bat --cpu`, 포터블은 `SAM Mask Studio (CPU).bat` |
 
 - 설정은 앱 폴더의 `config.local.json`에 저장됩니다.
 - SAM2 tiny와 SAM3를 함께 쓰면 VRAM을 약 4 GB 씁니다(8 GB GPU에서 개발 · 시험).
