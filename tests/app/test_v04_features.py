@@ -1165,6 +1165,40 @@ def test_fisheye_scene_to_a_360_dataset(qapp, win, tmp_path):
     assert len(list((new / "masks").iterdir())) == 2
 
 
+def test_fisheye_scene_lists_the_lens_layouts(qapp, win, tmp_path, monkeypatch):
+    """p121: a fisheye scene's Pinhole views list the lens's own layouts (export plan 10, C-9), Grid · 9 first."""
+    from src.app.dialogs import ExportDialog
+
+    monkeypatch.setattr(ExportDialog, "_open", {"note": False, "views": True})
+    from src.core.reproject import Views
+    from tests.unit.test_reproject import make_fisheye_scene
+
+    root = tmp_path / "fish"
+    make_fisheye_scene(root)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="brush")
+    dlg.to_new.setChecked(True)
+    dlg.dataset.setText(str(tmp_path / "pin"))
+    dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    keys = [dlg.view_layout.itemData(i) for i in range(dlg.view_layout.count())]
+    assert keys == ["fish9", "fish5", "fish3", None]  # no 360 layout: half of their views miss the lens
+    assert dlg.view_layout.isVisibleTo(dlg) and not dlg.yaws.isVisibleTo(dlg)
+    for key, n in (("fish9", 9), ("fish5", 5), ("fish3", 3)):
+        dlg.view_layout.setCurrentIndex(dlg.view_layout.findData(key))
+        v = dlg.views()
+        assert isinstance(v, Views) and len(v.pairs()) == n
+        assert dlg._kept_views(v) == n and "left out" not in dlg.layout_note.text()  # all inside the lens
+        assert len(dlg.view_preview._views) == n
+    dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("fish5"))
+    dlg.convert.setCurrentIndex(dlg.convert.findData("erp"))
+    assert not dlg.view_layout.isVisibleTo(dlg)
+    dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    assert dlg.view_layout.currentData() == "fish5"  # the pick kept
+    dlg.view_layout.setCurrentIndex(dlg.view_layout.findData(None))  # Custom: the typed grid
+    assert dlg.views().layout is None and dlg.yaws.text() == "-45, 0, 45"
+
+
 # --- p31: a multi-camera scene's sub-folders (images/cam0/, images/cam1/) --------------------------
 
 

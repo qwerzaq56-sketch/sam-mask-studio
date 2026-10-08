@@ -187,28 +187,39 @@ class Ring:
 @dataclass(frozen=True)
 class ViewLayout:
     """A rule for where a 360 image's pinhole views look (docs/specs/08 P4): rings of views, plus single
-    views straight up / down (*poles*: +90 / -90). The field of view and the resolution are separate
+    views straight up / down (*poles*: +90 / -90), plus single (yaw, pitch) directions (*points*: a fisheye
+    lens's own layouts, which look one way, export plan 10). The field of view and the resolution are separate
     settings (``Views.fov`` / ``Views.size``), so one layout works at 90°, 110°, 120° ..."""
 
     key: str
     label: str
     purpose: str
-    rings: Tuple[Ring, ...]
+    rings: Tuple[Ring, ...] = ()
     poles: Tuple[float, ...] = ()
+    points: Tuple[Tuple[float, float], ...] = ()
 
     def pairs(self, yaw_offset: float = 0.0) -> List[Tuple[float, float]]:
         out = [((y + yaw_offset) % 360, float(ring.pitch)) for ring in self.rings for y in ring.yaws()]
+        out += [((float(y) + yaw_offset) % 360, float(p)) for y, p in self.points]
         return out + [(yaw_offset % 360, float(p)) for p in self.poles]
 
     @property
     def count(self) -> int:
-        return sum(r.count for r in self.rings) + len(self.poles)
+        return sum(r.count for r in self.rings) + len(self.points) + len(self.poles)
 
     def overlap(self, fov: float) -> Tuple[float, Optional[float]]:
-        """(sideways, between rings) overlap in degrees at *fov*: how far neighbouring views cover the same
+        """(sideways, between rows) overlap in degrees at *fov*: how far neighbouring views cover the same
         directions (<= 0: they only touch or leave a gap). Measured at the horizon, a simple guide."""
-        side = min(fov - 360.0 / r.count for r in self.rings)
-        pitches = sorted({r.pitch for r in self.rings} | set(self.poles))
+        rows: Dict[float, List[float]] = {}
+        for y, p in self.pairs():
+            rows.setdefault(p, []).append(y)
+        steps = []
+        for ys in rows.values():
+            ys = sorted(ys)
+            if len(ys) > 1:
+                steps.append(min([b - a for a, b in zip(ys, ys[1:])] + [ys[0] + 360 - ys[-1]]))
+        side = fov - min(steps) if steps else 0.0
+        pitches = sorted(rows)
         gaps = [b - a for a, b in zip(pitches, pitches[1:])]
         return side, (fov - min(gaps)) if gaps else None
 
@@ -232,6 +243,22 @@ VIEW_LAYOUTS = {lay.key: lay for lay in (
                "and overlap up and down: for dense coverage / SfM stability experiments",
                (Ring(-35, 8), Ring(35, 8, 22.5))),
 )}
+# a fisheye lens's own layouts (export plan 10, C-9): every view inside a ~190° lens, so none is half black;
+# the 360 layouts above suit a whole sphere (a 360 image, or a rig's lenses together: RigViews)
+FISHEYE_LAYOUTS = {lay.key: lay for lay in (
+    ViewLayout("fish9", "Fisheye Grid · 9 Views",
+               "Three across (−45 / 0 / 45°) at three heights (−35 / 0 / 35°): most of what the lens sees, "
+               "with overlap for matching",
+               points=tuple((y, p) for p in (-35.0, 0.0, 35.0) for y in (-45.0, 0.0, 45.0))),
+    ViewLayout("fish5", "Fisheye Cross · 5 Views",
+               "Straight ahead, and 45° left / right / up / down: fewer images, the lens's corners skipped",
+               points=((0.0, 0.0), (-45.0, 0.0), (45.0, 0.0), (0.0, 45.0), (0.0, -45.0))),
+    ViewLayout("fish3", "Fisheye Level · 3 Views",
+               "Three level views (−45 / 0 / 45°), no up / down: level spaces, fast; leaves out the sky and "
+               "the operator below",
+               points=((-45.0, 0.0), (0.0, 0.0), (45.0, 0.0))),
+)}
+ALL_LAYOUTS = {**VIEW_LAYOUTS, **FISHEYE_LAYOUTS}
 MIN_VIEW_SHARE = 0.5  # a fisheye's view with less of it seen by the lens is not made (docs/specs/08 P4)
 
 

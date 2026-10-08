@@ -39,7 +39,8 @@ from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
 from src.app.view_preview import ViewPreview
 from src.core.colmap import read_cameras_full
-from src.core.reproject import CONVERTIBLE, FISHEYES, MIN_VIEW_SHARE, VIEW_LAYOUTS, Erp, Stitch, Views, view_share
+from src.core.reproject import (ALL_LAYOUTS, CONVERTIBLE, FISHEYE_LAYOUTS, FISHEYES, MIN_VIEW_SHARE, VIEW_LAYOUTS, Erp,
+                                Stitch, Views, view_share)
 from src.core.project import MaskBar
 from src.core.storage import ExportCheck, ExportOptions, existing_style, mask_files
 
@@ -454,14 +455,12 @@ class ExportDialog(QDialog):
         self.yaws.setToolTip("Left / right angles in degrees (right is positive), one view each per pitch")
         self.pitches = QLineEdit("-35, 0, 35" if self._erp or fisheye else "0")
         self.pitches.setToolTip("Up / down angles in degrees (up is positive), one row of views each")
-        self.view_layout = QComboBox()  # 360 sources: the usual view layouts (docs/specs/08 P4), or the grid below
-        for key, lay in VIEW_LAYOUTS.items():
-            self.view_layout.addItem(lay.label, key)
-            self.view_layout.setItemData(self.view_layout.count() - 1, lay.purpose, Qt.ItemDataRole.ToolTipRole)
-        self.view_layout.addItem("Custom", None)
-        self.view_layout.setItemData(self.view_layout.count() - 1,
-                                     "The yaw × pitch grid typed below: for a special rig or an experiment",
-                                     Qt.ItemDataRole.ToolTipRole)
+        # the usual view layouts (docs/specs/08 P4) for a whole sphere (360), a fisheye lens's own (export plan 10,
+        # C-9), or the grid below (Custom); none for a plain pinhole source (undistorted: its grid)
+        self._fisheye = fisheye
+        self._layout_kind: Optional[str] = None
+        self._layout_pick: dict = {}  # the layout last picked for each list
+        self.view_layout = QComboBox()
         self.view_layout.setToolTip("Where the pinhole views look (a layout, not a camera model). No layout has been shown "
                                     "to train better; more views = more coverage / overlap and more images")
         # what the layout is for, how many views and how much they overlap, and a map of them
@@ -475,8 +474,7 @@ class ExportDialog(QDialog):
                 self._cameras = [c for c in read_cameras_full(scene.model_dir).values() if c.model in FISHEYES]
             except (OSError, ValueError):
                 self._cameras = []
-        if not self._erp:
-            self.view_layout.setCurrentIndex(self.view_layout.count() - 1)  # a fisheye looks one way: its own grid
+        self._fill_layouts("pinhole")
         self.fov = QSpinBox()
         self.fov.setRange(30, 150)
         self.fov.setValue(90)
@@ -732,6 +730,39 @@ class ExportDialog(QDialog):
         text = self.dataset.text().strip()
         return Path(text) if text else None
 
+    def _layouts(self, kind) -> dict:
+        """The layouts listed for a conversion: a 360 source's (the whole sphere), a fisheye's (its lens)."""
+        if kind != "pinhole":
+            return {}
+        return VIEW_LAYOUTS if self._erp else FISHEYE_LAYOUTS if self._fisheye else {}
+
+    def _fill_layouts(self, kind) -> None:
+        """The Layout list for *kind*, the one picked there last time chosen again (else its first)."""
+        layouts = self._layouts(kind)
+        if kind == self._layout_kind and self.view_layout.count():
+            return
+        if self._layout_kind is not None and self.view_layout.count():
+            self._layout_pick[self._layout_kind] = self.view_layout.currentData()
+        self._layout_kind = kind
+        self.view_layout.blockSignals(True)
+        self.view_layout.clear()
+        for key, lay in layouts.items():
+            self.view_layout.addItem(lay.label, key)
+            self.view_layout.setItemData(self.view_layout.count() - 1, lay.purpose, Qt.ItemDataRole.ToolTipRole)
+        self.view_layout.addItem("Custom", None)
+        self.view_layout.setItemData(self.view_layout.count() - 1,
+                                     "The yaw × pitch grid typed below: for a special rig or an experiment",
+                                     Qt.ItemDataRole.ToolTipRole)
+        i = self.view_layout.findData(self._layout_pick.get(kind, next(iter(layouts), None)))
+        self.view_layout.setCurrentIndex(max(i, 0))
+        self.view_layout.blockSignals(False)
+
+    def _layout_key(self) -> Optional[str]:
+        """The picked layout, None for the typed grid (Custom, or a source without layouts)."""
+        if not self._layouts(self._layout_kind):
+            return None
+        return self.view_layout.currentData()
+
     def _kept_views(self, v: Views) -> int:
         """The views made per image: all of them, less a fisheye's views its lens cannot fill."""
         if not self._cameras:
@@ -745,8 +776,8 @@ class ExportDialog(QDialog):
         if not on:
             return
         v = Views(fov=float(self.fov.value()))
-        key = self.view_layout.currentData() if self._erp else None
-        pairs = VIEW_LAYOUTS[key].pairs() if key is not None else None
+        key = self._layout_key()
+        pairs = ALL_LAYOUTS[key].pairs() if key is not None else None
         if pairs is None:  # the typed grid
             def angles(field):
                 try:
@@ -759,7 +790,7 @@ class ExportDialog(QDialog):
                 for y, p in pairs]
         self.view_preview.set_views(pairs, fov, kept)
         if key is not None:
-            lay = VIEW_LAYOUTS[key]
+            lay = ALL_LAYOUTS[key]
             side, rings = lay.overlap(fov)
             ov = f"sideways {side:+.0f}°" + (f", between rings {rings:+.0f}°" if rings is not None else "")
             self.layout_note.setText(f"{lay.purpose}<br><b>{lay.count} views</b> per image at {fov:.0f}° · overlap {ov}")
@@ -792,9 +823,9 @@ class ExportDialog(QDialog):
             except ValueError:
                 return ()
 
-        key = self.view_layout.currentData() if self._erp else None
+        key = self._layout_key()
         if key is not None:
-            return Views(fov=float(self.fov.value()), size=self.side.value(), layout=VIEW_LAYOUTS[key])
+            return Views(fov=float(self.fov.value()), size=self.side.value(), layout=ALL_LAYOUTS[key])
         return Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
                      fov=float(self.fov.value()), size=self.side.value())
 
@@ -890,8 +921,10 @@ class ExportDialog(QDialog):
         self.views_edit.blockSignals(False)
         self.views_edit.setText("Hide ▴" if self._open["views"] else "Edit ▸")
         vf = self._views_form
-        grid = kind == "pinhole" and (self.view_layout.currentData() is None or not self._erp)
-        vf.setRowVisible(self.view_layout, kind == "pinhole" and self._erp)
+        self._fill_layouts(kind)
+        lists = kind == "pinhole" and bool(self._layouts(kind))
+        grid = kind == "pinhole" and self._layout_key() is None
+        vf.setRowVisible(self.view_layout, lists)
         vf.setRowVisible(self.yaws, grid)
         vf.setRowVisible(self.pitches, grid)
         vf.setRowVisible(self.fov, kind == "pinhole")
@@ -938,8 +971,8 @@ class ExportDialog(QDialog):
         if kind in ("erp", "stitch"):
             return f"Width {side}"
         v = self._typed_views()
-        key = self.view_layout.currentData() if self._erp else None
-        where = (VIEW_LAYOUTS[key].label if key is not None
+        key = self._layout_key()
+        where = (ALL_LAYOUTS[key].label if key is not None
                  else f"Yaw {self.yaws.text().strip()} · Pitch {self.pitches.text().strip()}")
         n = self._kept_views(v)
         return f"{where} · FOV {self.fov.value()}° · Size {side} → <b>{n} view{'s' if n != 1 else ''}</b> per image"

@@ -841,6 +841,14 @@
 - 켜면 SAM2(폴더를 열 때 로드, 클릭, 전파), SAM3(Detect), Sky 마무리 SAM2가 CPU. Sky 마무리는 GPU 빈 메모리를 묻지도 않음(묻는 것만으로 GPU 메모리를 조금 씀). Batch Masking 창의 `Run on the CPU`가 처음부터 켜짐. 창 제목에 `(CPU)`. Settings에서 바꾸면 SAM2를 그 장치로 다시 올림.
 - 테스트 1개(가짜 엔진: --cpu와 Settings 두 길, 엔진 장치, Sky 마무리가 GPU를 안 물음, Batch 창 체크, 바꾸면 다시 로드 · 저장). 전체 290 통과.
 
+## 121단계 (`v0.4-p121`): 피시아이 장면에도 Pinhole 뷰 배치 목록 (기획 Export 10장 V-1)
+
+- 사용자 지적(10-08) "배치 프리셋 5개가 지금은 없음": Layout 줄이 360 원본일 때만 보였음. 사용자 결정 C-9 (a): 피시아이에는 렌즈용 배치만.
+- `ViewLayout.points`(낱개 방향), `FISHEYE_LAYOUTS`: **Fisheye Grid · 9 Views**(기본, 전의 격자와 같음) · **Fisheye Cross · 5 Views** · **Fisheye Level · 3 Views** + Custom. `ALL_LAYOUTS`.
+- `overlap`을 고도별 가장 가까운 yaw 간격 + 고도 간격으로 일반화(360 배치 값 그대로).
+- Export 창: 변환 종류마다 Layout 목록을 다시 채우고 고른 것을 기억. 0022 두 렌즈에서 세 배치 모두 view_share 1.0(회색 뷰 없음).
+- 문서: specs/08 8.2, 매뉴얼 C9 · D 참조. 테스트 2개(배치 규칙, 피시아이 장면 목록 · 뷰 수 9 / 5 / 3 · 빠지는 뷰 없음 · 기억). 전체 292 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
