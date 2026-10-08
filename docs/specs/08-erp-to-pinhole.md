@@ -122,6 +122,16 @@
   겹침 계산은 고도가 같은 뷰끼리의 가장 가까운 yaw 간격 + 고도 사이 간격으로 일반화(360 배치 값은 전과 같음).
 - 목록은 변환 종류에 따라 다시 채움(고른 배치는 종류마다 기억). 평범한 Pinhole 원본은 목록 없이 격자.
 
+### 8.3 카메라 짝 → Pinhole (`v0.4-p122`, 기획 Export 10장 C-10 (a))
+
+- 변환 목록 **Pinhole views from camera pairs (N moments)**: 한 순간(리그의 렌즈들)을 구 하나로 보고 360 배치 목록(8.1)을 씀.
+- `stitch_to_erp(..., views=Views)`(`Stitch.views`): 360 이음과 같은 코드에서 출력만 바뀜. 뷰의 각 픽셀 광선을 렌즈마다 투영해
+  이미지 원 가중치로 섞음(보간 한 번). 한 렌즈 안의 뷰는 그 렌즈 단독 재투영과 같은 픽셀, 걸친 뷰는 360과 같은 이음.
+  마스크는 더 강한 렌즈 값, 어느 렌즈도 못 본 곳은 무시. 렌즈들이 절반도 못 채우는 뷰는 만들지 않음.
+- 포즈 = 뷰 회전 × 그 순간의 기준 카메라 포즈(`R = R_v·R_ref`, `t = R_v·t_ref`), 카메라 하나(PINHOLE), 이름 `<순간>_y090_p00.jpg`.
+- 0022 실물(2순간 × COLMAP 12, FOV 90, auto 2096 px): 24장, 빠진 뷰 0, CPU 51초. 렌즈 경계를 지나는 아래쪽 뷰(y090 / y270, −35°)에
+  가는 이음선이 보임(360 이음과 같은 섞기).
+
 출처: [COLMAP `pycolmap/panorama.py`](https://github.com/colmap/colmap/blob/main/python/pycolmap/panorama.py) ·
 [COLMAP Rig Support](https://colmap.github.io/rigs.html) ·
 [nerfstudio custom data](https://docs.nerf.studio/quickstart/custom_dataset.html) ·

@@ -449,6 +449,11 @@ class ExportDialog(QDialog):
         if self._groups:
             self._convertible = True
             self.convert.addItem(f"360 from camera pairs ({len(self._groups)} moments)", "stitch")
+            self.convert.addItem(f"Pinhole views from camera pairs ({len(self._groups)} moments)", "pairs")
+            self.convert.setItemData(self.convert.count() - 1,
+                                     "Each moment (both lenses) as one sphere, laid out like a 360 image; every view "
+                                     "taken straight from the lenses (one resampling), joined where it spans both",
+                                     Qt.ItemDataRole.ToolTipRole)
         self.convert.setToolTip("Pinhole views: every image becomes perspective views (images, masks, model). "
                                 "360: one equirectangular image each (a fisheye's unseen part is masked out)")
         self.yaws = QLineEdit("0, 90, 180, 270" if self._erp else "-45, 0, 45" if fisheye else "0")
@@ -732,6 +737,8 @@ class ExportDialog(QDialog):
 
     def _layouts(self, kind) -> dict:
         """The layouts listed for a conversion: a 360 source's (the whole sphere), a fisheye's (its lens)."""
+        if kind == "pairs":  # a rig's moment covers the whole sphere
+            return VIEW_LAYOUTS
         if kind != "pinhole":
             return {}
         return VIEW_LAYOUTS if self._erp else FISHEYE_LAYOUTS if self._fisheye else {}
@@ -765,7 +772,7 @@ class ExportDialog(QDialog):
 
     def _kept_views(self, v: Views) -> int:
         """The views made per image: all of them, less a fisheye's views its lens cannot fill."""
-        if not self._cameras:
+        if not self._cameras or self._layout_kind == "pairs":
             return len(v.pairs())
         return sum(all(view_share(c, y, p, v.fov) >= MIN_VIEW_SHARE for c in self._cameras) for y, p in v.pairs())
 
@@ -786,20 +793,21 @@ class ExportDialog(QDialog):
                     return ()
             pairs = Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,)).pairs()
         fov = v.fov
-        kept = [all(view_share(c, y, p, fov) >= MIN_VIEW_SHARE for c in self._cameras) if self._cameras else True
-                for y, p in pairs]
+        lens = self._cameras if self._layout_kind == "pinhole" else []  # a rig's pair sees the whole sphere
+        kept = [all(view_share(c, y, p, fov) >= MIN_VIEW_SHARE for c in lens) if lens else True for y, p in pairs]
+        per = "moment" if self._layout_kind == "pairs" else "image"
         self.view_preview.set_views(pairs, fov, kept)
         if key is not None:
             lay = ALL_LAYOUTS[key]
             side, rings = lay.overlap(fov)
             ov = f"sideways {side:+.0f}°" + (f", between rings {rings:+.0f}°" if rings is not None else "")
-            self.layout_note.setText(f"{lay.purpose}<br><b>{lay.count} views</b> per image at {fov:.0f}° · overlap {ov}")
+            self.layout_note.setText(f"{lay.purpose}<br><b>{lay.count} views</b> per {per} at {fov:.0f}° · overlap {ov}")
         else:
             dropped = kept.count(False)
             self.layout_note.setText(
-                f"<b>{kept.count(True)} views</b> per image at {fov:.0f}°"
+                f"<b>{kept.count(True)} views</b> per {per} at {fov:.0f}°"
                 + (f" · {dropped} left out: the fisheye cannot fill them (gray)" if dropped else "")
-                + ("" if self._cameras else " · Custom: yaw × pitch as typed"))
+                + ("" if lens else " · Custom: yaw × pitch as typed"))
 
     def views(self):
         """What the new dataset's cameras become: ``Views`` (pinhole), ``Erp`` (360) or None (kept)."""
@@ -825,9 +833,11 @@ class ExportDialog(QDialog):
 
         key = self._layout_key()
         if key is not None:
-            return Views(fov=float(self.fov.value()), size=self.side.value(), layout=ALL_LAYOUTS[key])
-        return Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
-                     fov=float(self.fov.value()), size=self.side.value())
+            v = Views(fov=float(self.fov.value()), size=self.side.value(), layout=ALL_LAYOUTS[key])
+        else:
+            v = Views(yaws=angles(self.yaws) or (0.0,), pitches=angles(self.pitches) or (0.0,),
+                      fov=float(self.fov.value()), size=self.side.value())
+        return Stitch(views=v) if kind == "pairs" else v
 
     def _pick_dataset(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "New dataset folder (an empty one)", self.dataset.text())
@@ -922,14 +932,15 @@ class ExportDialog(QDialog):
         self.views_edit.setText("Hide ▴" if self._open["views"] else "Edit ▸")
         vf = self._views_form
         self._fill_layouts(kind)
-        lists = kind == "pinhole" and bool(self._layouts(kind))
-        grid = kind == "pinhole" and self._layout_key() is None
+        pin = kind in ("pinhole", "pairs")
+        lists = pin and bool(self._layouts(kind))
+        grid = pin and self._layout_key() is None
         vf.setRowVisible(self.view_layout, lists)
         vf.setRowVisible(self.yaws, grid)
         vf.setRowVisible(self.pitches, grid)
-        vf.setRowVisible(self.fov, kind == "pinhole")
+        vf.setRowVisible(self.fov, pin)
         vf.setRowVisible(self.side, kind is not None)
-        self._show_layout(kind == "pinhole")
+        self._show_layout(pin)
         self.views_summary.setText(self._views_text(kind))
         ff = self._files_form
         ff.setRowVisible(self._out_edit, p is None)
@@ -971,11 +982,13 @@ class ExportDialog(QDialog):
         if kind in ("erp", "stitch"):
             return f"Width {side}"
         v = self._typed_views()
+        v = v.views if isinstance(v, Stitch) else v
         key = self._layout_key()
         where = (ALL_LAYOUTS[key].label if key is not None
                  else f"Yaw {self.yaws.text().strip()} · Pitch {self.pitches.text().strip()}")
         n = self._kept_views(v)
-        return f"{where} · FOV {self.fov.value()}° · Size {side} → <b>{n} view{'s' if n != 1 else ''}</b> per image"
+        per = "moment" if kind == "pairs" else "image"
+        return f"{where} · FOV {self.fov.value()}° · Size {side} → <b>{n} view{'s' if n != 1 else ''}</b> per {per}"
 
     def _scene_style(self, p) -> Optional[str]:
         """Into the scene, for a trainer that reads either naming: how the masks there are named."""
@@ -996,8 +1009,8 @@ class ExportDialog(QDialog):
         v = self.views()
         if isinstance(v, Views):
             written *= self._kept_views(v)  # one mask per view (a fisheye's unfillable views are not made)
-        elif isinstance(v, Stitch):
-            written = len(self._groups)  # one mask per moment (a moment with a ⊘ image is left out)
+        elif isinstance(v, Stitch):  # one mask per moment, or per view of it (a moment with a ⊘ image is left out)
+            written = len(self._groups) * (len(v.views.pairs()) if v.views is not None else 1)
         return written
 
     def _run_check(self) -> None:
@@ -1100,7 +1113,9 @@ class ExportDialog(QDialog):
         if root is not None:
             why = dataset_blocker(root)
             v = self.views()
-            what = (f"{len(self._groups)} 360 image(s) stitched from camera pairs" if isinstance(v, Stitch)
+            what = (f"{len(self._groups)} moment(s) × {len(v.views.pairs())} pinhole views ({v.views.fov:.0f}°) "
+                    "from camera pairs" if isinstance(v, Stitch) and v.views is not None
+                    else f"{len(self._groups)} 360 image(s) stitched from camera pairs" if isinstance(v, Stitch)
                     else "one 360 image each" if isinstance(v, Erp)
                     else f"{self._kept_views(v)} pinhole views per image ({v.fov:.0f}°)" if v is not None
                     else "images/ linked, sparse/0/ filtered")
@@ -1110,7 +1125,9 @@ class ExportDialog(QDialog):
             rows.append(line(False, f"{self._excluded} frame(s) are ⊘ excluded: that only applies to a New dataset"))
         odd = [m for m in sc.camera_models if m in p.unconfirmed_cameras]
         if self.views() is not None:
-            to = "EQUIRECTANGULAR (360)" if isinstance(self.views(), (Erp, Stitch)) else "PINHOLE views"
+            v = self.views()
+            to = ("EQUIRECTANGULAR (360)" if isinstance(v, Erp) or isinstance(v, Stitch) and v.views is None
+                  else "PINHOLE views")
             rows.append(line(True, f"Cameras: {', '.join(sc.camera_models)} → {to}"))
         elif sc.camera_models:
             rows.append(line(not odd, "Cameras: " + ", ".join(sc.camera_models)

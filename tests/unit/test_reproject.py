@@ -320,6 +320,48 @@ def test_dual_fisheye_stitched_into_360(tmp_path):
     assert np.isclose(behind["x"][0] % 256, 0) or np.isclose(behind["x"][0], 256)  # straight behind: the seam
 
 
+def test_camera_pairs_to_pinhole_views(tmp_path):
+    """Export plan 10, V-2: a rig's moment as pinhole views over the whole sphere, straight from the lenses."""
+    from src.core.colmap import frame_groups
+    from src.core.reproject import VIEW_LAYOUTS, Views, convert, stitch_to_erp, view_rotation
+
+    src = tmp_path / "rig"
+    make_dual_fisheye_scene(src)
+    model = src / "sparse" / "0"
+    groups = frame_groups(model, _group_input(model))
+    out = tmp_path / "pin"
+    person = np.zeros((160, 160), bool)
+    person[60:100, 60:100] = True  # straight behind
+    job = MaskJob(out / "masks", "{name}.png", invert=True, include_empty=True,
+                  get=lambda k: person if k.startswith("cam1/") else None)
+    views = Views(layout=VIEW_LAYOUTS["horizon4"], fov=90, size=64)
+    r = stitch_to_erp(src / "images", model, out, groups, masks=[job], views=views)
+    assert (r.images_in, r.views_out, r.side, r.views_dropped) == (4, 8, 64, 0)  # 2 moments x 4 views
+    [cam] = read_cameras_full(out / "sparse" / "0").values()
+    assert cam.model == "PINHOLE" and (cam.width, cam.height) == (64, 64) and np.isclose(cam.params[0], 32)
+    names = sorted(p.name for p in (out / "images").iterdir())
+    assert names[:4] == ["000_y000_p00.jpg", "000_y090_p00.jpg", "000_y180_p00.jpg", "000_y270_p00.jpg"]
+    ahead = cv2.imread(str(out / "images" / "000_y000_p00.jpg"))
+    behind = cv2.imread(str(out / "images" / "000_y180_p00.jpg"))
+    side = cv2.imread(str(out / "images" / "000_y090_p00.jpg"))
+    assert ahead[32, 32][2] > 150 and behind[32, 32][0] > 150  # cam0's red ahead, cam1's blue behind
+    assert side[32, 4][2] > 150 and side[32, 60][0] > 150  # to the right: spans both lenses, joined
+    # a view inside one lens = that lens reprojected on its own (one interpolation, nothing blended in)
+    alone = tmp_path / "alone"
+    convert(src / "images", model, alone, ["cam0/000.png"], views)
+    assert np.array_equal(ahead, cv2.imread(str(alone / "images" / "cam0" / "000_y000_p00.jpg")))
+    m = cv2.imread(str(out / "masks" / "000_y180_p00.jpg.png"), cv2.IMREAD_GRAYSCALE)
+    assert m[32, 32] == 0 and cv2.imread(str(out / "masks" / "000_y000_p00.jpg.png"), 0)[32, 32] == 255
+    imgs = {n: (pose, pts) for _, pose, _, n, pts in _read_images_bin(out / "sparse" / "0" / "images.bin")}
+    pose, pts = imgs["001_y090_p00.jpg"]  # moment 1: the rig 0.5 m along +X
+    q, t = np.array(struct.unpack("<4d", pose[:32])), np.array(struct.unpack("<3d", pose[32:]))
+    rot = view_rotation(90, 0)
+    assert np.allclose(qvec_to_rotmat(q), rot) and np.allclose(t, rot @ [-0.5, 0, 0])  # the rig's pose, turned
+    p3 = pts[pts["id"] == 3]  # (3, 0.5, 0): 2.5 m to the right, 0.5 m down
+    assert np.allclose([p3["x"][0], p3["y"][0]], [32, 32 + 32 * 0.5 / 2.5])
+    assert r.points_kept == 3
+
+
 def test_stitching_gives_the_panorama_back(tmp_path):
     """A panorama (hue by azimuth, brightness by elevation) cut into a back-to-back fisheye pair and stitched."""
     from src.core.colmap import frame_groups
