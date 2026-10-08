@@ -34,7 +34,7 @@ which fit the rig and scenes a preset was checked on and maybe nothing else.
     python -m src.cli probe H:/scene/images --out H:/tmp/probe --recursive --preset people-only --also "black pole;bag"
     python -m src.cli preset list | show NAME | save NAME --from NAME --labels "person;silver pole"
 
-``run`` writes ``masks/`` and ``sky_masks/`` into the scene folder, all of a preset's steps; ``probe`` tries
+``run`` writes ``masks/`` (``masks_sfm/`` too when the preset's lens has an SfM circle) and ``sky_masks/`` into the scene folder, all of a preset's steps; ``probe`` tries
 prompts on a few frames (a table, contact sheets, scores against hand-checked masks) before a whole run;
 ``sky``, ``lens`` and ``person`` take ``--preset`` too, their own options changing it.
 
@@ -535,17 +535,20 @@ def probe_folder(images: Path, out: Path, person, recursive: bool = False, also:
     return report
 
 
-RUN_FOLDERS = {"people": "people_masks", "masks": "masks", "sky": "sky_masks"}
+RUN_FOLDERS = {"people": "people_masks", "masks": "masks", "sfm": "masks_sfm", "sky": "sky_masks"}
 
 
 def run_folders(preset, out: Path) -> Dict[str, Path]:
     """Where ``run`` writes: ``masks/`` (people and the lens edge, black = ignored; with both, the people
-    first go to ``people_masks/``) and ``sky_masks/`` (white = sky)."""
+    first go to ``people_masks/``), ``masks_sfm/`` (the same with the lens's SfM circle, p130) and
+    ``sky_masks/`` (white = sky)."""
     f: Dict[str, Path] = {}
     if preset.person is not None:
         f["person"] = out / RUN_FOLDERS["people" if preset.lens is not None else "masks"]
     if preset.lens is not None:
         f["lens"] = out / RUN_FOLDERS["masks"]
+        if preset.lens.sfm_radius is not None:
+            f["sfm"] = out / RUN_FOLDERS["sfm"]
     if preset.sky is not None:
         f["sky"] = out / RUN_FOLDERS["sky"]
     return f
@@ -587,6 +590,11 @@ def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: 
         steps["lens"] = lens_folder(images, folders["lens"], margin=c.margin, samples=c.samples,
                                     circle=None if c.radius is None else {"radius": c.radius, "cx": c.cx, "cy": c.cy},
                                     and_with=folders.get("person"), **common)
+        if "sfm" in folders:  # p130: the tight circle for SfM alone, the people in too
+            log(f"--- lens, SfM circle -> {folders['sfm']}")
+            steps["sfm"] = lens_folder(images, folders["sfm"], margin=0.0,
+                                       circle={"radius": c.sfm_radius, "cx": c.sfm_cx, "cy": c.sfm_cy},
+                                       and_with=folders.get("person"), **common)
     if preset.sky is not None:
         s = preset.sky
         log(f"--- sky -> {folders['sky']}")
@@ -956,8 +964,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     run = sub.add_parser("run", help="Every step of a preset into a scene folder (masks/, sky_masks/)",
                          description="People, lens edge and sky as a preset says, into --out: masks/ (black = "
-                                     "ignored; people then the lens edge, the people kept in people_masks/) and "
-                                     "sky_masks/ (white = sky). Masks already there stop it before anything runs.")
+                                     "ignored; people then the lens edge, the people kept in people_masks/), "
+                                     "masks_sfm/ (the same with a tighter circle for SfM, when the preset's lens "
+                                     "has one) and sky_masks/ (white = sky). Masks already there stop it before anything runs.")
     run.add_argument("images", type=Path, help="Image folder")
     run.add_argument("--preset", required=True, help="Preset name ('preset list') or .json file")
     run.add_argument("--out", type=Path, required=True, help="Scene folder: masks/, sky_masks/ go in it")

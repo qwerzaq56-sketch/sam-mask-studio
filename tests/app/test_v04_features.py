@@ -1478,7 +1478,7 @@ def test_lens_edge_object_made_from_settings(qapp, win):
 
 def test_lens_edge_detect_pulls_the_circle_in_over_the_soft_rim(qapp, win, monkeypatch):
     import src.app.main_window as mw
-    from src.core.special import LENS_EDGE, LENS_MARGIN
+    from src.core.special import LENS_EDGE, LENS_MARGIN, LENS_TRAIN
 
     monkeypatch.setattr(mw, "detect_lens_circle", lambda imgs: {"radius": 105.2, "cx": -0.2, "cy": 0.1})
     s = win.session
@@ -1489,6 +1489,36 @@ def test_lens_edge_detect_pulls_the_circle_in_over_the_soft_rim(qapp, win, monke
     assert LENS_MARGIN == 5.0
     assert sp.get("radius") == round(105.2 * 0.95, 1) and sp.get("cx") == -0.2 and sp.get("cy") == 0.1
     assert "radius 105.2 %" in win.log_view.toPlainText() and "masked from 99.9 %" in win.log_view.toPlainText()
+    assert sp.get("use") == LENS_TRAIN
+
+
+def test_lens_edge_use_sfm_pulls_the_circle_in_further_and_says_why(qapp, win, monkeypatch):
+    """p130: the Lens edge Object's use: training (wide, the lenses' overlap kept) or SfM (tight, the distorted
+    rim out, about rim95); Detect and a change of use follow its margin, the note says the tradeoff."""
+    import src.app.main_window as mw
+    from src.core.special import LENS_EDGE, LENS_MARGIN_SFM, LENS_SFM, LENS_TRAIN
+
+    monkeypatch.setattr(mw, "detect_lens_circle", lambda imgs: {"radius": 105.2, "cx": 0.0, "cy": 0.0})
+    s = win.session
+    win.add_special(LENS_EDGE)
+    [o] = s.project.objects
+    panel = win.properties_panel.special
+    assert panel.use.currentData() == LENS_TRAIN and "overlap" in panel.use_note.text()
+    panel.use.setCurrentIndex(panel.use.findData(LENS_SFM))
+    panel.use.activated.emit(panel.use.currentIndex())
+    assert "188/188" in panel.use_note.text() and "train" in panel.use_note.text()
+    win.special_detect()  # the pending change is sent first
+    sp = s.project.get(o.id).special
+    assert LENS_MARGIN_SFM == 10.0 and sp.get("use") == LENS_SFM
+    assert sp.get("radius") == round(105.2 * 0.90, 1) and "for SfM" in win.log_view.toPlainText()
+    win.refresh()
+    assert panel.radius.value() == 95
+    panel.use.setCurrentIndex(panel.use.findData(LENS_TRAIN))  # back: the circle moves out to the wide one
+    panel.use.activated.emit(panel.use.currentIndex())
+    assert panel.radius.value() == round(95 * 0.95 / 0.90)
+    panel.flush()
+    sp = s.project.get(o.id).special
+    assert sp.get("use") == LENS_TRAIN and sp.get("radius") == 100
 
 
 def test_sky_object_with_a_model_and_its_saved_settings(qapp, win, tmp_path):
@@ -2017,6 +2047,7 @@ def test_batch_mask_dialog_edits_a_preset_and_builds_the_commands(qapp, win, tmp
     d.preset.setCurrentIndex(i)
     assert d.current() == P.find_preset("osmo360-selfie-stick") and d.current().checked_on
     assert "black pole" in d.labels.text() and d.lens_box.isChecked() and d.sky_box.isChecked()
+    assert d.radius.value() == 0 and d.margin.value() == 5.0 and d.sfm_radius.value() == 95.0  # p130
 
     d.labels.setText("person, silver pole")
     d.lens_box.setChecked(False)

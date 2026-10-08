@@ -913,6 +913,16 @@
 - 스터디 페이지 `lensrim.html`(sms.html 아래, 그림 · 검수 R1–R4).
 - 테스트 304개 통과(프리셋 원 값 확인 추가).
 
+## v0.4-p130 — 렌즈 원 둘로: 학습 · 스티칭(넓게) / 정합(좁게) (2026-10-09)
+- 사용자 결정(10-09, 1안): rim95 원은 렌즈당 약 185°라 두 렌즈 겹침이 약 5.6°(최소 4.4°)뿐이어서 스티칭 · 학습에 모자람. 5 % 원은 약 201°, 겹침 약 22°(최소 19°). 0022 THIN_PRISM_FISHEYE 카메라 값으로 계산. 그래서 원을 용도별로 나눔.
+- 프리셋 `LensStep`에 `sfm_radius` · `sfm_cx` · `sfm_cy`(정합 전용 원, 고정). 있으면 `run`이 `masks_sfm/`(사람 + 그 원 밖 검정)도 씀, 보고서 `folders.sfm` · `steps.sfm`. `preset show`의 요약 줄에도 나옴.
+- `osmo360-selfie-stick`: `masks/` = 찾은 원 5 % 안(p129의 고정 원을 되돌림), `masks_sfm/` = rim95(95 %, 0 / 0).
+- 명령줄 약속 **3**(`docs/CLI_CONTRACT.md`): `masks_sfm\`, `folders.sfm`.
+- 앱 Fisheye Lens Edge: **Use** 선택 — Training / stitching (wide, 5 % 안) · SfM / alignment (tight, 10 % 안 = OSMO에서 rim95). 고른 용도의 각도 · 겹침 · 정합 결과를 아래 글로 보여 줌. Detect가 그 여유로 당기고, 바꾸면 원이 옮겨 감. 설정 `use`로 저장.
+- Batch Masking 창: 렌즈에 **SfM circle radius**(none = 없음).
+- 매뉴얼 C3 · 참조, 사양 09에 Use.
+- 테스트 305개 통과(용도 바꾸기 · Detect, `run`의 `masks_sfm/`, 프리셋 값).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

@@ -31,11 +31,21 @@ LABELS = {SKY: "Sky", LENS_EDGE: "Lens edge"}
 # (OSMO 360, 3840²): detail and SIFT points hold to 0.95 of the circle, then fall (points 20 -> 5 -> 1.5
 # per 10⁴ px at 0.95 / 0.96 / 0.97), and the SfM split in 2-4 models until that band was masked (p127).
 LENS_MARGIN = 5.0
+# What the circle is for (the Lens edge Object's "use"; p130). The two lenses of a dual fisheye overlap only
+# near the rim, so a tighter circle aligns better but leaves less to stitch and train on. 0022 (OSMO 360,
+# THIN_PRISM_FISHEYE): the 5 % circle keeps about 201 degrees a lens, the lenses overlapping about 22 (lowest
+# 19); SplatBatch's rim95 (radius 95 % of the inscribed circle, 0.90 of the found one) keeps about 185,
+# overlapping about 5.6 (lowest 4.4), and its SfM registered 188/188 twice where the 2 % margin gave 106-184.
+# So: train and stitch with the wide circle, align (SfM) with the tight one.
+LENS_TRAIN, LENS_SFM = 0, 1
+LENS_MARGIN_SFM = 10.0  # % in from the found circle for SfM: 105.2 % * 0.90 = 94.7 %, about rim95
+LENS_MARGINS = {LENS_TRAIN: LENS_MARGIN, LENS_SFM: LENS_MARGIN_SFM}
 
 # settings (all numbers, so they save and compare simply); see sky_mask / lens_edge_mask
 DEFAULTS: Dict[str, Tuple[Tuple[str, float], ...]] = {
     SKY: (("threshold", 50.0), ("refine", 1.0), ("grow", 0.0), ("top_only", 0.0)),
-    LENS_EDGE: (("radius", 100.0), ("cx", 0.0), ("cy", 0.0)),
+    # use: LENS_TRAIN or LENS_SFM, what Detect pulls the found circle in for (LENS_MARGINS)
+    LENS_EDGE: (("radius", 100.0), ("cx", 0.0), ("cy", 0.0), ("use", 0.0)),
 }
 
 SKY_INPUT = 320  # the model's input side
