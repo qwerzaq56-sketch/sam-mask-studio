@@ -123,7 +123,7 @@ def test_lens_finds_each_cameras_circle_and_pulls_it_in(rig, tmp_path):
     assert r["written"] == 6
 
     pulled = tmp_path / "pulled"
-    assert cli.main(["lens", str(rig), "--out", str(pulled), "--recursive"]) == 0  # default margin 5 % (p127)
+    assert cli.main(["lens", str(rig), "--out", str(pulled), "--recursive"]) == 0  # default margin 7 % (p127: 5, p131: 7)
     p0 = read(pulled / "cam0" / "00000.png.png") > 127
     assert p0.sum() < m0.sum() and not p0[140, 267]
 

@@ -8,6 +8,7 @@
     "0022 (lens rim): detail and SIFT points fall past 0.95 of the circle; with 2 % the SfM split in 2-4 models, the band masked 188/188 (v0.4-p127: margin 5 %)",
     "0022 (lens rim): a fixed circle, 95 % of the inscribed one, centred (0.90 of the found image circle: the lens's distorted rim left out): SplatBatch's Spirula dev SfM 188/188 twice; the 2 % margin 106/188 (v0.4-p129, user to inspect)",
     "0022 (lens overlap): the 5 % circle keeps about 201 degrees a lens, the lenses overlapping about 22 (lowest 19); rim95 about 185, overlapping about 5.6 (lowest 4.4), too little to stitch: masks/ back to the found circle 5 % in, rim95 as the SfM circle in masks_sfm/ (v0.4-p130)",
+    "0022 (lens, training): Spirula's auto mask circle, fixed: radius 98.0 %, centre +0.34 / -3.16 % (61 px up), both cameras, refitted to its mask edge (residual 0.3-2 px); its SfM 186/188; about 184-213 degrees a lens, the lenses overlapping about 15 (lowest 5, where it is off centre) (v0.4-p131, user's choice)",
     "0022 cam0 (sky): looked at, no hand-made sky masks to score against yet (v0.4-p63)"
   ],
   "person": {
@@ -19,7 +20,10 @@
     "max_side": 1024
   },
   "lens": {
-    "margin": 5.0,
+    "radius": 98.0,
+    "cx": 0.34,
+    "cy": -3.16,
+    "margin": 0.0,
     "samples": 16,
     "sfm_radius": 95.0,
     "sfm_cx": 0.0,

@@ -48,7 +48,7 @@ class PersonStep:
 class LensStep:
     """The fisheye image circle, found per camera folder unless *radius* is set (src/cli.py ``lens``)."""
 
-    margin: float = 5.0  # src.core.special.LENS_MARGIN
+    margin: float = 7.0  # src.core.special.LENS_MARGIN
     samples: int = 16
     radius: Optional[float] = None
     cx: float = 0.0

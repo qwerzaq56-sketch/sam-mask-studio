@@ -33,9 +33,9 @@ def test_builtin_presets_read_and_say_what_they_were_checked_on(mine):
 
 def test_save_find_and_change(mine, tmp_path):
     osmo = P.find_preset("osmo360-selfie-stick")
-    # p130: masks/ = the found circle 5 % in (the lenses' overlap kept for training); SplatBatch's rim95
-    # (188/188) is the SfM circle, masks_sfm/
-    assert (osmo.lens.radius, osmo.lens.margin) == (None, 5.0)
+    # p131: masks/ = Spirula's own circle, fixed (the lenses' overlap kept for training); SplatBatch's rim95
+    # (188/188) is the SfM circle, masks_sfm/ (p130)
+    assert (osmo.lens.radius, osmo.lens.cx, osmo.lens.cy, osmo.lens.margin) == (98.0, 0.34, -3.16, 0.0)
     assert (osmo.lens.sfm_radius, osmo.lens.sfm_cx, osmo.lens.sfm_cy) == (95.0, 0.0, 0.0)
     assert "SfM circle radius 95.0 %" in osmo.summary()
     with pytest.raises(ValueError, match="built-in"):

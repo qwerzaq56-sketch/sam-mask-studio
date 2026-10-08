@@ -183,9 +183,10 @@ class SpecialPanel(QWidget):
         use = self.use.currentData()
         m = LENS_MARGINS[use]
         self.use_note.setText(
-            f"{m:g} % in from the image circle. Keeps the lens rim, where a dual fisheye's two lenses "
-            "overlap: OSMO 360 (0022) about 201° a lens, overlap about 22°, enough to stitch and train on. "
-            "The rim is the most distorted part, so SfM may split on it: align with an SfM circle."
+            f"{m:g} % in from the image circle, as Spirula's own mask (OSMO 360: about 98 %, SfM 186/188). "
+            "Keeps most of the lens rim, where a dual fisheye's two lenses overlap: 0022 about 194° a lens, "
+            "overlap about 14°, to stitch and train on. The rim is the most distorted part, so SfM may split "
+            "on it: align with an SfM circle."
             if use == LENS_TRAIN else
             f"{m:g} % in from the image circle (OSMO 360: about 95 %, SplatBatch's rim95). Leaves out the "
             "distorted rim: 0022 SfM registered 188/188 (106-184 with the rim in). But about 185° a lens, "
