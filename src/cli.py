@@ -336,23 +336,34 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
     for j, k in enumerate(picks):
         lo = picks[j - 1] if j else k
         hi = picks[j + 1] if j + 1 < len(picks) else k
-        seeds = mask_pieces(marks[k])
+        layers = marks[k] if marks[k].ndim == 3 else marks[k][None]  # (layer, h, w): --split keeps two
+        seeds: Dict[int, np.ndarray] = {}
+        layer_of: Dict[int, int] = {}
+        for n, layer in enumerate(layers):
+            for piece in mask_pieces(layer).values():
+                seeds[len(seeds) + 1] = piece
+                layer_of[len(seeds)] = n
         if seeds and any(wanted(i) for i in range(lo + 1, hi) if i not in marks):
             plan = PropagationPlan(lo, hi, k, Direction.BOTH)
             for idx, objs in propagate(str(SAM2_MODEL), paths, plan, seeds, max_side, device=device):
                 if idx in marks:
                     continue
-                m = got.get(idx, np.zeros_like(marks[k]))
-                for o in objs.values():
-                    if o.shape == m.shape:
-                        m = m | o
+                m = got.get(idx)
+                if m is None:
+                    m = np.zeros_like(layers)
+                for obj, o in objs.items():
+                    if o.shape == m.shape[1:]:
+                        m[layer_of.get(obj, 0)] |= o
                 got[idx] = m
                 hits[idx] = hits.get(idx, 0) + 1
         while nxt <= k:  # every frame up to this keyframe has had both its keyframes now
             if nxt in marks:
                 yield nxt, marks[nxt], 0
             else:
-                yield nxt, got.pop(nxt, np.zeros_like(marks[k])), hits.pop(nxt, 0)
+                m = got.pop(nxt, None)
+                if m is None:
+                    m = np.zeros_like(layers)
+                yield nxt, (m if marks[k].ndim == 3 else m[0]), hits.pop(nxt, 0)
             nxt += 1
 
 
@@ -360,14 +371,18 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
                   labels: Sequence[str] = (), attach: Sequence[str] = (), threshold: float = 0.4,
                   grow: int = 2, max_side: int = 1024, touch: int = 16, model: Path = SAM3_MODEL, device: str = "cuda",
                   and_with: Optional[Path] = None, existing: str = "stop", keyframes: int = 0, propagate=None,
-                  log=print) -> dict:
+                  split: Optional[Path] = None, hands: Sequence[str] = (), log=print) -> dict:
     """The ``person`` command: black = people and what they carry (ignored in training), white = the rest
     (``--invert``: white = people). Returns the report.
 
     *keyframes* N > 1: SAM3 only on every N-th frame of each camera folder (and its last), then SAM2
     propagation as the app's (:func:`src.engine.video.propagate`, or *propagate*) from each keyframe to its
-    neighbours; a frame in between gets the union of both sides. SAM3 is released before SAM2 loads."""
-    from src.core.people import grow_mask, people_mask
+    neighbours; a frame in between gets the union of both sides. SAM3 is released before SAM2 loads.
+
+    *split*: only the photographer (the pole, who touches it, their bag, *hands* on the pole or the lens rim:
+    :func:`src.core.people.split_people`) goes to *out*; everyone else to *split*, same names and colours.
+    With keyframes the two are propagated apart."""
+    from src.core.people import grow_mask, people_mask, split_people
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
     every = keyframes if keyframes > 1 else 0
@@ -375,8 +390,14 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         "labels": list(labels), "attach": list(attach), "threshold": threshold, "touch": touch, "grow": grow,
         "max_side": max_side, "invert": invert, "model": str(model), "device": device,
         "and_with": str(and_with) if and_with else None,
-        **({"keyframes": every, "propagation_model": SAM2_MODEL.name} if every else {})})
+        **({"keyframes": every, "propagation_model": SAM2_MODEL.name} if every else {}),
+        **({"split": str(split), "hands": list(hands)} if split is not None else {})})
     missing: List[str] = []
+    if split is not None:
+        there = [k for k in b.todo if (split / b.name(k)).exists()]
+        if there and existing == "stop":
+            raise SystemExit(f"{len(there)} mask(s) already in {split} (e.g. {b.name(there[0])}). Nothing written. "
+                             "--skip-existing to carry on, --overwrite to replace them.")
     if b.todo:
         t = time.time()
         eng = _engine(model, device)
@@ -388,14 +409,25 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         """(full size, the people at the working size before growing, what was found)."""
         rgb = read_rgb(images / key)
         work = to_working(rgb, max_side)
-        dets = eng.detect_many(work, list(labels) + list(attach))
+        asked = list(labels) + list(attach) + (list(hands) if split is not None else [])
+        dets = eng.detect_many(work, list(dict.fromkeys(asked)))
         counts: Dict[str, int] = {}
         for d in dets:
             if d.score >= threshold:
                 counts[d.label] = counts.get(d.label, 0) + 1
+        if split is not None:
+            parts = split_people(dets, work.shape[:2], labels, attach, threshold, touch, hands)
+            return rgb.shape[:2], np.stack(parts), counts
         return rgb.shape[:2], people_mask(dets, work.shape[:2], labels, attach, threshold, touch, 0), counts
 
     def finish(key, people, size, note):
+        if people.ndim == 3:  # --split: the photographer, everyone else
+            people, rest = people
+            rest = resize_mask(grow_mask(rest, grow), size)
+            target = split / b.name(key)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _write_png(target, rest if invert else ~rest)
+            note = dict(note, others=round(float(rest.mean()), 4))
         found = resize_mask(grow_mask(people, grow), size)
         keep = ~found
         if and_with is not None:
@@ -411,7 +443,8 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
             how = f"propagated from {note['from_keyframes']} keyframe(s)"
         else:
             how = ", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"
-        return f"masked {100 * note['people']:.1f}%  {how}"
+        rest = f" (others {100 * note['others']:.1f}%)" if "others" in note else ""
+        return f"masked {100 * note['people']:.1f}%{rest}  {how}"
 
     if every and b.todo:
         make = _keyframe_maker(b, images, every, detect, finish, max_side, device,
@@ -598,6 +631,14 @@ def _person_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--touch", type=int, help=f"How near (px at 1024) an --attach find must be (default {TOUCH})")
     p.add_argument("--grow", type=int, help=f"Grow the mask by px at 1024 px (default {GROW})")
     p.add_argument("--max-side", type=int, help="Working resolution's longer side (default 1024)")
+
+
+def _hands(text: Optional[str]) -> Tuple[str, ...]:
+    from src.core.people import HANDS
+
+    if text is None:
+        return HANDS
+    return tuple(t.strip() for t in text.split(";") if t.strip())
 
 
 def _gpu_options(p: argparse.ArgumentParser, model: str = "--model") -> None:
@@ -862,6 +903,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     person.add_argument("--keyframes", type=int, default=0, metavar="N",
                         help="SAM3 only on every N-th frame of each camera folder (and its last), SAM2 propagation "
                              "in between (as the app's Propagate). Default 0: SAM3 on every frame")
+    person.add_argument("--split", type=Path, metavar="DIR",
+                        help="Only the photographer to --out (the pole, who touches it, their bag, a hand on the "
+                             "pole or the lens rim); everyone else to DIR, black = people as in --out")
+    person.add_argument("--hands", help="With --split: hand prompts, ';'-separated (default hand; \"\" = none)")
 
     probe = sub.add_parser("probe", help="Try SAM3 prompts on a few frames before a run (contact sheets, a table)",
                            description="What each prompt finds on a few frames per camera folder: in how many "
@@ -1036,7 +1081,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             labels=p.labels, attach=p.attach, threshold=p.threshold, grow=p.grow, max_side=p.max_side,
             touch=p.touch, model=args.sam3_model, device=device, and_with=args.and_with, existing=existing,
-            keyframes=args.keyframes,
+            keyframes=args.keyframes, split=args.split, hands=_hands(args.hands) if args.split else (),
         )
     elif args.command == "run":
         from src.batchmask.presets import find_preset
