@@ -1486,9 +1486,9 @@ def test_lens_edge_detect_pulls_the_circle_in_over_the_soft_rim(qapp, win, monke
     [o] = s.project.objects
     win.special_detect()
     sp = s.project.get(o.id).special
-    assert LENS_MARGIN == 5.0
-    assert sp.get("radius") == round(105.2 * 0.95, 1) and sp.get("cx") == -0.2 and sp.get("cy") == 0.1
-    assert "radius 105.2 %" in win.log_view.toPlainText() and "masked from 99.9 %" in win.log_view.toPlainText()
+    assert LENS_MARGIN == 7.0  # p131: Spirula's own mask, 0.93 of the circle
+    assert sp.get("radius") == round(105.2 * 0.93, 1) and sp.get("cx") == -0.2 and sp.get("cy") == 0.1
+    assert "radius 105.2 %" in win.log_view.toPlainText() and "masked from 97.8 %" in win.log_view.toPlainText()
     assert sp.get("use") == LENS_TRAIN
 
 
@@ -1515,10 +1515,10 @@ def test_lens_edge_use_sfm_pulls_the_circle_in_further_and_says_why(qapp, win, m
     assert panel.radius.value() == 95
     panel.use.setCurrentIndex(panel.use.findData(LENS_TRAIN))  # back: the circle moves out to the wide one
     panel.use.activated.emit(panel.use.currentIndex())
-    assert panel.radius.value() == round(95 * 0.95 / 0.90)
+    assert panel.radius.value() == round(95 * 0.93 / 0.90)
     panel.flush()
     sp = s.project.get(o.id).special
-    assert sp.get("use") == LENS_TRAIN and sp.get("radius") == 100
+    assert sp.get("use") == LENS_TRAIN and sp.get("radius") == 98
 
 
 def test_sky_object_with_a_model_and_its_saved_settings(qapp, win, tmp_path):
@@ -2047,7 +2047,7 @@ def test_batch_mask_dialog_edits_a_preset_and_builds_the_commands(qapp, win, tmp
     d.preset.setCurrentIndex(i)
     assert d.current() == P.find_preset("osmo360-selfie-stick") and d.current().checked_on
     assert "black pole" in d.labels.text() and d.lens_box.isChecked() and d.sky_box.isChecked()
-    assert d.radius.value() == 0 and d.margin.value() == 5.0 and d.sfm_radius.value() == 95.0  # p130
+    assert d.radius.value() == 98.0 and d.margin.value() == 0.0 and d.sfm_radius.value() == 95.0  # p131
 
     d.labels.setText("person, silver pole")
     d.lens_box.setChecked(False)

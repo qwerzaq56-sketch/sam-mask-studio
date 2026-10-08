@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # The command-line contract splatbatch relies on (docs/CLI_CONTRACT.md): raised when run / preset list change.
-CLI_CONTRACT = 3  # 2 (p127): the lens step masks 5 % of the radius, not 2 %; 3 (p130): run's masks_sfm/ (SfM circle)
+CLI_CONTRACT = 4  # 2 (p127): the lens step masks 5 % of the radius, not 2 %; 3 (p130): run's masks_sfm/ (SfM circle); 4 (p131): 7 %
 
 
 @functools.lru_cache(maxsize=1)

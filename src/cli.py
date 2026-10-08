@@ -62,7 +62,7 @@ import cv2
 import numpy as np
 
 from src.core.sky_sam2 import SKY_GPU_NEEDED, SKY_SAM2
-from src.core.special import LENS_MARGIN  # % of the radius: the soft, dark rim (p127: 2 -> 5)
+from src.core.special import LENS_MARGIN  # % of the radius: the soft, dark rim (p127: 2 -> 5, p131: 7)
 from src.version import app_version
 
 ROOT = Path(__file__).resolve().parents[1]

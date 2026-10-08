@@ -27,14 +27,16 @@ SKY = "sky"
 LENS_EDGE = "lens_edge"
 KINDS = (SKY, LENS_EDGE)
 LABELS = {SKY: "Sky", LENS_EDGE: "Lens edge"}
-# % of the found circle's radius left out with the black: a fisheye's last few % is soft and dark. 0022
-# (OSMO 360, 3840²): detail and SIFT points hold to 0.95 of the circle, then fall (points 20 -> 5 -> 1.5
-# per 10⁴ px at 0.95 / 0.96 / 0.97), and the SfM split in 2-4 models until that band was masked (p127).
-LENS_MARGIN = 5.0
+# % of the found circle's radius left out with the black, for training and stitching: the lens's rim is
+# soft and the most distorted. 7 % = Spirula's own auto mask (0022, OSMO 360: radius 98.0 % of the inscribed
+# circle against a found 105.3 %, 0.93; its SfM registered 186/188). p127 had 5 % (detail and SIFT points
+# fall past 0.95 of the circle), p131 took Spirula's: centred, 7 % keeps about 194 degrees a lens, the two
+# lenses overlapping about 14 (lowest 12).
+LENS_MARGIN = 7.0
 # What the circle is for (the Lens edge Object's "use"; p130). The two lenses of a dual fisheye overlap only
 # near the rim, so a tighter circle aligns better but leaves less to stitch and train on. 0022 (OSMO 360,
 # THIN_PRISM_FISHEYE): the 5 % circle keeps about 201 degrees a lens, the lenses overlapping about 22 (lowest
-# 19); SplatBatch's rim95 (radius 95 % of the inscribed circle, 0.90 of the found one) keeps about 185,
+# 19), the 7 % one (LENS_MARGIN since p131) about 194, overlapping about 14 (lowest 12); SplatBatch's rim95 (radius 95 % of the inscribed circle, 0.90 of the found one) keeps about 185,
 # overlapping about 5.6 (lowest 4.4), and its SfM registered 188/188 twice where the 2 % margin gave 106-184.
 # So: train and stitch with the wide circle, align (SfM) with the tight one.
 LENS_TRAIN, LENS_SFM = 0, 1
