@@ -33,6 +33,8 @@ def test_builtin_presets_read_and_say_what_they_were_checked_on(mine):
 
 def test_save_find_and_change(mine, tmp_path):
     osmo = P.find_preset("osmo360-selfie-stick")
+    # p129: the OSMO lens circle is fixed (SplatBatch's rim95, 188/188), not found and pulled in
+    assert (osmo.lens.radius, osmo.lens.cx, osmo.lens.cy, osmo.lens.margin) == (95.0, 0.0, 0.0, 0.0)
     with pytest.raises(ValueError, match="built-in"):
         P.save_preset(osmo)
     mine_ = P.with_changes(osmo, name="silver-stick", person={"labels": ["person", "silver pole"]}, lens=None)

@@ -6,6 +6,7 @@
     "0022 cam0 94 frames (people): IoU 0.943, lowest 0.875, missed 0.3 % against the scene's hand-checked masks (v0.4-p65)",
     "0022 cam0 / cam1 (lens): radius 105.3 / 105.7 %, 16-frame circles steady to 0.13 % (v0.4-p64)",
     "0022 (lens rim): detail and SIFT points fall past 0.95 of the circle; with 2 % the SfM split in 2-4 models, the band masked 188/188 (v0.4-p127: margin 5 %)",
+    "0022 (lens rim): a fixed circle, 95 % of the inscribed one, centred (0.90 of the found image circle: the lens's distorted rim left out): SplatBatch's Spirula dev SfM 188/188 twice; the 2 % margin 106/188 (v0.4-p129, user to inspect)",
     "0022 cam0 (sky): looked at, no hand-made sky masks to score against yet (v0.4-p63)"
   ],
   "person": {
@@ -17,7 +18,10 @@
     "max_side": 1024
   },
   "lens": {
-    "margin": 5.0,
+    "radius": 95.0,
+    "cx": 0.0,
+    "cy": 0.0,
+    "margin": 0.0,
     "samples": 16
   },
   "sky": {
