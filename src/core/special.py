@@ -27,6 +27,10 @@ SKY = "sky"
 LENS_EDGE = "lens_edge"
 KINDS = (SKY, LENS_EDGE)
 LABELS = {SKY: "Sky", LENS_EDGE: "Lens edge"}
+# % of the found circle's radius left out with the black: a fisheye's last few % is soft and dark. 0022
+# (OSMO 360, 3840²): detail and SIFT points hold to 0.95 of the circle, then fall (points 20 -> 5 -> 1.5
+# per 10⁴ px at 0.95 / 0.96 / 0.97), and the SfM split in 2-4 models until that band was masked (p127).
+LENS_MARGIN = 5.0
 
 # settings (all numbers, so they save and compare simply); see sky_mask / lens_edge_mask
 DEFAULTS: Dict[str, Tuple[Tuple[str, float], ...]] = {

@@ -1476,6 +1476,21 @@ def test_lens_edge_object_made_from_settings(qapp, win):
     assert s.seeds(s.index, ids=[o.id]) == {}  # a special Object is not propagated
 
 
+def test_lens_edge_detect_pulls_the_circle_in_over_the_soft_rim(qapp, win, monkeypatch):
+    import src.app.main_window as mw
+    from src.core.special import LENS_EDGE, LENS_MARGIN
+
+    monkeypatch.setattr(mw, "detect_lens_circle", lambda imgs: {"radius": 105.2, "cx": -0.2, "cy": 0.1})
+    s = win.session
+    win.add_special(LENS_EDGE)
+    [o] = s.project.objects
+    win.special_detect()
+    sp = s.project.get(o.id).special
+    assert LENS_MARGIN == 5.0
+    assert sp.get("radius") == round(105.2 * 0.95, 1) and sp.get("cx") == -0.2 and sp.get("cy") == 0.1
+    assert "radius 105.2 %" in win.log_view.toPlainText() and "masked from 99.9 %" in win.log_view.toPlainText()
+
+
 def test_sky_object_with_a_model_and_its_saved_settings(qapp, win, tmp_path):
     import numpy as np
 

@@ -8,7 +8,7 @@ A preset is a JSON file::
       "description": "...",
       "checked_on": ["0022 cam0 94 frames: IoU 0.943 against hand-checked masks"],
       "person": {"labels": ["person", "black pole"], "attach": ["bag"], "threshold": 0.4, "grow": 2},
-      "lens": {"margin": 2.0},
+      "lens": {"margin": 5.0},
       "sky": {"threshold": 50}
     }
 
@@ -48,7 +48,7 @@ class PersonStep:
 class LensStep:
     """The fisheye image circle, found per camera folder unless *radius* is set (src/cli.py ``lens``)."""
 
-    margin: float = 2.0
+    margin: float = 5.0  # src.core.special.LENS_MARGIN
     samples: int = 16
     radius: Optional[float] = None
     cx: float = 0.0
