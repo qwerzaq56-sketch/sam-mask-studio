@@ -403,6 +403,26 @@ def test_view_layouts():
         assert len(set(names)) == len(names) and len(names) == lay.count  # every view its own file
 
 
+def test_fisheye_layouts():
+    """A fisheye lens's own layouts (export plan 10, C-9): single directions (points), looking one way."""
+    from src.core.reproject import ALL_LAYOUTS, FISHEYE_LAYOUTS, VIEW_LAYOUTS, view_name
+
+    assert {k: lay.count for k, lay in FISHEYE_LAYOUTS.items()} == {"fish9": 9, "fish5": 5, "fish3": 3}
+    assert [lay.label for lay in FISHEYE_LAYOUTS.values()] == [
+        "Fisheye Grid · 9 Views", "Fisheye Cross · 5 Views", "Fisheye Level · 3 Views"]
+    assert sorted(FISHEYE_LAYOUTS["fish9"].pairs()) == sorted(
+        (y % 360, p) for p in (-35.0, 0.0, 35.0) for y in (-45.0, 0.0, 45.0))  # the old default grid
+    assert (0.0, 45.0) in FISHEYE_LAYOUTS["fish5"].pairs() and (315.0, 0.0) in FISHEYE_LAYOUTS["fish5"].pairs()
+    assert {p for _, p in FISHEYE_LAYOUTS["fish3"].pairs()} == {0.0}
+    assert FISHEYE_LAYOUTS["fish9"].overlap(90) == (45.0, 55.0)  # 45° apart across, 35° between rows
+    assert FISHEYE_LAYOUTS["fish3"].overlap(90) == (45.0, None)
+    assert VIEW_LAYOUTS["horizon4"].overlap(90) == (0.0, None)  # the general overlap, same as before
+    assert ALL_LAYOUTS.keys() == VIEW_LAYOUTS.keys() | FISHEYE_LAYOUTS.keys()
+    for lay in FISHEYE_LAYOUTS.values():
+        names = [view_name("f", y, p) for y, p in lay.pairs()]
+        assert len(set(names)) == len(names) == lay.count
+
+
 def test_fisheye_views_it_cannot_fill_are_left_out(tmp_path):
     from src.core.colmap import read_cameras_full
     from src.core.reproject import convert, view_share
