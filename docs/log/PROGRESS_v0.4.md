@@ -828,6 +828,12 @@
 - 0022 장면(읽기만)으로 줄 1 · 3개, Objects 목록 캡처: 잘림 없음. Objects 버튼 글 왼쪽 정렬, 고르지 않은 Object의 ⇆는 꺼짐, 폴더 안내 문구 손질.
 - 테스트: 옛 세트 · Every set 테스트 3개를 줄 방식으로 바꿈(⇆ + Invert 결과 픽셀, 이름 충돌, 저장 · Undo, 창을 닫으면 저장, 프리셋 따라가는 Invert와 ⚠). 전체 288 통과.
 
+## 119단계 (`v0.4-p119`): 명령줄 약속 문서, 포터블을 앱 · 런타임 · 모델로 나누기
+
+- splatbatch 세션 요청(DEPLOY_PLAN 3.3 · 6장): `docs/CLI_CONTRACT.md` 약속 1(`run` 옵션 · 출력 폴더와 흑백 · 파일 이름 · 이미 있는 마스크 · 종료 코드 · 보고서 키, `preset list` / `show --json`). 번호는 `src/version.py`의 `CLI_CONTRACT`, 바뀌면 올리고 "3DGS 하늘 학습" 세션에 알림.
+- `tools/make_portable.py --split`: 포터블 폴더 옆에 `sms-<버전>-app.zip`(src · docs · bat · README · `PARTS.json`, 몇 MB), `sms-runtime-<해시>.zip`(python\), `sms-models-<해시>.zip`(app\checkpoints\), `sms-<버전>-parts.json`(이름 · 크기 · sha256 · 약속 번호). 셋 다 포터블 루트 기준이라 한 폴더에 풀면 지금 포터블과 같음. 해시는 파일 경로 + 크기라 의존성 · 가중치가 같으면 이름이 같고, 이미 있는 zip은 다시 쓰지 않음.
+- 빌드 · 업로드는 하지 않음(요청 때만). 테스트 1개(가짜 포터블: 파일이 정확히 한 묶음씩, 다시 풀면 같음, 같은 런타임은 이름 유지 · 다시 안 씀, 가중치가 바뀌면 새 이름).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
