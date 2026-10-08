@@ -816,6 +816,18 @@
 - 계산 순서: ① ⇆ Object는 원본 해상도로 만든 뒤(Sky 경계 포함) 뒤집음, 그 이미지에 마스크가 없으면 이미지 전체 ② 합집합 ③ 바의 Invert. 원본 Object 마스크는 그대로. `full_mask` · `final_mask` · `keys_with_masks` · `check_export` · `ExportOptions.flipped`, 변환 Export(Pinhole / 360)도 같은 계산.
 - 테스트 3개(중간 마스크를 따로 계산해 대조, 쓴 PNG 픽셀, 저장 / 불러오기 / Undo). 전체 288 통과. 창(바 UI)은 다음 단계.
 
+## 118단계 (`v0.4-p118`): 내보내기 세트 2 — Export 창 1 What을 마스크 줄로
+
+- 1 What의 Mask 목록 · `Save Checked as Set…` · `Delete Set` · Every set을 **마스크 줄**로 바꿈. 줄: ☑(이번에 쓸지) · 이름 · Objects 버튼(Checked Objects 또는 고르기, Object마다 ⇆ Invert) · Invert · ✕(오른쪽 클릭 Duplicate). `+ Add mask` = 지금 체크한 Objects로 새 줄.
+- 줄 1개: 이름 칸 흐림, ☑ · ✕ 숨김, 폴더 그대로(C-7). 2개 이상: `<폴더>_<이름>/`, 이름을 비우면 폴더 그대로. 같은 폴더로 가는 이름 · 폴더에 못 쓰는 글자는 빨간 테두리 + 검사 ⚠ + Export 꺼짐.
+- Invert 처음 값은 For 프리셋(Brush 등 켬, Postshot 끔), 줄에서 바꾸면 그 값. 프리셋과 다르면 검사에 “Brush ignores the black parts, so these Objects are trained …” 한 줄(C-6). Files 구역의 Invert 칸은 없앰.
+- 검사 · 버튼이 켠 줄 전체를 셈: `Export 558 files → 3 folders`, 줄마다 한 줄(파일 수, 빈 마스크, ⚠ ✕), 문제 목록에 폴더 이름. 백업 안내도 폴더마다.
+- 줄은 창을 닫을 때(Export든 Cancel이든) 장면에 저장, Undo 한 단계(C-4). 옛 작업 파일의 세트는 꺼진 줄로 나옴.
+- Postshot처럼 규칙이 확인 안 된 프리셋은 설명 전문을 처음부터 펼침(S-6, `Preset.confirmed`).
+- 기획 9.4의 “배치 마스킹 · CLI가 세트를 읽게”는 해당 없음: CLI(`run` · `sky` · `person` · `lens`)는 마스크를 직접 만들어 쓰고 작업 파일의 세트를 쓰지 않음.
+- 0022 장면(읽기만)으로 줄 1 · 3개, Objects 목록 캡처: 잘림 없음. Objects 버튼 글 왼쪽 정렬, 고르지 않은 Object의 ⇆는 꺼짐, 폴더 안내 문구 손질.
+- 테스트: 옛 세트 · Every set 테스트 3개를 줄 방식으로 바꿈(⇆ + Invert 결과 픽셀, 이름 충돌, 저장 · Undo, 창을 닫으면 저장, 프리셋 따라가는 Invert와 ⚠). 전체 288 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

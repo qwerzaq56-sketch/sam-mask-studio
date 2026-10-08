@@ -5,10 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QInputDialog,
     QButtonGroup,
+    QGridLayout,
+    QMenu,
+    QToolButton,
+    QWidgetAction,
     QCheckBox,
     QGroupBox,
     QRadioButton,
@@ -23,6 +27,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTextBrowser,
     QVBoxLayout,
@@ -35,6 +40,7 @@ from src.core.presets import CUSTOM, PRESETS, preset
 from src.app.view_preview import ViewPreview
 from src.core.colmap import read_cameras_full
 from src.core.reproject import CONVERTIBLE, FISHEYES, MIN_VIEW_SHARE, VIEW_LAYOUTS, Erp, Stitch, Views, view_share
+from src.core.project import MaskBar
 from src.core.storage import ExportCheck, ExportOptions, existing_style, mask_files
 
 
@@ -180,6 +186,162 @@ class OptionsDialog(QDialog):
         return [g.checkedId() for g in self._groups]
 
 
+BAD_NAME = '\\/:*?"<>|'  # not in a folder name
+
+
+class _ObjectsPicker(QWidget):
+    """A bar's Objects: the checked ones (as in the Objects panel) or a pick; ⇆ takes one the other way round."""
+
+    changed = pyqtSignal()
+
+    def __init__(self, objects: Sequence[Tuple[int, str, bool]], bar: MaskBar):
+        super().__init__()
+        lay = QGridLayout(self)
+        lay.setContentsMargins(8, 6, 8, 6)
+        self.follow = QCheckBox("Checked Objects (as in the Objects panel)")
+        self.follow.setChecked(bar.ids is None)
+        lay.addWidget(self.follow, 0, 0, 1, 2)
+        self._included = {oid: inc for oid, _n, inc in objects}
+        self._names = {oid: name for oid, name, _i in objects}
+        self.pick, self.flip = {}, {}
+        for r, (oid, name, inc) in enumerate(objects, 1):
+            c = QCheckBox(name)
+            c.setChecked(inc if bar.ids is None else oid in bar.ids)
+            f = QCheckBox("⇆ Invert")
+            f.setToolTip("This Object the other way round: what is outside it goes into the mask\n"
+                         "(an image where it has no mask: all of the image). Its own mask is not changed.")
+            f.setChecked(oid in bar.flipped)
+            lay.addWidget(c, r, 0)
+            lay.addWidget(f, r, 1)
+            self.pick[oid], self.flip[oid] = c, f
+            c.toggled.connect(lambda _on: self._changed())
+            f.toggled.connect(lambda _on: self._changed())
+        self.follow.toggled.connect(lambda _on: self._changed())
+        self._sync()
+
+    def _sync(self) -> None:
+        follow = self.follow.isChecked()
+        for oid, c in self.pick.items():
+            c.setEnabled(not follow)
+            if follow:
+                c.blockSignals(True)
+                c.setChecked(self._included[oid])
+                c.blockSignals(False)
+            self.flip[oid].setEnabled(c.isChecked())  # only an Object in the mask can be inverted
+
+    def _changed(self) -> None:
+        self._sync()
+        self.changed.emit()
+
+    def ids(self) -> Optional[Tuple[int, ...]]:
+        if self.follow.isChecked():
+            return None
+        return tuple(oid for oid, c in self.pick.items() if c.isChecked())
+
+    def members(self) -> List[int]:
+        return [oid for oid, c in self.pick.items() if c.isChecked()]
+
+    def flipped(self) -> Tuple[int, ...]:
+        return tuple(oid for oid in self.members() if self.flip[oid].isChecked())
+
+    def text(self) -> str:
+        """For the bar's button: "Checked Objects (3) · ⇆lens" or "person 1, ⇆lens"."""
+        flip = set(self.flipped())
+        if self.follow.isChecked():
+            n = len(self.members())
+            return f"Checked Objects ({n})" + "".join(f" · ⇆{self._names[o]}" for o in self.flipped())
+        names = [("⇆" if oid in flip else "") + self._names[oid] for oid in self.members()]
+        return ", ".join(names) if names else "No Objects"
+
+
+class _BarRow(QWidget):
+    """One mask the Export writes, one folder (plan Export 9): on, name, Objects, Invert."""
+
+    changed = pyqtSignal()
+    removed = pyqtSignal(object)
+    duplicated = pyqtSignal(object)
+
+    def __init__(self, bar: MaskBar, objects: Sequence[Tuple[int, str, bool]]):
+        super().__init__()
+        self.on = QCheckBox()
+        self.on.setChecked(bar.on)
+        self.on.setToolTip("Write this mask with the next Export")
+        self.name = QLineEdit(bar.name)
+        self.name.setPlaceholderText("name")
+        self.name.setFixedWidth(110)
+        self.name.setToolTip("Its folder becomes <folder>_<name>; left empty: <folder> itself")
+        self.picker = _ObjectsPicker(objects, bar)
+        self.objects_btn = QPushButton()
+        self.objects_btn.setStyleSheet("text-align: left; padding: 3px 8px;")
+        self.objects_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.objects_btn.setToolTip("Which Objects go into this mask, and which of them inverted (⇆)")
+        menu = QMenu(self.objects_btn)
+        act = QWidgetAction(menu)
+        act.setDefaultWidget(self.picker)
+        menu.addAction(act)
+        self.objects_btn.setMenu(menu)
+        self.invert = QCheckBox("Invert")
+        self.invert.setToolTip("Objects black, the rest white (off: Objects white). Until you change it,\n"
+                               "it follows the trainer preset")
+        self._invert_set = bar.invert is not None
+        self.invert.setChecked(bool(bar.invert))
+        self.remove = QToolButton()
+        self.remove.setText("✕")
+        self.remove.setAutoRaise(True)
+        self.remove.setToolTip("Delete this mask (right-click: Duplicate)")
+        self.folder = QLabel()
+        self.folder.setStyleSheet("color: gray;")
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.addWidget(self.on)
+        top.addWidget(self.name)
+        top.addWidget(self.objects_btn, 1)
+        top.addWidget(self.invert)
+        top.addWidget(self.remove)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 2)
+        lay.setSpacing(0)
+        lay.addLayout(top)
+        lay.addWidget(self.folder)
+        self.folder.setContentsMargins(self.on.sizeHint().width() + 6, 0, 0, 0)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._menu)
+        self.on.toggled.connect(lambda _on: self.changed.emit())
+        self.name.textChanged.connect(lambda _t: self.changed.emit())
+        self.picker.changed.connect(self._objects_changed)
+        self.invert.toggled.connect(self._invert_changed)
+        self.remove.clicked.connect(lambda: self.removed.emit(self))
+        self._objects_changed(emit=False)
+
+    def _menu(self, pos) -> None:
+        m = QMenu(self)
+        m.addAction("Duplicate", lambda: self.duplicated.emit(self))
+        d = m.addAction("Delete", lambda: self.removed.emit(self))
+        d.setEnabled(self.remove.isEnabled())
+        m.exec(self.mapToGlobal(pos))
+
+    def _objects_changed(self, emit: bool = True) -> None:
+        self.objects_btn.setText(self.picker.text())
+        if emit:
+            self.changed.emit()
+
+    def _invert_changed(self, _on: bool) -> None:
+        self._invert_set = True
+        self.changed.emit()
+
+    def set_default_invert(self, black: bool) -> None:
+        """The trainer preset's colours, until the user changes this bar's Invert (C-6)."""
+        if not self._invert_set and self.invert.isChecked() != black:
+            self.invert.blockSignals(True)
+            self.invert.setChecked(black)
+            self.invert.blockSignals(False)
+
+    def bar(self) -> MaskBar:
+        return MaskBar(self.name.text().strip(), self.picker.ids(),
+                       self.invert.isChecked() if self._invert_set else None, self.picker.flipped(),
+                       self.on.isChecked())
+
+
 def _first_sentence(text: str) -> str:
     """Up to the first full stop that ends a sentence (not one inside a name like a.png)."""
     for i, ch in enumerate(text):
@@ -193,11 +355,10 @@ class ExportDialog(QDialog):
 
     For a COLMAP scene a trainer preset (docs/specs/07-export-presets.md) fixes the
     folder (the scene's masks/), the names and the colors; "Custom" leaves them free.
-    Mask: the Final Mask (the checked Objects) goes to the folder, a named mask set
-    to ``<folder>_<name>`` (masks_people/); "Every set" writes all of them.
+    What: masks as bars (plan Export 9), one folder each: one bar writes the folder, more bars write
+    ``<folder>_<name>`` (an empty name: the folder itself); each bar has its Objects (⇆: one inverted) and Invert.
     """
 
-    EVERY = "*"  # the Mask choice that writes the Final Mask and every set
     _open = {"note": False, "views": False}  # More / Edit, kept open for the next window (C-2)
 
     PATTERNS = (
@@ -206,8 +367,8 @@ class ExportDialog(QDialog):
     )
 
     def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[..., ExportCheck]] = None,
-                 scene=None, target: str = CUSTOM, sets: Optional[dict] = None,
-                 save_set: Optional[Callable[[str], bool]] = None, delete_set: Optional[Callable[[str], None]] = None,
+                 scene=None, target: str = CUSTOM, bars: Optional[Sequence[MaskBar]] = None,
+                 objects: Optional[Sequence[Tuple[int, str, bool]]] = None,
                  excluded: int = 0, sky: bool = False, sky_edges: bool = True):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
@@ -236,20 +397,21 @@ class ExportDialog(QDialog):
         nb.setSpacing(2)
         for w in (self.note_head, self.note, self.note_more):
             nb.addWidget(w)
-        self._sets = sets if sets is not None else {}
-        self._save_set, self._delete_set = save_set, delete_set
-        self.mask = QComboBox()
-        self.mask.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.mask.setMinimumContentsLength(24)
-        self.save_set_btn = QPushButton("Save Checked as Set…")
-        self.save_set_btn.setToolTip("The Objects checked now, under a name: exported to <folder>_<name>")
-        self.save_set_btn.clicked.connect(self._new_set)
-        self.delete_set_btn = QPushButton("Delete Set")
-        self.delete_set_btn.clicked.connect(self._remove_set)
+        # the masks to write, as bars (plan Export 9)
+        self._objects = list(objects or ())
+        self._bar_rows: List[_BarRow] = []
+        self._bars_lay = QVBoxLayout()
+        self._bars_lay.setSpacing(2)
+        self.add_bar_btn = QPushButton("+ Add mask")
+        self.add_bar_btn.setFlat(True)
+        self.add_bar_btn.setToolTip("Another mask, in its own folder <folder>_<name>: the Objects checked now")
+        self.add_bar_btn.clicked.connect(self._new_bar)
+        self.name_problem = ""
+        for b in (tuple(bars) if bars else (MaskBar(),)):
+            self._add_row(b)
         self.folders = QLabel()
         self.folders.setWordWrap(True)
         self.folders.setStyleSheet("color: gray;")
-        self._fill_sets()
         # where a preset writes: into the scene, or a new dataset (images linked, model filtered)
         self._excluded = excluded
         self.to_scene = QRadioButton("Into the scene")
@@ -359,14 +521,11 @@ class ExportDialog(QDialog):
             self.pattern.addItem(label)
         self.names_fixed = QLabel()
         self.names_fixed.setWordWrap(True)
-        self.invert = QCheckBox("Invert (Objects black)")
-        self.invert.setToolTip("Objects black, background white")
         self.empty = QCheckBox("Also empty masks")
         self.empty.setToolTip("Also write a mask for the images without Objects (all white: nothing ignored there)")
         self._colours = QWidget()
         cl = QHBoxLayout(self._colours)
         cl.setContentsMargins(0, 0, 0, 0)
-        cl.addWidget(self.invert)
         cl.addWidget(self.empty)
         cl.addStretch(1)
         self.sky_edges = QCheckBox("Edges at full resolution (slower)")
@@ -390,13 +549,13 @@ class ExportDialog(QDialog):
         main.setContentsMargins(0, 0, 0, 0)
         number = iter(range(1, 5))
         self._where_form: Optional[QFormLayout] = None
-        if save_set is not None:
-            what = QFormLayout()
-            row = QHBoxLayout()
-            row.addWidget(self.mask, 1)
-            row.addWidget(self.save_set_btn)
-            row.addWidget(self.delete_set_btn)
-            what.addRow("Mask", row)
+        if objects is not None:
+            what = QVBoxLayout()
+            what.addLayout(self._bars_lay)
+            add = QHBoxLayout()
+            add.addWidget(self.add_bar_btn)
+            add.addStretch(1)
+            what.addLayout(add)
             main.addWidget(_section(f"{next(number)}  What", what))
         if scene is not None:
             self._where_form = QFormLayout()
@@ -457,8 +616,7 @@ class ExportDialog(QDialog):
             w.textChanged.connect(lambda _t: self._run_check())
             w.textChanged.connect(lambda _t: self._apply_target())
         self.dataset.textChanged.connect(lambda _t: self._apply_target())
-        self.mask.currentIndexChanged.connect(self._run_check)
-        self.out.textChanged.connect(lambda _t: self._show_folders())
+        self.out.textChanged.connect(lambda _t: self._run_check())
         self.out.textChanged.connect(self.out_fixed.set_path)
         self.out_fixed.set_path(self.out.text())
         self._apply_target()
@@ -471,40 +629,94 @@ class ExportDialog(QDialog):
             self._open["views"] = self.views_edit.isChecked()
         self._apply_target()
 
-    # --- mask sets -------------------------------------------------------------------------
+    # --- the masks, as bars --------------------------------------------------------------------------
 
-    def _fill_sets(self, select: Optional[str] = None) -> None:
-        self.mask.blockSignals(True)
-        self.mask.clear()
-        self.mask.addItem("Final Mask — the checked Objects", None)
-        for name, ids in sorted(self._sets.items()):
-            self.mask.addItem(f"{name} ({len(ids)} Object{'s' if len(ids) != 1 else ''})", name)
-        if self._sets:
-            self.mask.addItem("Every set + the Final Mask", self.EVERY)
-            self.mask.setItemData(self.mask.count() - 1, "One folder each: <folder>, <folder>_<set>, …",
-                                  Qt.ItemDataRole.ToolTipRole)
-        i = self.mask.findData(select) if select is not None else 0
-        self.mask.setCurrentIndex(max(0, i))
-        self.mask.blockSignals(False)
+    def _add_row(self, bar: MaskBar, at: Optional[int] = None) -> _BarRow:
+        row = _BarRow(bar, self._objects)
+        row.changed.connect(self._run_check)
+        row.removed.connect(self._remove_row)
+        row.duplicated.connect(self._duplicate_row)
+        at = len(self._bar_rows) if at is None else at
+        self._bar_rows.insert(at, row)
+        self._bars_lay.insertWidget(at, row)
+        return row
 
-    def _new_set(self) -> None:
-        name, ok = QInputDialog.getText(self, "Save Mask Set", "Name (the folder becomes <folder>_<name>):")
-        name = name.strip()
-        if ok and name and name != self.EVERY and self._save_set is not None and self._save_set(name):
-            self._fill_sets(select=name)
-            self._run_check()
+    def _free_name(self, start: str) -> str:
+        used = {r.name.text().strip() for r in self._bar_rows}
+        n = 2
+        name = start
+        while name in used:
+            name, n = f"{start}{n}", n + 1
+        return name
 
-    def _remove_set(self) -> None:
-        name = self.mask.currentData()
-        if name not in (None, self.EVERY) and self._delete_set is not None:
-            self._delete_set(name)
-            self._fill_sets()
-            self._run_check()
+    def _new_bar(self) -> None:
+        ids = tuple(oid for oid, _n, inc in self._objects if inc)
+        self._add_row(MaskBar(self._free_name("set"), ids))
+        self._after_bars_changed()
 
-    def _chosen(self) -> List[Optional[str]]:
-        """The masks to write: None = the Final Mask, else set names."""
-        v = self.mask.currentData()
-        return [None] + sorted(self._sets) if v == self.EVERY else [v]
+    def _duplicate_row(self, row: _BarRow) -> None:
+        b = row.bar()
+        self._add_row(MaskBar(self._free_name(f"{b.name or 'set'}_copy"), b.ids, b.invert, b.flipped, b.on),
+                      self._bar_rows.index(row) + 1)
+        self._after_bars_changed()
+
+    def _remove_row(self, row: _BarRow) -> None:
+        if len(self._bar_rows) < 2:
+            return
+        self._bar_rows.remove(row)
+        self._bars_lay.removeWidget(row)
+        row.deleteLater()
+        self._after_bars_changed()
+
+    def _after_bars_changed(self) -> None:
+        self._run_check()
+        if self.layout() is not None:
+            QTimer.singleShot(0, lambda: self._fit_height(True))
+
+    def bars(self) -> Tuple[MaskBar, ...]:
+        """The bars as they are now (saved with the scene when the window closes, C-4)."""
+        return tuple(r.bar() for r in self._bar_rows)
+
+    def _on_rows(self) -> List[_BarRow]:
+        """The bars the Export writes (one bar: always it)."""
+        if len(self._bar_rows) == 1:
+            return list(self._bar_rows)
+        return [r for r in self._bar_rows if r.on.isChecked()]
+
+    def _bar_folder(self, row: _BarRow) -> Path:
+        base = Path(self.out.text().strip())
+        name = row.name.text().strip()
+        if len(self._bar_rows) == 1 or not name:
+            return base
+        return base.parent / f"{base.name}_{name}"
+
+    def _refresh_bars(self) -> None:
+        """Names on / off (C-7), colours from the preset (C-6), folders, name problems."""
+        one = len(self._bar_rows) == 1
+        p = self.preset()
+        black = p.object_black if p is not None else False
+        folders: dict = {}
+        for r in self._bar_rows:
+            folders.setdefault(self._bar_folder(r), []).append(r)
+        problems = []
+        for r in self._bar_rows:
+            r.name.setEnabled(not one)
+            r.remove.setEnabled(not one)
+            r.on.setVisible(not one)
+            r.set_default_invert(black)
+            name = r.name.text().strip()
+            bad = ""
+            if not one and any(ch in name for ch in BAD_NAME):
+                bad = f"“{name}” cannot be a folder name"
+            elif not one and len(folders[self._bar_folder(r)]) > 1:
+                bad = f"two masks go to {self._bar_folder(r).name}/: give them other names"
+            r.name.setStyleSheet("border: 1px solid #d03030;" if bad else "")
+            if bad and bad not in problems:
+                problems.append(bad)
+            inv = r.invert.isChecked()
+            r.folder.setText(f"→ {self._bar_folder(r).name}/ · Objects {'black' if inv else 'white'}"
+                             + ("" if one or r.on.isChecked() else " · off"))
+        self.name_problem = "; ".join(problems)
 
     def dataset_root(self) -> Optional[Path]:
         """The new dataset's folder, or None when writing into the scene (or not a preset)."""
@@ -584,24 +796,20 @@ class ExportDialog(QDialog):
         if d:
             self.dataset.setText(d)
 
-    def _folder(self, name: Optional[str]) -> Path:
-        base = Path(self.out.text().strip())
-        return base if name is None else base.parent / f"{base.name}_{name}"
-
     def _show_folders(self) -> None:
-        chosen = self._chosen()
-        self.delete_set_btn.setEnabled(self.mask.currentData() not in (None, self.EVERY))
-        if chosen == [None]:
+        """A trainer reads one folder: say so when a mask goes to another one."""
+        p = self.preset()
+        base = Path(self.out.text().strip())
+        other = [self._bar_folder(r).name for r in self._on_rows() if self._bar_folder(r) != base]
+        if p is None or not other:
             self.folders.setText("")
             self._files_form.setRowVisible(self.folders, False)
-        else:
-            self._files_form.setRowVisible(self.folders, True)
-            text = "Writes: " + " · ".join(f"{n or 'Final'} → {self._folder(n).name}/" for n in chosen)
-            p = self.preset()
-            if p is not None and any(n is not None for n in chosen):
-                text += (f" — {p.label} reads {p.folder}/ only: to train with a set, rename its folder"
-                         f" to {p.folder}/ (or pick the set's Objects and export the Final Mask)")
-            self.folders.setText(text)
+            return
+        self._files_form.setRowVisible(self.folders, True)
+        self.folders.setText(f"{p.label} reads {p.folder}/ only: to train with "
+                             + (f"{other[0]}/, rename it" if len(other) == 1
+                                else f"one of {', '.join(o + '/' for o in other)}, rename that one")
+                             + f" to {p.folder}/")
 
     def preset(self):
         return preset(self.target.currentData())
@@ -656,7 +864,7 @@ class ExportDialog(QDialog):
         p = self.preset()
         if self.out.isEnabled():
             self._custom_dir = self.out.text()  # keep what was typed for Custom
-        for w in (self.out, self.pattern, self.invert, self.empty):
+        for w in (self.out, self.pattern, self.empty):
             w.setEnabled(p is None)
         scene = p is not None and self._scene is not None
         new = scene and self.to_new.isChecked()
@@ -701,18 +909,17 @@ class ExportDialog(QDialog):
             if style is not None and style != p.pattern:  # the scene's masks are named the other way: follow them
                 pattern, follows = style, f"File names follow the masks already in {p.folder}/ ({style}). "
             self.pattern.setCurrentIndex([v for _, v in self.PATTERNS].index(pattern))
-            self.invert.setChecked(p.object_black)
             self.empty.setChecked(p.every_image)
-            self.names_fixed.setText(f"{pattern} · Objects {'black' if p.object_black else 'white'}"
-                                     + (" · every image" if p.every_image else " · images with a mask")
+            self.names_fixed.setText(pattern + (" · every image" if p.every_image else " · images with a mask")
                                      + (" (as the masks there)" if follows else ""))
             self.note.setText(f"{p.note} {follows}Masks already there for these images (a.png or a.jpg.png) are "
                               f"moved to {p.folder}_backup_<time>/ first. Checked against: {p.verified}.")
             head = _first_sentence(p.note)
             self.note_head.setText(head)
-            opened = self._open["note"]
+            opened = self._open["note"] or not p.confirmed  # rules not confirmed: all of it, from the start
             self.note_head.setVisible(not opened)
             self.note.setVisible(opened)
+            self.note_more.setVisible(p.confirmed)
             self.note_more.setText(f"<a href='more'>{'Less ▴' if opened else 'More ▸'}</a>")
         self._run_check()
 
@@ -736,22 +943,14 @@ class ExportDialog(QDialog):
             return None
         return existing_style(self._scene.root / p.folder, self._check(p.pattern).keys)
 
-    def _run_check(self) -> None:
-        self._show_folders()
-        if self._check is None:
-            self._set_button(None)
-            return
-        name = self._chosen()[0] if len(self._chosen()) == 1 else None  # Every set: the Final Mask's check
-        pattern = self.PATTERNS[self.pattern.currentIndex()][1]
-        c = self._check(pattern) if name is None else self._check(pattern, list(self._sets[name]))
-        self.check_result = c
+    def _check_bar(self, pattern: str, b: MaskBar) -> ExportCheck:
+        if b.flipped:
+            return self._check(pattern, None if b.ids is None else list(b.ids), list(b.flipped))
+        return self._check(pattern) if b.ids is None else self._check(pattern, list(b.ids))
 
-        def line(ok: bool, text: str) -> str:
-            color = "#2a8a2a" if ok else "#d78200"
-            return f"<span style='color: {color}'>{'✓' if ok else '⚠'}</span> {text}"
-
-        missing = len(c.without_mask)
-        written = len(c.with_mask) + len(c.empty) + (missing if self.empty.isChecked() else 0)
+    def _written(self, c: ExportCheck) -> int:
+        """The files one mask writes."""
+        written = len(c.with_mask) + len(c.empty) + (len(c.without_mask) if self.empty.isChecked() else 0)
         if self.dataset_root() is not None and self.empty.isChecked():
             written = c.images - self._excluded  # a new dataset holds the kept frames only
         v = self.views()
@@ -759,46 +958,97 @@ class ExportDialog(QDialog):
             written *= self._kept_views(v)  # one mask per view (a fisheye's unfillable views are not made)
         elif isinstance(v, Stitch):
             written = len(self._groups)  # one mask per moment (a moment with a ⊘ image is left out)
-        rows = [
-            f"<b>{written:,}</b> file(s) will be written for <b>{c.images:,}</b> image(s)",
-            line(missing == 0 or self.empty.isChecked(), f"Images without a mask: {missing}"
-                 + ("" if missing == 0 else " (written all white: nothing ignored there)" if self.empty.isChecked()
-                    else " (no file — see “Also write empty masks”)")),
-            line(not c.empty, f"Empty masks: {len(c.empty)}"),
-            line(not c.warning, f"Suspicious / failed frames (⚠ ✕): {len(c.warning)}"),
-            line(not c.clashes, "File names: " + ("OK" if not c.clashes else f"{len(c.clashes)} clash(es)")),
-        ]
+        return written
+
+    def _run_check(self) -> None:
+        self._refresh_bars()
+        self._show_folders()
+        rows_on = self._on_rows()
+        if self._check is None or not rows_on:
+            if not rows_on:
+                self.summary.setText("No mask is on: tick one above")
+                self.problems.clear()
+                self.problems.setVisible(False)
+            self._set_button(None if rows_on else 0)
+            return
+        pattern = self.PATTERNS[self.pattern.currentIndex()][1]
+        results = [(r, self._check_bar(pattern, r.bar())) for r in rows_on]
+        results = [(r, c, self._written(c)) for r, c in results]
+        c = results[0][1]
+        self.check_result = c
+        total = sum(w for _r, _c, w in results)
+
+        def line(ok: bool, text: str) -> str:
+            color = "#2a8a2a" if ok else "#d78200"
+            return f"<span style='color: {color}'>{'✓' if ok else '⚠'}</span> {text}"
+
+        many = len(results) > 1
+        rows = [f"<b>{total:,}</b> file(s) will be written" + (f" in <b>{len(results)}</b> folders" if many else "")
+                + f" for <b>{c.images:,}</b> image(s)"]
+        if not many:
+            missing = len(c.without_mask)
+            rows += [
+                line(missing == 0 or self.empty.isChecked(), f"Images without a mask: {missing}"
+                     + ("" if missing == 0 else " (written all white: nothing ignored there)" if self.empty.isChecked()
+                        else " (no file — see “Also write empty masks”)")),
+                line(not c.empty, f"Empty masks: {len(c.empty)}"),
+                line(not c.warning, f"Suspicious / failed frames (⚠ ✕): {len(c.warning)}"),
+                line(not c.clashes, "File names: " + ("OK" if not c.clashes else f"{len(c.clashes)} clash(es)")),
+            ]
+        else:
+            for r, cb, w in results:
+                issues = [f"{len(cb.without_mask)} without a mask" for _ in (1,)
+                          if cb.without_mask and not self.empty.isChecked()]
+                issues += [f"{len(cb.empty)} empty" for _ in (1,) if cb.empty]
+                issues += [f"{len(cb.warning)} ⚠ ✕" for _ in (1,) if cb.warning]
+                issues += [f"{len(cb.clashes)} name clash(es)" for _ in (1,) if cb.clashes]
+                rows.append(line(not issues, f"{self._bar_folder(r).name}/: {w:,} file(s)"
+                                 + "".join(f" · {i}" for i in issues)))
+        p = self.preset()
+        if p is not None:  # a bar's colours against the trainer's (C-6): said, not changed
+            for r, _c, _w in results:
+                if r.invert.isChecked() != p.object_black:
+                    mine = "black" if r.invert.isChecked() else "white"
+                    rows.append(line(False, f"{self._bar_folder(r).name}/: Objects {mine} — {p.label} ignores the "
+                                            f"{'black' if p.object_black else 'white'} parts, so these Objects are "
+                                            "trained and the rest ignored"))
+        if self.name_problem:
+            rows.append(line(False, self.name_problem))
         rows += self._scene_rows(line)
         self.summary.setText("<br>".join(rows))
         self.problems.clear()
-        reasons = (
-            (set() if self.empty.isChecked() else set(c.without_mask), "no mask → no file"),
-            (set(c.empty), "empty mask"),
-            (set(c.warning), "suspicious or failed (⚠ ✕)"),
-            ({k for ks in c.clashes for k in ks}, "file name clash"),
-        )
+        found: dict = {}
+        for r, cb, _w in results:
+            reasons = (
+                (set() if self.empty.isChecked() else set(cb.without_mask), "no mask → no file"),
+                (set(cb.empty), "empty mask"),
+                (set(cb.warning), "suspicious or failed (⚠ ✕)"),
+                ({k for ks in cb.clashes for k in ks}, "file name clash"),
+            )
+            where = f"{self._bar_folder(r).name}/: " if many else ""
+            for k in cb.problems:
+                why = ", ".join(t for ks, t in reasons if k in ks)
+                if why:  # only "no mask", and those are written all white: not listed
+                    found.setdefault(k, []).append(where + why)
         index = {k: i for i, k in enumerate(c.keys)}
-        for k in c.problems:
-            why = ", ".join(r for ks, r in reasons if k in ks)
-            if not why:
-                continue  # only "no mask", and those are written all white
-            self.problems.addItem(f"{index[k] + 1}  {k}  —  {why}")
+        for k in sorted(found, key=lambda k: index.get(k, 0)):
+            self.problems.addItem(f"{index.get(k, 0) + 1}  {k}  —  {'; '.join(found[k])}")
             self.problems.item(self.problems.count() - 1).setData(Qt.ItemDataRole.UserRole, k)
         self.problems.setVisible(self.problems.count() > 0)
-        self._set_button(written)
+        self._set_button(total)
         if self.layout() is not None:
             QTimer.singleShot(0, self._fit_height)  # the summary may have more lines now
 
     def _set_button(self, written: Optional[int]) -> None:
-        """Export N files → where (EX-12); nothing to write: off."""
-        chosen = self._chosen()
+        """Export N files → where (EX-12); nothing to write or a bad name: off."""
+        rows = self._on_rows()
         root = self.dataset_root()
-        to = (f"{len(chosen)} folders" if len(chosen) > 1
+        to = (f"{len(rows)} folders" if len(rows) > 1
               else "new dataset" if root is not None
-              else f"{self._folder(chosen[0]).name}/")
-        count = "" if written is None or len(chosen) > 1 else f" {written:,} file{'s' if written != 1 else ''}"
-        self.export_btn.setText(f"Export{count} → {to}")
-        self.export_btn.setEnabled(written != 0)
+              else f"{self._bar_folder(rows[0]).name}/" if rows else "")
+        count = "" if written is None else f" {written:,} file{'s' if written != 1 else ''}"
+        self.export_btn.setText(f"Export{count} → {to}" if rows else "Export")
+        self.export_btn.setEnabled(written != 0 and bool(rows) and not self.name_problem)
 
     def _scene_rows(self, line) -> List[str]:
         """The scene's side of the check: cameras the trainer may not read, files to be backed up."""
@@ -825,12 +1075,12 @@ class ExportDialog(QDialog):
         elif sc.camera_models:
             rows.append(line(not odd, "Cameras: " + ", ".join(sc.camera_models)
                              + (f" ({', '.join(odd)}: not confirmed for {p.label})" if odd else "")))
-        out = Path(self.out.text().strip())
         c = getattr(self, "check_result", None)
-        if c is not None and out.is_dir():
-            n = len(mask_files(out, c.keys))
-            if n:
-                rows.append(line(False, f"{n} file(s) in {out.name}/ will be moved to {out.name}_backup_…/ first"))
+        for out in dict.fromkeys(self._bar_folder(r) for r in self._on_rows()):
+            if c is not None and out.is_dir():
+                n = len(mask_files(out, c.keys))
+                if n:
+                    rows.append(line(False, f"{n} file(s) in {out.name}/ will be moved to {out.name}_backup_…/ first"))
         return rows
 
     def _open_problem(self, item) -> None:
@@ -843,19 +1093,21 @@ class ExportDialog(QDialog):
             self.out.setText(d)
 
     def jobs(self) -> List[ExportOptions]:
-        """One export per chosen mask (the Final Mask and / or mask sets), each in its own folder."""
-        return [
-            ExportOptions(
-                out_dir=self._folder(name),
+        """One export per bar that is on, each in its own folder."""
+        jobs = []
+        for r in self._on_rows():
+            b = r.bar()
+            jobs.append(ExportOptions(
+                out_dir=self._bar_folder(r),
                 name_pattern=self.PATTERNS[self.pattern.currentIndex()][1],
-                invert=self.invert.isChecked(),
+                invert=r.invert.isChecked(),
                 include_empty=self.empty.isChecked(),
                 backup=self.preset() is not None,
-                object_ids=None if name is None else list(self._sets[name]),
+                object_ids=None if b.ids is None else list(b.ids),
+                flipped=list(b.flipped),
                 sky_edges=not self.sky_edges.isHidden() and self.sky_edges.isChecked(),
-            )
-            for name in self._chosen()
-        ]
+            ))
+        return jobs
 
     def options(self) -> ExportOptions:
         return self.jobs()[0]

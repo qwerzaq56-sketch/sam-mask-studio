@@ -25,6 +25,7 @@ class Preset:
     verified: str = ""
     unconfirmed_cameras: Tuple[str, ...] = ()  # camera models this trainer is not known to read
     either_name: bool = True  # reads a.png as well as a.jpg.png: into a scene, follow the masks already there
+    confirmed: bool = True  # False: a rule is not confirmed yet; the Export window shows the whole note from the start
 
 
 PRESETS: Tuple[Preset, ...] = (
@@ -55,6 +56,7 @@ PRESETS: Tuple[Preset, ...] = (
         verified="Postshot User Guide (Image Set > Mask Mode); how files pair with images is not documented — "
                  "named like the images (a.png), check that they pair",
         either_name=False,
+        confirmed=False,
     ),
     Preset(
         "colmap", "COLMAP (feature extraction)",
