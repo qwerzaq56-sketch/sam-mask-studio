@@ -1,3 +1,5 @@
+> 2026-10-09부터 원본은 기획서(https://claude.ai/artifact/KR4Z6dSqVn8dcsBHxpKAB7)의 SAM Mask Studio 아래 **오토 툴 수칙** 페이지(`auto.html`, 원본 `F:\Claude\Docs\workflow-site\scripts\sms\auto.body.html`)입니다. 이 파일은 그 시점으로 얼린 기록이라 더 고치지 않습니다.
+
 # 오토 툴 수칙 (제안서)
 
 Edit Layer의 오토 툴(Object Fill · Fill Holes · Remove Specks · Grow · Shrink · Close Gaps · Invert · By Color)이 켜지고, 미리보이고,

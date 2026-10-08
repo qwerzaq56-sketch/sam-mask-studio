@@ -1,3 +1,5 @@
+> 2026-10-09부터 원본은 기획서(https://claude.ai/artifact/KR4Z6dSqVn8dcsBHxpKAB7)의 SAM Mask Studio 아래 **편집 도구 · 미리보기 공통 수칙** 페이지(`rules.html`, 원본 `F:\Claude\Docs\workflow-site\scripts\sms\rules.body.html`)입니다. 이 파일은 그 시점으로 얼린 기록이라 더 고치지 않습니다.
+
 # 편집 도구 · 미리보기 공통 수칙 (제안서)
 
 Edit Layer 패널, 오토 툴, Mask Preview를 고칠 때 지키는 공통 규칙입니다. `v0.4-p68`~`p88`에서 사용자 피드백으로

@@ -1,3 +1,5 @@
+> 2026-10-09부터 원본은 기획서(https://claude.ai/artifact/KR4Z6dSqVn8dcsBHxpKAB7)의 SAM Mask Studio 아래 **By Color 동작과 피드백** 페이지(`bycolor.html`, 원본 `F:\Claude\Docs\workflow-site\scripts\sms\bycolor.body.html`)입니다. 이 파일은 그 시점으로 얼린 기록이라 더 고치지 않습니다.
+
 # By Color: 선택 규칙과 현재 동작 (피드백용)
 
 By Color 오토 툴이 무엇을 A / B로 고르고, 어떻게 넣고 빼는지입니다(`v0.4-p88` 기준). 켜기 · Fill / Paint · 적용 · 나가기처럼
