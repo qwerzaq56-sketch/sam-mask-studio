@@ -203,3 +203,90 @@ def test_person_keyframes_option(frames, tmp_path, monkeypatch):
     r = json.loads(rep.read_text(encoding="utf-8"))
     assert r["settings"]["keyframes"] == 5 and r["keyframe_count"] == 2 and r["written"] == 2
     assert not read(out / "cam0" / "00001.jpg.png")[150, 150]
+
+
+def test_split_people_tells_the_photographer_apart():
+    from src.core.people import split_people
+
+    s = (100, 100)
+    dets = [
+        Det("person", 0.9, box(s, 30, 60, 40, 60)),  # holds the pole
+        Det("black pole", 0.8, box(s, 60, 100, 48, 52)),
+        Det("bag", 0.6, box(s, 40, 50, 60, 66)),  # theirs
+        Det("person", 0.9, box(s, 20, 40, 5, 15)),  # someone walking by
+        Det("bag", 0.6, box(s, 30, 36, 15, 20)),  # theirs
+        Det("hand", 0.7, box(s, 0, 4, 45, 55)),  # fingers on the lens rim
+        Det("hand", 0.7, box(s, 25, 30, 7, 12)),  # the passer-by's own hand, covered by them
+        Det("hand", 0.7, box(s, 50, 55, 82, 87)),  # a hand no person covers
+    ]
+    me, others = split_people(dets, s, hands=("hand",))
+    assert me[45, 50] and me[80, 50] and me[45, 63] and me[1, 50]
+    assert not me[30, 10] and not me[33, 17] and not me[52, 84]
+    assert others[30, 10] and others[33, 17] and others[52, 84] and not others[45, 50]
+    assert not (me & others).any()
+    # no pole found: the person reaching the bottom is the photographer
+    me, others = split_people([Det("person", 0.9, box(s, 50, 100, 30, 70)), Det("person", 0.9, box(s, 10, 30, 5, 15))],
+                              s, hands=())
+    assert me[90, 50] and others[20, 10] and not me[20, 10]
+    # as one mask, the same as people_mask
+    assert ((me | others) == people_mask([Det("person", 0.9, box(s, 50, 100, 30, 70)),
+                                          Det("person", 0.9, box(s, 10, 30, 5, 15))], s, grow=0)).all()
+
+
+class SplitEngine(FakeEngine):
+    asked = []
+
+    def detect_many(self, image, labels):
+        SplitEngine.asked.append(tuple(labels))
+        h, w = image.shape[:2]
+        out = super().detect_many(image, labels)
+        if "person" in labels:  # someone far from the pole, top right
+            out.append(Det("person", 0.9, box((h, w), h // 8, h // 4, 3 * w // 4, 7 * w // 8)))
+        return out
+
+
+def test_person_split_writes_the_others_apart(frames, tmp_path, monkeypatch):
+    images, model = frames
+    monkeypatch.setattr(cli, "_engine", lambda model, device: SplitEngine())
+    SplitEngine.asked = []
+    out, rest, rep = tmp_path / "people", tmp_path / "others", tmp_path / "p.json"
+    assert cli.main(["person", str(images), "--out", str(out), "--recursive", "--model", str(model),
+                     "--split", str(rest), "--report", str(rep)]) == 0
+    assert "hand" in SplitEngine.asked[0]
+    m = read(out / "cam0" / "00000.jpg.png")
+    o = read(rest / "cam0" / "00000.jpg.png")
+    assert not m[150, 150] and not m[300, 140] and m[75, 325]  # the photographer and the pole only
+    assert not o[75, 325] and o[150, 150] and o[300, 140]  # black = the one walking by
+    r = json.loads(rep.read_text(encoding="utf-8"))
+    assert r["settings"]["split"] == str(rest) and r["settings"]["hands"] == ["hand"]
+    assert r["frames"]["cam0/00000.jpg"]["others"] > 0
+    with pytest.raises(SystemExit, match="already in"):  # an existing others folder is never overwritten
+        cli.main(["person", str(images), "--out", str(tmp_path / "p2"), "--recursive", "--model", str(model),
+                  "--split", str(rest)])
+    assert cli.main(["person", str(images), "--out", str(tmp_path / "p3"), "--recursive", "--model", str(model),
+                     "--split", str(tmp_path / "o3"), "--hands", ""]) == 0
+    assert "hand" not in SplitEngine.asked[-1]
+
+
+def test_person_split_with_keyframes_propagates_both(tmp_path, monkeypatch):
+    from tests.fakes import fake_propagate
+
+    class TwoEngine(FakeEngine):
+        def detect_many(self, image, labels):
+            h, w = image.shape[:2]
+            return [Det("person", 0.9, box((h, w), 10, 40, 40, 60)), Det("black pole", 0.8, box((h, w), 40, 100, 48, 52)),
+                    Det("person", 0.9, box((h, w), 10, 20, 80, 90))]
+
+    monkeypatch.setattr(cli, "_engine", lambda model, device: TwoEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    images = tmp_path / "images"
+    images.mkdir()
+    for i in range(5):
+        cv2.imencode(".jpg", np.full((100, 100, 3), 100, np.uint8))[1].tofile(str(images / f"{i:05d}.jpg"))
+    out, rest = tmp_path / "people", tmp_path / "others"
+    rep = cli.person_folder(images, out, labels=["person", "black pole"], attach=[], grow=0, max_side=100,
+                            keyframes=4, propagate=fake_propagate, split=rest, hands=(), log=lambda s: None)
+    assert rep["written"] == 5 and rep["frames"]["00002.jpg"]["from_keyframes"] == 2
+    m, o = read(out / "00002.jpg.png"), read(rest / "00002.jpg.png")
+    assert not m[20, 50] and not m[70, 50] and m[15, 85]  # propagated, still apart
+    assert not o[15, 85] and o[20, 50]
