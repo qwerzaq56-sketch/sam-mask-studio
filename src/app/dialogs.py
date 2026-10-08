@@ -124,6 +124,12 @@ class SettingsDialog(QDialog):
         form.addRow("SAM3 checkpoint", _path_row(self.sam3, lambda: self._pick(self.sam3)))
         form.addRow("Sky model (ONNX)", _path_row(self.sky, lambda: self._pick(self.sky)))
         form.addRow("Working max side (px)", self.max_side)
+        self.cpu = QCheckBox("Run SAM on the CPU")
+        self.cpu.setChecked(settings.use_cpu)
+        self.cpu.setToolTip("SAM2 (clicks, propagation, the sky finish) and SAM3 (Detect) run on the CPU: the GPU "
+                            "is left to a training. Much slower (SAM2 about 10x, SAM3 more); brushes are the same. "
+                            "For one time only: start the app with --cpu (SAM Mask Studio (CPU).bat)")
+        form.addRow("", self.cpu)
         note = QLabel(
             "Masks are edited at the working resolution and upsampled on export.\nApplies to folders without a saved project."
         )
@@ -146,6 +152,7 @@ class SettingsDialog(QDialog):
         settings.sam3_checkpoint = self.sam3.text().strip()
         settings.sky_checkpoint = self.sky.text().strip()
         settings.max_side = self.max_side.value()
+        settings.use_cpu = self.cpu.isChecked()
 
 
 class OptionsDialog(QDialog):

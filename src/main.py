@@ -16,6 +16,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SAM Mask Studio — SAM3 finds, SAM2 cuts and refines")
     parser.add_argument("folder", nargs="?", help="Image folder to open")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--cpu", action="store_true",
+                        help="Run SAM2 / SAM3 on the CPU this time (leaves the GPU to a training; much slower)")
     args = parser.parse_args()
     configure_logging(debug=args.debug)
     install_qt_message_handler()  # Qt warnings into the log, never straight to the console
@@ -28,7 +30,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("SAM Mask Studio")
     app.setApplicationVersion(app_version())
-    window = MainWindow()
+    window = MainWindow(cpu=args.cpu)
     window.show()
     if args.folder:
         window.open_folder(Path(args.folder))

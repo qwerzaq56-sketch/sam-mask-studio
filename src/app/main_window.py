@@ -98,10 +98,10 @@ HOVER_KEYS = {
 }
 
 
-def default_engine_factory(settings: Settings):
+def default_engine_factory(settings: Settings, device: str = "cuda"):
     from src.engine.inference import InferenceEngine
 
-    return InferenceEngine(settings.sam2_checkpoint, settings.sam3_checkpoint or None)
+    return InferenceEngine(settings.sam2_checkpoint, settings.sam3_checkpoint or None, device=device)
 
 
 def default_propagate():
@@ -118,9 +118,11 @@ class MainWindow(QMainWindow):
         engine_factory: Callable = default_engine_factory,
         propagate_fn: Optional[Callable] = None,
         settings_path: Path = DEFAULT_PATH,
+        cpu: bool = False,
     ):
         super().__init__()
         self.settings = settings or Settings.load(settings_path)
+        self._cpu_arg = cpu  # main.py --cpu: the CPU this time, whatever Settings says
         self.settings_path = settings_path
         self.engine_factory = engine_factory
         self.propagate_fn = propagate_fn
@@ -145,7 +147,7 @@ class MainWindow(QMainWindow):
         self._pick_at: dict = {}  # ("in" / "out", rgb) -> (image key, x, y) where By Color's color was taken
         self._loading_models = False
 
-        self.setWindowTitle(f"SAM Mask Studio {app_version()}")
+        self.setWindowTitle(f"SAM Mask Studio {app_version()}{self._cpu_tag()}")
         self.resize(1500, 950)
         self._build_ui()
         self._build_actions()
@@ -1047,7 +1049,8 @@ class MainWindow(QMainWindow):
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.scene = find_scene(folder)
-        self.setWindowTitle(f"SAM Mask Studio {app_version()} — {folder}" + (" (COLMAP scene)" if self.scene else ""))
+        self.setWindowTitle(f"SAM Mask Studio {app_version()}{self._cpu_tag()} — {folder}"
+                            + (" (COLMAP scene)" if self.scene else ""))
         loaded = len(self.session.project.objects)
         self.log(f"Opened {folder} ({n} images" + (f", {loaded} saved Objects)" if loaded else ")"))
         if self.scene is not None:
@@ -1431,9 +1434,17 @@ class MainWindow(QMainWindow):
             freed.append(True)
             return True
 
-        BatchMaskDialog(s.image_dir, scene, free_models, self, self.settings.color_presets).exec()
+        BatchMaskDialog(s.image_dir, scene, free_models, self, self.settings.color_presets,
+                        cpu=self.device() == "cpu").exec()
         if freed and s.image_dir is not None:
             self.ensure_models()
+
+    def device(self) -> str:
+        """Where SAM2 / SAM3 run: cpu with Settings' "Run SAM on the CPU" or main.py --cpu (p120), else cuda."""
+        return "cpu" if self._cpu_arg or self.settings.use_cpu else "cuda"
+
+    def _cpu_tag(self) -> str:
+        return " (CPU)" if self.device() == "cpu" else ""
 
     def ensure_models(self) -> None:
         """Create the engine and load SAM2 in the background (SAM3 loads on first Detect)."""
@@ -1448,8 +1459,10 @@ class MainWindow(QMainWindow):
         s.defer_prompts = True  # points / boxes made meanwhile are kept and run when SAM2 is ready
         engine = s.engine
 
+        device = self.device()
+
         def load():
-            e = engine or self.engine_factory(self.settings)
+            e = engine or self.engine_factory(self.settings, device)
             e.load_sam2()
             return e
 
@@ -1459,7 +1472,8 @@ class MainWindow(QMainWindow):
             s.engine = e
             if s.image is not None:
                 e.set_image(s.image)
-            self.log(f"SAM2 loaded on {getattr(e, 'device', '?')}")
+            self.log(f"SAM2 loaded on {getattr(e, 'device', '?')}"
+                     + (" (Run SAM on the CPU: the GPU is left free, clicks are slower)" if device == "cpu" else ""))
             n = s.run_pending()
             if n:
                 self.log(f"Applied the points made while SAM2 was loading ({n} mask(s))")
@@ -2241,6 +2255,8 @@ class MainWindow(QMainWindow):
         if not SKY_SAM2.is_file():
             self.warn(f"The sky finish needs SAM2 tiny, which is not there:\n{SKY_SAM2}")
             return None
+        if self.device() == "cpu":  # not even asking the GPU (that alone takes some of its memory)
+            return "cpu"
         free = self.gpu_free_gb()
         if free is None:
             self.log("No CUDA GPU: SAM2 finishes the sky on the CPU (about 10x slower)")
@@ -2733,7 +2749,7 @@ class MainWindow(QMainWindow):
     def _run_propagation(self, plan: PropagationPlan, seeds) -> None:
         s = self.session
         propagate = self.propagate_fn or default_propagate()
-        ckpt, paths, max_side = self.settings.sam2_checkpoint, list(s.paths), s.max_side
+        ckpt, paths, max_side, device = self.settings.sam2_checkpoint, list(s.paths), s.max_side, self.device()
 
         self.close_tool()
         s.finish_editing()
@@ -2749,7 +2765,7 @@ class MainWindow(QMainWindow):
         self.propagation_panel.set_resumable(False)
 
         def run(cancel, progress):
-            return propagate(ckpt, paths, plan, seeds, max_side, cancel=cancel, progress=progress)
+            return propagate(ckpt, paths, plan, seeds, max_side, device=device, cancel=cancel, progress=progress)
 
         w = PropagationWorker(run, self)
         w.progress.connect(self.propagation_panel.on_progress)
@@ -3106,11 +3122,15 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec() != SettingsDialog.DialogCode.Accepted:
             return
-        old = (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint)
+        old = (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint, self.device())
         dlg.apply(self.settings)
         self.settings.save(self.settings_path)
+        if self.device() != old[2]:
+            self.log(f"SAM2 / SAM3 now run on the {'CPU' if self.device() == 'cpu' else 'GPU'}")
+            self.setWindowTitle(self.windowTitle().replace(" (CPU)", "").replace(
+                f"SAM Mask Studio {app_version()}", f"SAM Mask Studio {app_version()}{self._cpu_tag()}", 1))
         if (
-            old != (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint)
+            old != (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint, self.device())
             and not self._busy
             and not self._loading_models
         ):
