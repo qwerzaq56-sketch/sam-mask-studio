@@ -122,16 +122,6 @@
   겹침 계산은 고도가 같은 뷰끼리의 가장 가까운 yaw 간격 + 고도 사이 간격으로 일반화(360 배치 값은 전과 같음).
 - 목록은 변환 종류에 따라 다시 채움(고른 배치는 종류마다 기억). 평범한 Pinhole 원본은 목록 없이 격자.
 
-### 8.4 가상 카메라 배치 그림 (`v0.4-p124`)
-
-사용자 요청(10-08): “핀홀 변환 시 가상 퍼스펙 카메라 배치가 어떻게 되는지 가독성 좋은 참고 이미지 필수”.
-
-- Export 창: 지도(`ViewPreview`) 옆에 `RigPreview`(190 px): 구 위에 뷰마다 타일(이미지의 네 모서리, 실제 FOV의 0.42배로 줄여 이웃과 떨어지게),
-  중심에서 점선, 번호는 지도 점 옆 번호와 같음. 색 = 줄(위 > 10° 주황, 수평 파랑, 아래 < −10° 초록, 빠지는 뷰 회색 점선). 지도 윤곽도 같은 색.
-  시점: 원본 앞쪽 왼편 위(방위 330°, 고도 30°). 뒤쪽 타일은 흐리게. 피시아이 = 렌즈 끝(정면 90° 원), 카메라 짝 = 두 렌즈가 만나는 원을 빨강.
-  (뒤에서 본 시점도 시험했으나 정면 뷰들이 멀고 겹쳐 읽기 어려웠음.)
-- 참고 그림: `python tools/layout_pictures.py [폴더] [--fov 90]` → `layout_<배치>.png`(1100 × 512, 지도 + 3D + 색 설명). 매뉴얼 C8 · C9에 넣음.
-
 ### 8.3 카메라 짝 → Pinhole (`v0.4-p122`, 기획 Export 10장 C-10 (a))
 
 - 변환 목록 **Pinhole views from camera pairs (N moments)**: 한 순간(리그의 렌즈들)을 구 하나로 보고 360 배치 목록(8.1)을 씀.
@@ -148,4 +138,14 @@
 [LichtFeld 360 plugin](https://github.com/alexmgee/lichtfeld-360-plugin) ·
 [OmniGS (WACV 2025)](https://openaccess.thecvf.com/content/WACV2025/papers/Li_OmniGS_Fast_Radiance_Field_Reconstruction_using_Omnidirectional_Gaussian_Splatting_WACV_2025_paper.pdf) ·
 [ODGS (NeurIPS 2024)](https://papers.nips.cc/paper_files/paper/2024/file/6882dbdc34bcd094e6f858c06ce30edb-Paper-Conference.pdf)
+
+### 8.4 가상 카메라 배치 그림 (`v0.4-p124`)
+
+사용자 요청(10-08): “핀홀 변환 시 가상 퍼스펙 카메라 배치가 어떻게 되는지 가독성 좋은 참고 이미지 필수”.
+
+- Export 창: 지도(`ViewPreview`) 옆에 `RigPreview`(190 px): 구 위에 뷰마다 타일(이미지의 네 모서리, 실제 FOV의 0.42배로 줄여 이웃과 떨어지게),
+  중심에서 점선, 번호는 지도 점 옆 번호와 같음. 색 = 줄(위 > 10° 주황, 수평 파랑, 아래 < −10° 초록, 빠지는 뷰 회색 점선). 지도 윤곽도 같은 색.
+  시점: 원본 앞쪽 왼편 위(방위 330°, 고도 30°). 뒤쪽 타일은 흐리게. 피시아이 = 렌즈 끝(정면 90° 원), 카메라 짝 = 두 렌즈가 만나는 원을 빨강.
+  (뒤에서 본 시점도 시험했으나 정면 뷰들이 멀고 겹쳐 읽기 어려웠음.)
+- 참고 그림: `python tools/layout_pictures.py [폴더] [--fov 90]` → `layout_<배치>.png`(1100 × 512, 지도 + 3D + 색 설명). 매뉴얼 C8 · C9에 넣음.
 
