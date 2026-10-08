@@ -3048,10 +3048,10 @@ class MainWindow(QMainWindow):
         def work():
             if views is not None:  # converted cameras: images, masks and model together (docs/specs/08)
                 masks = [MaskJob(o.out_dir, o.name_pattern, o.invert, o.include_empty,
-                                 lambda k, ids=o.object_ids, sky=o.sky_edges: full_mask(
+                                 lambda k, ids=o.object_ids, sky=o.sky_edges, flip=o.flipped: full_mask(
                                      s.project, k, s.original_size, ids,
                                      (lambda key: read_rgb(s.image_dir / key)) if sky else None,
-                                     s.finished_sky_full))
+                                     s.finished_sky_full, flip))
                          for o in jobs]
                 if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
                     groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]

@@ -809,6 +809,13 @@
 - 확인한 것: 세트 하나 `Export 186 files → masks_people/`, Every set `Export → 3 folders`와 폴더 목록, 360 장면 `COLMAP Overlap · 12 Views … → 12 views`, 버튼 `Export 564 files → new dataset`(49 − ⊘ 2 = 47장 × 12).
 - 테스트 1개(Every set 이름이 다 보임, 요약 줄에 빈 공간 없음). 전체 285 통과.
 
+## 117단계 (`v0.4-p117`): 내보내기 세트 1 — 바 데이터, 바 / Object별 Invert 계산
+
+- 사용자 결정(10-08, 기획서 Export 9장): 여러 마스크를 바로 쌓아 내보내기. 바마다 Invert, 바 안에서 Object마다 ⇆ Invert(C-8 (a)). Remove / Keep 같은 뜻 라벨은 두지 않음(마스크는 흑백 데이터).
+- `MaskBar`(이름, Objects — None = 체크된 Objects, Invert — None = 프리셋 값, 뒤집을 Objects, 켬): 작업 파일 `mask_bars`에 저장, Undo 한 단계. 아직 바가 없으면 Final + 옛 세트(꺼짐)로 시작(`bars_or_default`).
+- 계산 순서: ① ⇆ Object는 원본 해상도로 만든 뒤(Sky 경계 포함) 뒤집음, 그 이미지에 마스크가 없으면 이미지 전체 ② 합집합 ③ 바의 Invert. 원본 Object 마스크는 그대로. `full_mask` · `final_mask` · `keys_with_masks` · `check_export` · `ExportOptions.flipped`, 변환 Export(Pinhole / 360)도 같은 계산.
+- 테스트 3개(중간 마스크를 따로 계산해 대조, 쓴 PNG 픽셀, 저장 / 불러오기 / Undo). 전체 288 통과. 창(바 UI)은 다음 단계.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
