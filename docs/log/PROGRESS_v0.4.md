@@ -864,6 +864,14 @@
 - `ExportDialog(preview=, preview_frame=, preview_size=)`, main_window가 `full_mask`를 작은 크기로 넘김(⇆ 규칙 같음), (Objects, ⇆)마다 캐시하고 Invert는 뒤집기만. Sky 가장자리 다시 정하기는 미리보기에 없음.
 - 테스트 1개(줄 미리보기 = full_mask 합집합, 한 Object, Invert = 뒤집힘, ⇆ + Invert, 썸네일 픽셀이 따라감, preview 없으면 숨김). 전체 295 통과.
 
+## 124단계 (`v0.4-p124`): 가상 카메라 배치 그림 (Export 창 + 참고 그림)
+
+- 사용자 요청(10-08): “실제로 핀홀 변환 시 가상 퍼스펙 카메라 배치가 어떻게 되는지 가독성 좋은 참고 이미지 필수”.
+- Export 창 지도 옆에 3D 그림(`RigPreview`): 구 위 번호 타일(지도와 같은 번호 · 줄 색), 앞쪽 왼편 위 시점, front / right / up 표시, 피시아이 렌즈 끝 · 카메라 짝 이음 원은 빨강. 지도도 줄 색 + 번호.
+- `tools/layout_pictures.py`: 배치 7개의 참고 그림(지도 + 3D + 설명) → `docs/manual/img/layout_*.png`, 매뉴얼 C8 · C9 · C10 · D, specs/08 8.4.
+- 시점은 뒤에서 / 앞에서 6가지를 그려 비교해 정함(뒤에서는 정면 뷰가 겹쳐 안 읽힘).
+- 테스트: 타일 방향 · 프러스텀 크기 · 색, 참고 그림 7장, Export 창의 3D 그림 원본 종류(360 / fisheye / pairs). 전체 296 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

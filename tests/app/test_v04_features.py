@@ -1155,6 +1155,7 @@ def test_erp_scene_to_a_pinhole_dataset(qapp, win, tmp_path, monkeypatch):
     dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
     assert dlg.view_layout.currentData() == "colmap12" and len(dlg.views().pairs()) == 12  # p57: COLMAP's layout
     assert "12 views" in dlg.layout_note.text() and len(dlg.view_preview._views) == 12  # p58: note + map
+    assert len(dlg.rig_preview._views) == 12 and dlg.rig_preview._source == "360"  # p124: as cameras in 3D
     dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("rings16"))
     assert len(dlg.view_preview._views) == 16 and "overlap" in dlg.layout_note.text()
     dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("colmap12"))
@@ -1226,7 +1227,8 @@ def test_fisheye_scene_lists_the_lens_layouts(qapp, win, tmp_path, monkeypatch):
         v = dlg.views()
         assert isinstance(v, Views) and len(v.pairs()) == n
         assert dlg._kept_views(v) == n and "left out" not in dlg.layout_note.text()  # all inside the lens
-        assert len(dlg.view_preview._views) == n
+        assert len(dlg.view_preview._views) == n and len(dlg.rig_preview._views) == n
+    assert dlg.rig_preview._source == "fisheye" and dlg.rig_preview.isVisibleTo(dlg)  # p124: the lens edge drawn
     dlg.view_layout.setCurrentIndex(dlg.view_layout.findData("fish5"))
     dlg.convert.setCurrentIndex(dlg.convert.findData("erp"))
     assert not dlg.view_layout.isVisibleTo(dlg)
@@ -1341,6 +1343,7 @@ def test_camera_pairs_to_pinhole_views_from_the_export(qapp, win, tmp_path, monk
     assert isinstance(v, Stitch) and v.views is not None and len(v.views.pairs()) == 6
     assert "per moment" in dlg.views_summary.text() and "6 views" in dlg.views_summary.text()
     assert len(dlg.view_preview._views) == 6 and "per moment" in dlg.layout_note.text()
+    assert dlg.rig_preview._source == "pairs"  # p124: the lens seam drawn
     dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
     dlg.convert.setCurrentIndex(i)
     assert dlg.view_layout.currentData() == "cube6"  # remembered for this list

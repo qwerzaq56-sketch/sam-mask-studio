@@ -40,7 +40,7 @@ from PyQt6.QtWidgets import (
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
 from src.core.presets import CUSTOM, PRESETS, preset
-from src.app.view_preview import ViewPreview
+from src.app.view_preview import RigPreview, ViewPreview
 from src.core.colmap import read_cameras_full
 from src.core.reproject import (ALL_LAYOUTS, CONVERTIBLE, FISHEYE_LAYOUTS, FISHEYES, MIN_VIEW_SHARE, VIEW_LAYOUTS, Erp,
                                 Stitch, Views, view_share)
@@ -507,6 +507,8 @@ class ExportDialog(QDialog):
         self.layout_note.setWordWrap(True)
         self.layout_note.setStyleSheet("color: gray;")
         self.view_preview = ViewPreview()
+        self.rig_preview = RigPreview()  # the same views as cameras in 3D (p124)
+        self._source = "360" if self._erp else "fisheye" if fisheye else "pinhole"
         self._cameras = []
         if scene is not None and not self._erp:  # a fisheye's views are checked against its lens
             try:
@@ -556,7 +558,11 @@ class ExportDialog(QDialog):
         self._views_form.addRow("Size", self.side)
         vb.addLayout(self._views_form)
         vb.addWidget(self.layout_note)
-        vb.addWidget(self.view_preview)
+        pics = QHBoxLayout()
+        pics.setContentsMargins(0, 0, 0, 0)
+        pics.addWidget(self.view_preview, 1)
+        pics.addWidget(self.rig_preview)
+        vb.addLayout(pics)
         # the files: fields for Custom, the preset's values as text for a preset
         self.out = QLineEdit(str(default_dir))
         self.out_fixed = _PathLabel()
@@ -830,6 +836,7 @@ class ExportDialog(QDialog):
         """The layout's purpose, its view count and overlap, and the map of the views (docs/specs/08 P4)."""
         self.layout_note.setVisible(on)
         self.view_preview.setVisible(on)
+        self.rig_preview.setVisible(on)
         if not on:
             return
         v = Views(fov=float(self.fov.value()))
@@ -847,6 +854,7 @@ class ExportDialog(QDialog):
         kept = [all(view_share(c, y, p, fov) >= MIN_VIEW_SHARE for c in lens) if lens else True for y, p in pairs]
         per = "moment" if self._layout_kind == "pairs" else "image"
         self.view_preview.set_views(pairs, fov, kept)
+        self.rig_preview.set_views(pairs, fov, kept, "pairs" if self._layout_kind == "pairs" else self._source)
         if key is not None:
             lay = ALL_LAYOUTS[key]
             side, rings = lay.overlap(fov)
