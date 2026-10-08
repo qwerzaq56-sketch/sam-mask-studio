@@ -152,8 +152,18 @@ class BatchMaskDialog(QDialog):
         self.radius.setRange(0, 200)
         self.radius.setSpecialValueText("found per camera folder")
         self.radius.setSuffix(" %")
+        self.sfm_radius = QDoubleSpinBox()
+        self.sfm_radius.setRange(0, 200)
+        self.sfm_radius.setSpecialValueText("none")
+        self.sfm_radius.setSuffix(" %")
+        self.sfm_radius.setToolTip(
+            "A second, tighter circle (centred as the preset says) for SfM only: also writes masks_sfm/. "
+            "The circle above keeps the lens rim, where the two lenses overlap, for stitching and training; "
+            "the rim is the most distorted part, so SfM may split on it. OSMO 360 (0022): 95 % aligned 188/188 "
+            "but keeps only about 5° of overlap (the 5 % margin about 22°)")
         lf.addRow("Rim margin", self.margin)
         lf.addRow("Circle radius", self.radius)
+        lf.addRow("SfM circle radius", self.sfm_radius)
         form.addWidget(self.lens_box)
 
         self.sky_box = QGroupBox("Sky (sky_masks/, white = sky)")
@@ -311,6 +321,7 @@ class BatchMaskDialog(QDialog):
         self.lens_box.setChecked(p.lens is not None)
         self.margin.setValue(lens.margin)
         self.radius.setValue(lens.radius or 0.0)
+        self.sfm_radius.setValue(lens.sfm_radius or 0.0)
         self._lens_rest = lens
         self.sky_box.setChecked(p.sky is not None)
         self.sky_threshold.setValue(sky.threshold)
@@ -365,7 +376,8 @@ class BatchMaskDialog(QDialog):
                                        grow=self.grow.value()))
         if self.lens_box.isChecked():
             lens = LensStep(**dict(asdict(self._lens_rest), margin=self.margin.value(),
-                                   radius=self.radius.value() or None))
+                                   radius=self.radius.value() or None,
+                                   sfm_radius=self.sfm_radius.value() or None))
         if self.sky_box.isChecked():
             sky = SkyStep(**dict(asdict(self._sky_rest), threshold=self.sky_threshold.value(),
                                  edges=self.sky_edges.isChecked(), color=self._sky_color(),

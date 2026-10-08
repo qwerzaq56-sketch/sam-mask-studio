@@ -33,8 +33,11 @@ def test_builtin_presets_read_and_say_what_they_were_checked_on(mine):
 
 def test_save_find_and_change(mine, tmp_path):
     osmo = P.find_preset("osmo360-selfie-stick")
-    # p129: the OSMO lens circle is fixed (SplatBatch's rim95, 188/188), not found and pulled in
-    assert (osmo.lens.radius, osmo.lens.cx, osmo.lens.cy, osmo.lens.margin) == (95.0, 0.0, 0.0, 0.0)
+    # p130: masks/ = the found circle 5 % in (the lenses' overlap kept for training); SplatBatch's rim95
+    # (188/188) is the SfM circle, masks_sfm/
+    assert (osmo.lens.radius, osmo.lens.margin) == (None, 5.0)
+    assert (osmo.lens.sfm_radius, osmo.lens.sfm_cx, osmo.lens.sfm_cy) == (95.0, 0.0, 0.0)
+    assert "SfM circle radius 95.0 %" in osmo.summary()
     with pytest.raises(ValueError, match="built-in"):
         P.save_preset(osmo)
     mine_ = P.with_changes(osmo, name="silver-stick", person={"labels": ["person", "silver pole"]}, lens=None)
@@ -147,7 +150,7 @@ def test_run_makes_masks_from_every_step_and_never_overwrites(tmp_path, monkeypa
     sky_calls = []
     monkeypatch.setattr(cli, "sky_folder", lambda images, out, **kw: sky_calls.append(out) or
                         {"written": 0, "skipped_existing": 0, "failed": [], "seconds": 0})
-    pr = P.with_changes(P.find_preset("osmo360-selfie-stick"), name="t", lens={"radius": 95.0})
+    pr = P.with_changes(P.find_preset("osmo360-selfie-stick"), name="t", lens={"radius": 95.0, "sfm_radius": 80.0})
     path = P.save_preset(pr)
     scene = tmp_path / "scene"
     sky_model = tmp_path / "sky.onnx"
@@ -161,7 +164,10 @@ def test_run_makes_masks_from_every_step_and_never_overwrites(tmp_path, monkeypa
     assert (scene / "people_masks" / "cam0" / "00000.jpg.png").is_file()
     assert sky_calls == [scene / "sky_masks"]
     r = json.loads(rep.read_text(encoding="utf-8"))
-    assert set(r["steps"]) == {"person", "lens", "sky"} and r["written"] == 6 and r["preset"]["name"] == "t"
+    assert set(r["steps"]) == {"person", "lens", "sfm", "sky"} and r["written"] == 9 and r["preset"]["name"] == "t"
+    sfm = read(scene / "masks_sfm" / "cam0" / "00000.jpg.png")  # p130: the tighter circle for SfM, people in too
+    assert not sfm[150, 150] and not sfm[200, 375] and sfm[200, 340] and both[200, 375]
+    assert r["folders"]["sfm"] == str(scene / "masks_sfm")
 
     before = (scene / "masks" / "cam0" / "00000.jpg.png").read_bytes()
     with pytest.raises(SystemExit, match="already there"):

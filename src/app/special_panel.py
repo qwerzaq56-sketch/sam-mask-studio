@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.project import MaskObject
 from src.core.sky_sam2 import tips_apply
-from src.core.special import LABELS, LENS_EDGE, SKY
+from src.core.special import LABELS, LENS_EDGE, LENS_MARGINS, LENS_SFM, LENS_TRAIN, SKY
 
 SCOPES = (("all", "All frames"), ("range", "Range"), ("selected", "Frames picked in the Frame List"))
 OWN = "\0own"  # the finish item for values kept in the Object (no By Color preset has them now)
@@ -45,6 +45,7 @@ class SpecialPanel(QWidget):
 
         super().__init__(parent)
         self._updating = False
+        self._use = LENS_TRAIN  # the Lens edge use shown, to move the circle from on a change
         self._kind: Optional[str] = None
         self._presets: dict = {}  # By Color presets: name -> values
         self._finish: Optional[dict] = None  # the shown Object's finish
@@ -131,9 +132,21 @@ class SpecialPanel(QWidget):
         self.detect_btn = QPushButton("Detect from Images")
         self.detect_btn.setToolTip("Find the circle where the images are not black")
         self.detect_btn.clicked.connect(self.detect_requested)
+        # p130: what the circle is for; the two differ in how much of the lenses' overlap they keep
+        self.use = QComboBox()
+        self.use.addItem("Training / stitching (wide)", LENS_TRAIN)
+        self.use.addItem("SfM / alignment (tight)", LENS_SFM)
+        self.use.setToolTip("Detect pulls the found circle in by this use's margin; changing it moves the "
+                            "circle between the two")
+        self.use.activated.connect(self._use_changed)
+        self.use_note = QLabel("")
+        self.use_note.setWordWrap(True)
+        self.use_note.setStyleSheet("color: gray;")
         lens = QWidget()
         lf = QFormLayout(lens)
         lf.setContentsMargins(0, 0, 0, 0)
+        lf.addRow("Use", self.use)
+        lf.addRow(self.use_note)
         lf.addRow("Radius", self.radius)
         lf.addRow("Center X", self.cx)
         lf.addRow("Center Y", self.cy)
@@ -165,6 +178,30 @@ class SpecialPanel(QWidget):
 
     def _on_scope(self) -> None:
         self.range_row.setVisible(self.scope.currentData() == "range")
+
+    def _use_note(self) -> None:
+        use = self.use.currentData()
+        m = LENS_MARGINS[use]
+        self.use_note.setText(
+            f"{m:g} % in from the image circle. Keeps the lens rim, where a dual fisheye's two lenses "
+            "overlap: OSMO 360 (0022) about 201° a lens, overlap about 22°, enough to stitch and train on. "
+            "The rim is the most distorted part, so SfM may split on it: align with an SfM circle."
+            if use == LENS_TRAIN else
+            f"{m:g} % in from the image circle (OSMO 360: about 95 %, SplatBatch's rim95). Leaves out the "
+            "distorted rim: 0022 SfM registered 188/188 (106-184 with the rim in). But about 185° a lens, "
+            "overlap only about 5°: too little to stitch or train on. Use these masks for SfM only; train "
+            "with the wide circle.")
+
+    def _use_changed(self, *_a) -> None:
+        """The circle moved from one use's margin to the other's (as if Detect had pulled it in by it)."""
+        old = LENS_MARGINS[self._use]
+        self._use = self.use.currentData()
+        new = LENS_MARGINS[self._use]
+        self._use_note()
+        self._updating = True
+        self.radius.setValue(round(self.radius.value() * (1 - new / 100.0) / (1 - old / 100.0)))
+        self._updating = False
+        self._changed()
 
     def _changed(self, *_a) -> None:
         if not self._updating:
@@ -220,7 +257,8 @@ class SpecialPanel(QWidget):
                     "grow": self.grow.value(), "top_only": float(self.top_only.isChecked()),
                     "finish": self._finish_values()}
         if self._kind == LENS_EDGE:
-            return {"radius": self.radius.value(), "cx": self.cx.value(), "cy": self.cy.value()}
+            return {"radius": self.radius.value(), "cx": self.cx.value(), "cy": self.cy.value(),
+                    "use": float(self.use.currentData())}
         return {}
 
     def _send(self) -> None:
@@ -269,6 +307,9 @@ class SpecialPanel(QWidget):
             self.radius.setValue(round(sp.get("radius")))
             self.cx.setValue(round(sp.get("cx")))
             self.cy.setValue(round(sp.get("cy")))
+            self._use = LENS_SFM if sp.get("use") == LENS_SFM else LENS_TRAIN
+            self.use.setCurrentIndex(self.use.findData(self._use))
+            self._use_note()
         self.generate_btn.setText(f"Make {LABELS[sp.kind]} Masks")
         self.coverage.setText(f"Covers {len(sp.keys)} of {frames} frame(s); "
                               f"{len(obj.frames)} with a mask." + (f"\n{note}" if note else ""))

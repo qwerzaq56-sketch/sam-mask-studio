@@ -53,6 +53,12 @@ class LensStep:
     radius: Optional[float] = None
     cx: float = 0.0
     cy: float = 0.0
+    # p130: a second, tighter circle for SfM only (radius / center in %, fixed, no margin): ``run`` also writes
+    # ``masks_sfm/`` with it. The wide circle above keeps the lenses' overlap for stitching and training;
+    # this one leaves out the distorted rim the SfM splits on (src.core.special LENS_SFM). None = no SfM masks
+    sfm_radius: Optional[float] = None
+    sfm_cx: float = 0.0
+    sfm_cy: float = 0.0
 
 
 @dataclass
@@ -143,7 +149,8 @@ class MaskPreset:
         if self.lens:
             c = self.lens
             lines.append("lens: " + (f"radius {c.radius} %" if c.radius is not None else "circle found per camera folder")
-                         + f", margin {c.margin} %")
+                         + f", margin {c.margin} %"
+                         + (f"; SfM circle radius {c.sfm_radius} % (masks_sfm/)" if c.sfm_radius is not None else ""))
         if self.sky:
             lines.append(f"sky: threshold {self.sky.threshold}" + ("" if self.sky.edges else ", no full-resolution edges"))
         return "\n".join(lines) or "(no steps)"

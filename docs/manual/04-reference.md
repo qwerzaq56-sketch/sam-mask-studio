@@ -184,7 +184,7 @@
 | 종류 | 설정 |
 |---|---|
 | **Sky Mask** | **Threshold** %(기본 50) · **Grow / shrink** px · **Refine edges**(기본 켬) · **Only sky touching the top edge**. 거의 검은 픽셀은 하늘로 치지 않음 |
-| **Fisheye Lens Edge** | **Radius**(짧은 변 절반 대비 %, 100 = 내접원) · **Center X** / **Center Y** · **Detect from Images**. 원 바깥이 마스크 |
+| **Fisheye Lens Edge** | **Use**(Training / stitching = 찾은 원 5 % 안, SfM / alignment = 10 % 안: 정합 마스크 전용) · **Radius**(짧은 변 절반 대비 %, 100 = 내접원) · **Center X** / **Center Y** · **Detect from Images**. 원 바깥이 마스크 |
 
 ## D6. Export 창
 
