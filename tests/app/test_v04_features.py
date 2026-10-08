@@ -980,6 +980,43 @@ def test_mask_bars_are_saved_undone_and_exported_to_their_folders(qapp, win, tmp
     assert len(p.mask_bars) == 2 and p.mask_bars[1].ids == tuple(ids)
 
 
+def test_each_mask_bar_previews_its_mask(qapp, win, monkeypatch):
+    """p123: every bar shows its mask on the open frame as written: its Objects, ⇆ and Invert applied."""
+    import numpy as np
+
+    from src.app.dialogs import THUMB, ExportDialog
+    from src.core.project import MaskBar
+    from src.core.storage import full_mask
+
+    ids = make_objects(win, 2)
+    s = win.session
+    p = s.project
+    p.set_mask_bars((MaskBar("both"), MaskBar("one", (ids[0],))))
+    seen = []
+    monkeypatch.setattr(ExportDialog, "exec", lambda self: (seen.append(self), ExportDialog.DialogCode.Rejected)[1])
+    win.export()
+    [dlg] = seen
+    assert dlg._preview_frame == s.key
+    h, w = dlg._preview_size
+    assert max(h, w) == THUMB
+    both, one = dlg._bar_rows
+    assert both.thumb.isVisibleTo(dlg) and both.thumb.pixmap().width() == w and "as written" in both.thumb.toolTip()
+    union = full_mask(p, s.key, lambda _k: (h, w)) * 255
+    assert np.array_equal(dlg._bar_preview(both.bar()), union)  # Objects white
+    a = dlg._bar_preview(one.bar())
+    assert 0 < (a > 0).sum() < (union > 0).sum()  # one of the two Objects
+    one.invert.setChecked(True)
+    assert np.array_equal(dlg._bar_preview(one.bar()), 255 - a)  # Invert: Objects black
+    one.picker.flip[ids[0]].setChecked(True)
+    assert np.array_equal(dlg._bar_preview(one.bar()), a)  # ⇆ then Invert: back to the first picture
+    shown = one.thumb.pixmap().toImage()
+    assert shown.pixelColor(0, 0).value() == int(a[0, 0])  # the thumbnail follows the row
+    one.picker.flip[ids[0]].setChecked(False)
+    assert one.thumb.pixmap().toImage().pixelColor(0, 0).value() == 255 - int(a[0, 0])
+    plain = ExportDialog(win.session.image_dir, win)  # no preview given: no thumbnail
+    assert not plain._bar_rows[0].thumb.isVisibleTo(plain)
+
+
 # --- p26: Spirula and Postshot presets ------------------------------------------------------
 
 

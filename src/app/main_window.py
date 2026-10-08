@@ -52,7 +52,7 @@ from PyQt6.QtWidgets import (
 from src.app.canvas import CUTOUT_FILLS, OVERLAP_COLOR, PREVIEW_STYLES, Canvas, Overlay
 from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
-from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
+from src.app.dialogs import THUMB, ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
 from src.app.objects_panel import ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
@@ -2910,6 +2910,14 @@ class MainWindow(QMainWindow):
             self.warn("Nothing to export: no checked Object has a mask yet.")
             return
         project = s.project
+        # p123: each bar's mask previewed on the open frame (or the first with a mask), small
+        marked = project.keys_with_masks(included_only=False)
+        pkey = s.key if s.key in marked else (marked[0] if marked else None)
+        psize = (THUMB // 2, THUMB)
+        if pkey is not None:
+            h0, w0 = s.original_size(pkey)
+            k = THUMB / max(h0, w0)
+            psize = (max(1, round(h0 * k)), max(1, round(w0 * k)))
         dlg = ExportDialog(
             default_export_dir(s.image_dir), self,
             check=lambda pattern, ids=None, flipped=(): check_export(project, pattern, ids, flipped),
@@ -2919,6 +2927,9 @@ class MainWindow(QMainWindow):
             excluded=len(project.excluded),
             sky=has_sky(project) or any(has_sky(project, list(b.ids)) for b in project.bars_or_default() if b.ids),
             sky_edges=self.settings.export_sky_edges,
+            preview=None if pkey is None else (lambda ids, flipped: full_mask(
+                project, pkey, lambda _k: psize, None if ids is None else list(ids), flipped=flipped)),
+            preview_frame=pkey or "", preview_size=psize,
         )
         accepted = dlg.exec() == ExportDialog.DialogCode.Accepted
         if project.set_mask_bars(dlg.bars()):  # the bars stay with the scene, Export or not (C-4)

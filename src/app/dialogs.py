@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
+import numpy as np
+
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QInputDialog,
     QButtonGroup,
@@ -299,6 +302,10 @@ class _BarRow(QWidget):
         self.remove.setToolTip("Delete this mask (right-click: Duplicate)")
         self.folder = QLabel()
         self.folder.setStyleSheet("color: gray;")
+        self.thumb = QLabel()  # this mask on one frame, as written (p123)
+        self.thumb.setFixedSize(THUMB + 2, THUMB // 2 + 2)
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumb.setVisible(False)
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.addWidget(self.on)
@@ -306,11 +313,15 @@ class _BarRow(QWidget):
         top.addWidget(self.objects_btn, 1)
         top.addWidget(self.invert)
         top.addWidget(self.remove)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 2)
+        lay = QVBoxLayout()
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addLayout(top)
         lay.addWidget(self.folder)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 2)
+        outer.addLayout(lay, 1)
+        outer.addWidget(self.thumb, 0, Qt.AlignmentFlag.AlignTop)
         self.folder.setContentsMargins(self.on.sizeHint().width() + 6, 0, 0, 0)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._menu)
@@ -344,6 +355,17 @@ class _BarRow(QWidget):
             self.invert.setChecked(black)
             self.invert.blockSignals(False)
 
+    def set_thumb(self, mask: Optional[np.ndarray], frame: str) -> None:
+        """*mask* (uint8, 0 / 255) as this bar writes it on *frame*; None: no preview."""
+        self.thumb.setVisible(mask is not None)
+        if mask is None:
+            return
+        h, w = mask.shape
+        img = QImage(np.ascontiguousarray(mask).data, w, h, w, QImage.Format.Format_Grayscale8).copy()
+        self.thumb.setPixmap(QPixmap.fromImage(img))
+        self.thumb.setStyleSheet("border: 1px solid #888;")
+        self.thumb.setToolTip(f"This mask on {frame}, as written (Objects, ⇆ and Invert applied)")
+
     def bar(self) -> MaskBar:
         return MaskBar(self.name.text().strip(), self.picker.ids(),
                        self.invert.isChecked() if self._invert_set else None, self.picker.flipped(),
@@ -356,6 +378,12 @@ def _first_sentence(text: str) -> str:
         if ch == "." and (i + 1 == len(text) or text[i + 1] == " "):
             return text[:i + 1]
     return text
+
+
+THUMB = 96  # the bars' mask previews: this wide at most (a 2:1 frame: 96 x 48)
+
+# what a bar's Objects cover on the preview frame: (ids or None, flipped) -> bool mask, None = nothing there
+BarPreview = Callable[[Optional[Tuple[int, ...]], Tuple[int, ...]], Optional[np.ndarray]]
 
 
 class ExportDialog(QDialog):
@@ -377,9 +405,15 @@ class ExportDialog(QDialog):
     def __init__(self, default_dir: Path, parent=None, check: Optional[Callable[..., ExportCheck]] = None,
                  scene=None, target: str = CUSTOM, bars: Optional[Sequence[MaskBar]] = None,
                  objects: Optional[Sequence[Tuple[int, str, bool]]] = None,
-                 excluded: int = 0, sky: bool = False, sky_edges: bool = True):
+                 excluded: int = 0, sky: bool = False, sky_edges: bool = True,
+                 preview: Optional[BarPreview] = None, preview_frame: str = "",
+                 preview_size: Tuple[int, int] = (THUMB // 2, THUMB)):
         super().__init__(parent)
         self.setWindowTitle("Export Final Masks")
+        self._preview = preview  # p123: each bar's mask on one frame, as it would be written
+        self._preview_frame = preview_frame
+        self._preview_size = preview_size  # (h, w)
+        self._preview_cache: dict = {}
         self.goto: Optional[str] = None  # an image picked in the check list: leave and open it
         self.setMinimumWidth(540)
         self._check = check
@@ -726,7 +760,23 @@ class ExportDialog(QDialog):
             inv = r.invert.isChecked()
             r.folder.setText(f"→ {self._bar_folder(r).name}/ · Objects {'black' if inv else 'white'}"
                              + ("" if one or r.on.isChecked() else " · off"))
+            r.set_thumb(self._bar_preview(r.bar()), self._preview_frame)
         self.name_problem = "; ".join(problems)
+
+    def _bar_preview(self, b: MaskBar) -> Optional[np.ndarray]:
+        """The bar's mask on the preview frame as it is written: Objects white, black with Invert (0 / 255)."""
+        if self._preview is None:
+            return None
+        key = (b.ids, tuple(sorted(b.flipped)))
+        if key not in self._preview_cache:
+            m = self._preview(b.ids, key[1])
+            self._preview_cache[key] = (m if m is not None else np.zeros(self._preview_size, bool)).astype(np.uint8) * 255
+        out = self._preview_cache[key]
+        return 255 - out if b.invert or (b.invert is None and self._default_black()) else out
+
+    def _default_black(self) -> bool:
+        p = self.preset()
+        return p.object_black if p is not None else False
 
     def dataset_root(self) -> Optional[Path]:
         """The new dataset's folder, or None when writing into the scene (or not a preset)."""
