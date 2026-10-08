@@ -2896,16 +2896,18 @@ class MainWindow(QMainWindow):
         project = s.project
         dlg = ExportDialog(
             default_export_dir(s.image_dir), self,
-            check=lambda pattern, ids=None: check_export(project, pattern, ids),
+            check=lambda pattern, ids=None, flipped=(): check_export(project, pattern, ids, flipped),
             scene=self.scene, target=self.settings.export_target if self.scene else "custom",
-            sets=project.mask_sets,
-            save_set=lambda name: project.set_mask_set(name, [o.id for o in project.objects if o.included]),
-            delete_set=lambda name: project.set_mask_set(name, None),
+            bars=project.bars_or_default(),
+            objects=[(o.id, o.name, o.included) for o in project.objects],
             excluded=len(project.excluded),
-            sky=has_sky(project) or any(has_sky(project, ids) for ids in project.mask_sets.values()),
+            sky=has_sky(project) or any(has_sky(project, list(b.ids)) for b in project.bars_or_default() if b.ids),
             sky_edges=self.settings.export_sky_edges,
         )
-        if dlg.exec() != ExportDialog.DialogCode.Accepted:
+        accepted = dlg.exec() == ExportDialog.DialogCode.Accepted
+        if project.set_mask_bars(dlg.bars()):  # the bars stay with the scene, Export or not (C-4)
+            self.refresh()
+        if not accepted:
             if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
                 self.go_to(s.keys.index(dlg.goto))
                 self.focus_frame()

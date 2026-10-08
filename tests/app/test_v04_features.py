@@ -917,7 +917,8 @@ def test_export_outside_a_scene_has_no_trainer_choice(qapp, win, tmp_path):
 # --- p25: mask sets, one folder each ------------------------------------------------------
 
 
-def test_mask_sets_are_saved_undone_and_exported_to_their_folders(qapp, win, tmp_path):
+def test_mask_bars_are_saved_undone_and_exported_to_their_folders(qapp, win, tmp_path, monkeypatch):
+    """p118 (plan Export 9): masks as bars, one folder each; per bar Invert, per Object ⇆; kept with the scene."""
     from pathlib import Path
 
     import cv2
@@ -930,32 +931,53 @@ def test_mask_sets_are_saved_undone_and_exported_to_their_folders(qapp, win, tmp
     s = win.session
     p = s.project
     k = s.key
-    assert p.set_mask_set("people", [ids[0]]) and p.mask_sets == {"people": (ids[0],)}
-    win.undo()
-    assert p.mask_sets == {}
-    win.redo()
-    win.save(force=True)
-    again = ProjectStore(s.image_dir, s.max_side).load(list(s.keys))
-    assert again.mask_sets == {"people": (ids[0],)}
     base = tmp_path / "out"
-    dlg = ExportDialog(base, win, check=lambda pat, ids=None: check_export(p, pat, ids), sets=p.mask_sets,
-                       save_set=lambda n: p.set_mask_set(n, [o.id for o in p.objects if o.included]),
-                       delete_set=lambda n: p.set_mask_set(n, None))
-    dlg.mask.setCurrentIndex(dlg.mask.findData("people"))
-    [job] = dlg.jobs()
-    assert job.out_dir == tmp_path / "out_people" and job.object_ids == [ids[0]]
-    assert "out_people/" in dlg.folders.text() and dlg.delete_set_btn.isEnabled()
-    dlg.mask.setCurrentIndex(dlg.mask.findData(ExportDialog.EVERY))
+    dlg = ExportDialog(base, win, check=lambda pat, ids=None, flipped=(): check_export(p, pat, ids, flipped),
+                       bars=p.bars_or_default(), objects=[(o.id, o.name, o.included) for o in p.objects])
+    [row] = dlg._bar_rows
+    assert not row.name.isEnabled() and not row.remove.isEnabled()  # one bar: no name to give (C-7)
+    assert dlg.export_btn.text().endswith("→ out/") and row.objects_btn.text() == "Checked Objects (2)"
+    dlg.add_bar_btn.click()
+    first, second = dlg._bar_rows
+    assert first.name.isEnabled() and second.name.text() == "set"  # the Objects checked now
+    second.name.setText("people")
+    second.picker.pick[ids[1]].setChecked(False)
+    assert second.objects_btn.text() == p.get(ids[0]).name
     jobs = dlg.jobs()
-    assert [j.out_dir for j in jobs] == [base, tmp_path / "out_people"] and jobs[0].object_ids is None
+    assert [j.out_dir for j in jobs] == [base, tmp_path / "out_people"]
+    assert jobs[0].object_ids is None and jobs[1].object_ids == [ids[0]] and not jobs[1].flipped
+    assert dlg.export_btn.text().endswith("→ 2 folders") and "out_people/" in second.folder.text()
+    first.name.setText("people")  # two masks into one folder: said, and no Export
+    assert "out_people/" in dlg.name_problem and not dlg.export_btn.isEnabled()
+    first.name.setText("")
+    assert not dlg.name_problem and dlg.export_btn.isEnabled()
     for j in jobs:
         s.export(j)
     one = cv2.imread(str(tmp_path / "out_people" / f"{Path(k).stem}.png"), cv2.IMREAD_GRAYSCALE) > 0
     both = cv2.imread(str(base / f"{Path(k).stem}.png"), cv2.IMREAD_GRAYSCALE) > 0
-    assert one.sum() < both.sum() and np.array_equal(one & both, one)  # the set holds one of the two Objects
-    dlg.mask.setCurrentIndex(dlg.mask.findData("people"))
-    dlg._remove_set()
-    assert p.mask_sets == {} and dlg.mask.count() == 1
+    assert one.sum() < both.sum() and np.array_equal(one & both, one)  # the bar holds one of the two Objects
+    # ⇆ on that Object and the bar's Invert: the outside of it, then black / white swapped
+    second.picker.flip[ids[0]].setChecked(True)
+    second.invert.setChecked(True)
+    [_, job] = dlg.jobs()
+    assert job.flipped == [ids[0]] and job.invert and second.objects_btn.text().startswith("⇆")
+    assert "Objects black" in second.folder.text()
+    s.export(job)
+    flipped = cv2.imread(str(tmp_path / "out_people" / f"{Path(k).stem}.png"), cv2.IMREAD_GRAYSCALE)
+    assert np.array_equal(flipped == 0, ~one)  # outside of it = the mask = black after Invert
+    second.on.setChecked(False)
+    assert len(dlg.jobs()) == 1 and "off" in second.folder.text()
+    # kept with the scene: one undo step, saved and loaded
+    bars = dlg.bars()
+    assert p.set_mask_bars(bars) and p.mask_bars == bars
+    win.save(force=True)
+    assert ProjectStore(s.image_dir, s.max_side).load(list(s.keys)).mask_bars == bars
+    win.undo()
+    assert p.mask_bars == ()
+    # the main window keeps them when the window closes, Export or not (C-4)
+    monkeypatch.setattr(ExportDialog, "exec", lambda self: (self.add_bar_btn.click(), ExportDialog.DialogCode.Rejected)[1])
+    win.export()
+    assert len(p.mask_bars) == 2 and p.mask_bars[1].ids == tuple(ids)
 
 
 # --- p26: Spirula and Postshot presets ------------------------------------------------------
@@ -2816,18 +2838,21 @@ def test_export_window_reads_in_sections(qapp, win, tmp_path, monkeypatch):
     s = win.session
     p = s.project
     dlg = ExportDialog(tmp_path / "x", win, check=lambda pat, ids=None: check_export(p, pat, ids),
-                       scene=win.scene, target="postshot", sets={}, save_set=lambda n: False,
-                       delete_set=lambda n: None)
+                       scene=win.scene, target="postshot", objects=[(o.id, o.name, o.included) for o in p.objects])
     titles = [b.title() for b in dlg.findChildren(QGroupBox)]
     assert titles == ["1  What", "2  Where", "3  Files", "✓  Check"]  # C-1: what, where, files, the check last
     dlg.show()
     qapp.processEvents()
     # a preset's values are text, not grayed-out fields (EX-5); the note's first sentence, the rest behind More
     assert dlg.out_fixed.isVisible() and not dlg.out.isVisible() and dlg.out_fixed.path().endswith("masks_postshot")
-    assert dlg.names_fixed.text().startswith("{stem}.png · Objects white") and not dlg.pattern.isVisible()
+    assert dlg.names_fixed.text().startswith("{stem}.png · every image") and not dlg.pattern.isVisible()
+    assert dlg.note.isVisible() and not dlg.note_more.isVisible()  # Postshot's pairing unconfirmed: all of it (S-6)
+    dlg.target.setCurrentIndex(dlg.target.findData("lichtfeld"))
+    qapp.processEvents()
     assert dlg.note_head.isVisible() and not dlg.note.isVisible() and "backup" not in dlg.note_head.text()
     dlg.note_more.linkActivated.emit("more")
     assert dlg.note.isVisible() and "backup" in dlg.note.text() and ExportDialog._open["note"]
+    dlg.target.setCurrentIndex(dlg.target.findData("postshot"))
     # the button says how many files go where (EX-12); reasons in words (EX-10)
     c = dlg.check_result
     n = len(c.with_mask) + len(c.empty) + len(c.without_mask)  # Postshot: every image
@@ -2845,12 +2870,20 @@ def test_export_window_reads_in_sections(qapp, win, tmp_path, monkeypatch):
     for w in (dlg.summary, dlg.note_head):
         if w.isVisible():
             assert w.height() >= w.heightForWidth(w.width())
+    # a bar's Invert follows the preset until changed, then a different colour is said, not changed (C-6)
+    row = dlg._bar_rows[0]
+    dlg.target.setCurrentIndex(dlg.target.findData("brush"))
+    assert row.invert.isChecked() and "ignores" not in dlg.summary.text()
+    row.invert.setChecked(False)
+    assert "Brush ignores the black parts" in dlg.summary.text()
+    dlg.target.setCurrentIndex(dlg.target.findData("postshot"))
+    assert not row.invert.isChecked() and "ignores" not in dlg.summary.text()
 
 
 # --- p116: Every set and the views' one line are not cut off / padded ---------------------------------------------
 
 
-def test_export_every_set_name_and_views_line_fit(qapp, win, tmp_path, monkeypatch):
+def test_export_bars_and_views_line_fit(qapp, win, tmp_path, monkeypatch):
     from src.app.dialogs import ExportDialog
     from tests.unit.test_reproject import make_erp_scene
 
@@ -2859,15 +2892,19 @@ def test_export_every_set_name_and_views_line_fit(qapp, win, tmp_path, monkeypat
     make_erp_scene(root)
     win.choose = lambda *a, **kw: None
     assert win.open_folder(root)
-    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="lichtfeld", sets={"people": [1]},
-                       save_set=lambda n: False, delete_set=lambda n: None)
-    dlg.mask.setCurrentIndex(dlg.mask.findData(ExportDialog.EVERY))
+    from src.core.project import MaskBar
+
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="lichtfeld",
+                       bars=[MaskBar(), MaskBar("people", (1,))], objects=[(1, "person 1", True)])
     dlg.to_new.setChecked(True)
     dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
     dlg.show()
     for _ in range(3):
         qapp.processEvents()
-    assert dlg.fontMetrics().horizontalAdvance(dlg.mask.currentText()) < dlg.mask.width() - 30  # the whole name
+    for r in dlg._bar_rows:  # every bar's line fits, its Objects button keeps room for its text
+        assert r.objects_btn.width() >= r.objects_btn.fontMetrics().horizontalAdvance(r.objects_btn.text())
+        assert r.geometry().right() <= r.parentWidget().width() and r.folder.isVisible()
+    assert dlg.export_btn.text().endswith("→ 2 folders")
     line = dlg.views_summary
     assert "12 views" in line.text() and line.height() <= line.heightForWidth(line.width()) + 2  # no empty space
     assert dlg.views_edit.isVisible()

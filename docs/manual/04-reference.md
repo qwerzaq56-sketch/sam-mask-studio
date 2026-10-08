@@ -197,13 +197,12 @@ File → **Export Final Masks…** (`Ctrl+E`). 장면이 아니면 **For**, **Ou
 | 변환 목록 (New dataset일 때) | **Keep the cameras** · **Pinhole views**(360이면 배치 목록 COLMAP Overlap · 12 Views / Cubemap · 6 Views / Horizon · 4 Views / Two Rings · 16 Views / Custom, 아니면 yaw · pitch 목록) · **360 (ERP)** · **360 from camera pairs (N moments)**. **FOV**, 크기(**auto px**). Pinhole views는 설명 · 뷰 개수 · 겹침과 미리보기 지도를 보여 줌. [C8~C10](03-recipes.md#c8-360erp--pinhole) |
 | 검사 | 저장될 파일 수, 마스크 없는 이미지, 빈 마스크, `⚠` `✕` 프레임, 파일 이름 충돌, 카메라 모델(학습기가 못 읽을 수 있으면 경고), 백업될 파일 수, 새 데이터셋이면 폴더가 비었는지와 뺄 장수 |
 | 문제 이미지 목록 | 더블클릭하면 창을 닫고 그 이미지로. 문제가 없으면 숨김 |
-| **Mask** | **Final Mask (the checked Objects)** · 이름 붙인 세트 · **Every set, one folder each (and the Final Mask)**. **Save Checked as Set…**(지금 체크한 Object를 이름으로) · **Delete Set** |
+| **What** (마스크 줄) | 한 줄 = 한 폴더. ☑ 이번에 쓸지 · 이름(1줄이면 흐림: 폴더 그대로, 2줄 이상이면 `<폴더>_<이름>/`, 비우면 폴더 그대로) · **Objects** 버튼(**Checked Objects** = Objects 패널에서 체크한 것, 아니면 고르기, Object마다 **⇆ Invert** = 그 Object의 바깥, 마스크가 없는 이미지는 전체) · **Invert**(Objects 검정, 처음 값은 학습기 프리셋) · ✕ 지우기(오른쪽 클릭: Duplicate). **+ Add mask**. 줄은 장면에 저장(창을 닫을 때, Undo 가능) |
 | **Folder** | 내보낼 폴더(학습기를 고르면 정해짐). Custom의 기본은 `<폴더>_masks/` |
 | **File names** | `{stem}.png  (frame_001.png)` · `{name}.png  (COLMAP: frame_001.jpg.png)` |
-| **Invert (object black, background white)** | 흑백 뒤집기 |
 | **Also write empty masks for images without Objects** | Object가 없는 이미지도 파일을 씀 |
 
-- 학습기를 고르면 Folder · File names · Invert · 빈 마스크 칸은 프리셋 값으로 회색 고정됩니다. Custom이면 자유롭게 고릅니다.
+- 학습기를 고르면 Folder · File names · 빈 마스크 칸은 프리셋 값(글 + `preset`)으로 정해집니다. Custom이면 자유롭게 고릅니다. 흑백은 마스크 줄마다의 Invert로, 프리셋과 다르면 검사에 ⚠ 한 줄이 뜹니다.
 - 마스크 세트는 `<폴더>_<이름>/`(장면이면 `masks_people/`)로 따로 쓰입니다. 학습기는 `masks/`만 읽습니다.
 - 마스크는 8bit PNG(0 / 255), **원본 해상도**입니다.
 - 진행 창: 지금 단계(마스크 쓰기 / 새 데이터셋 만들기 / 변환 / 이어 붙이기), `n / 전체`, 막대. 중간 취소는 없습니다(반쯤 쓰인 결과가 남지 않게).

@@ -26,9 +26,9 @@ B장의 흐름을 안다고 보고, 상황별로 짧게 적습니다. 각 레시
      - **Grow / shrink** px: 넓히기(+) / 좁히기(−)
      - **Refine edges**: 하늘 경계를 이미지 색에 맞춤(기본 켬)
      - **Only sky touching the top edge**: 위 가장자리에 닿은 조각만(창문, 물, 반사 제거). 360 사진에 맞고, 피시아이에서는 끕니다
-  4. 사람과 하늘을 **다른 폴더**로 내보내려면 마스크 세트를 씁니다:
-     하늘 Object만 체크 → Export 창의 **Save Checked as Set…** → 이름 `sky`. 세트는 `masks_sky/`로 따로 쓰입니다.
-     Export의 **Mask**에서 그 세트, 또는 **Every set, one folder each (and the Final Mask)**를 고릅니다.
+  4. 사람과 하늘을 **다른 폴더**로 내보내려면 Export 창 **What**에 마스크를 하나 더 둡니다:
+     **+ Add mask** → 이름 `sky` → Objects 버튼에서 하늘 Object만 체크. 이 마스크는 `masks_sky/`로 따로 쓰입니다.
+     켠(☑) 마스크가 모두 한 번에 쓰이고, 마스크 목록은 장면에 저장됩니다.
 - **확인**
   - 학습기는 `masks/`만 읽습니다. 사람과 하늘을 함께 빼려면 둘 다 체크해서 Final Mask로 내보내고,
     하늘만 따로 둔 세트로 학습하려면 그 폴더 이름을 `masks/`로 바꿉니다.
