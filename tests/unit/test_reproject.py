@@ -465,6 +465,25 @@ def test_fisheye_layouts():
         assert len(set(names)) == len(names) == lay.count
 
 
+def test_layout_picture_geometry(tmp_path):
+    """p124: the 3D picture's tiles sit where the views look (drawing frame: x right, y up, z forward), and the
+    reference pictures are written for every layout."""
+    from src.app.view_preview import frustum, row_color, tile, UP, LEVEL, DOWN, OFF
+
+    for (yaw, pitch), way in (((0, 0), (0, 0, 1)), ((90, 0), (1, 0, 0)), ((180, 0), (0, 0, -1)), ((0, 90), (0, 1, 0)),
+                              ((0, -35), (0, -np.sin(np.radians(35)), np.cos(np.radians(35))))):
+        c = tile(yaw, pitch, 90).mean(0)
+        assert np.allclose(c / np.linalg.norm(c), way, atol=1e-9)
+    f = frustum(0, 0, 90)
+    assert np.allclose(np.abs(f[:, :2]), 1) and np.allclose(f[:, 2], 1)  # 90°: the far square reaches 45°
+    assert row_color(35) == UP and row_color(0) == LEVEL and row_color(-35) == DOWN and row_color(0, False) == OFF
+    from tools.layout_pictures import main
+
+    assert main([str(tmp_path)]) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        f"layout_{k}.png" for k in ("colmap12", "cube6", "horizon4", "rings16", "fish9", "fish5", "fish3"))
+
+
 def test_fisheye_views_it_cannot_fill_are_left_out(tmp_path):
     from src.core.colmap import read_cameras_full
     from src.core.reproject import convert, view_share
