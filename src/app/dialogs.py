@@ -1274,7 +1274,7 @@ SHORTCUTS = (
         ("[ / ]", "Previous / next ⚠ or ✕ image (with the Frame List's 1 on: also – = no mask of the Object)"),
         (", / .", "Nearest earlier / later keyframe ★ (edited there, a propagation source; the 1 on: its Object's only)"),
         ("F", "Go to the propagation reference ◎ (with an auto tool on and the mouse off the frame lists: apply)"),
-        ("Middle click an image", "Open it, the picked images stay picked · Right click: what to do with the picks"),
+        ("Middle click (or double click) an image", "Open it, the picked images stay picked · Right click: what to do with the picks"),
         ("Enter", "Make the current image the propagation reference ◎ (again: back to none); an auto tool's Enter comes first"),
         ("Double-click an image", "Make it the propagation reference (◎); again: back to the current image"),
         ("Shift / Ctrl-click images", "Pick the images for the Selection propagation scope (📌 Pin keeps them)"),

@@ -477,7 +477,9 @@ class ImagesPanel(QWidget):
         self._visible_timer.start()
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
+        if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
+            # a double click arrives as press, release, double-click, release: the middle button's second click
+            # opens the frame too, the picks kept (p125)
             view = next((v for v in (self.list, self.frame_list) if obj is v.viewport()), None)
             if view is not None and event.button() == Qt.MouseButton.RightButton:
                 return True  # no selection change: the menu (context menu event) works on the picks as they are

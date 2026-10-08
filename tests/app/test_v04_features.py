@@ -1617,10 +1617,9 @@ def test_middle_click_opens_a_frame_and_keeps_the_picks(qapp, win):
     for r in (1, 2):
         win.images_panel.list.item(r).setSelected(True)
 
-    def press(button, row):
+    def press(button, row, kind=QMouseEvent.Type.MouseButtonPress):
         pos = QPointF(lst.visualRect(lst.model().index(row, 0)).center())
-        ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pos, pos, button, button,
-                         Qt.KeyboardModifier.NoModifier)
+        ev = QMouseEvent(kind, pos, pos, button, button, Qt.KeyboardModifier.NoModifier)
         QApplication.sendEvent(lst.viewport(), ev)
         qapp.processEvents()
 
@@ -1628,6 +1627,9 @@ def test_middle_click_opens_a_frame_and_keeps_the_picks(qapp, win):
     assert s.index == 4 and win.images_panel.selected_rows() == [1, 2]  # opened, picks kept
     press(Qt.MouseButton.RightButton, 0)
     assert s.index == 4 and win.images_panel.selected_rows() == [1, 2]  # right click changes nothing
+    press(Qt.MouseButton.MiddleButton, 3)  # p125: a middle double click = press, then double-click
+    press(Qt.MouseButton.MiddleButton, 3, QMouseEvent.Type.MouseButtonDblClick)
+    assert s.index == 3 and win.images_panel.selected_rows() == [1, 2]  # opened, picks still kept
 
 
 # --- p41: moving to another frame while editing keeps editing there ----------------------------------
