@@ -8,7 +8,7 @@ A preset is a JSON file::
       "description": "...",
       "checked_on": ["0022 cam0 94 frames: IoU 0.943 against hand-checked masks"],
       "person": {"labels": ["person", "black pole"], "attach": ["bag"], "threshold": 0.4, "grow": 2},
-      "lens": {"margin": 5.0},
+      "lens": {"radius": 98.0, "cx": 0.34, "cy": -3.16, "margin": 0.0, "sfm_radius": 95.0},
       "sky": {"threshold": 50}
     }
 
