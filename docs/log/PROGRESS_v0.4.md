@@ -801,6 +801,14 @@
 - C-3: 뷰 배치 설명(`VIEW_LAYOUTS` purpose 4개)과 Custom 툴팁의 한국어를 영어로(UI 이슈 목록 2026-10-01 항목).
 - 동작·저장 값은 그대로(위젯 이름 유지). 테스트: ERP 테스트는 Edit을 연 뒤 yaw 칸 확인, 새 테스트 1개(구역 순서, 프리셋 글 / Custom 칸, More, 버튼 글, 사유 글, 잘림 없음). 전체 284 통과.
 
+## 116단계 (`v0.4-p116`): Export 창 Every set · 360 장면 확인 후 손질
+
+- 사용자 요청(10-08): p115 창을 Every set과 360 장면에서도 캡처해 확인. 실제 장면(0022 어안 186장, `a0920_360_Plugin` EQUIRECTANGULAR 49장)을 읽기만 해서 캡처.
+- Mask 목록의 `Every set, one folder each (and the Final Mask)`가 잘림 → `Every set + the Final Mask`(폴더 규칙은 툴팁).
+- Pinhole 한 줄 요약 아래 빈 공간(약 45 px)과 처진 Edit 버튼: 폼의 이름 붙은 줄이 줄바꿈 글을 좁은 기본 크기(높이 60)로 잡던 것 → 요약은 전체 폭 줄, Edit은 Cameras 줄 오른쪽.
+- 확인한 것: 세트 하나 `Export 186 files → masks_people/`, Every set `Export → 3 folders`와 폴더 목록, 360 장면 `COLMAP Overlap · 12 Views … → 12 views`, 버튼 `Export 564 files → new dataset`(49 − ⊘ 2 = 47장 × 12).
+- 테스트 1개(Every set 이름이 다 보임, 요약 줄에 빈 공간 없음). 전체 285 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

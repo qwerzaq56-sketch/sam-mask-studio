@@ -2845,3 +2845,29 @@ def test_export_window_reads_in_sections(qapp, win, tmp_path, monkeypatch):
     for w in (dlg.summary, dlg.note_head):
         if w.isVisible():
             assert w.height() >= w.heightForWidth(w.width())
+
+
+# --- p116: Every set and the views' one line are not cut off / padded ---------------------------------------------
+
+
+def test_export_every_set_name_and_views_line_fit(qapp, win, tmp_path, monkeypatch):
+    from src.app.dialogs import ExportDialog
+    from tests.unit.test_reproject import make_erp_scene
+
+    monkeypatch.setattr(ExportDialog, "_open", {"note": False, "views": False})
+    root = tmp_path / "scene"
+    make_erp_scene(root)
+    win.choose = lambda *a, **kw: None
+    assert win.open_folder(root)
+    dlg = ExportDialog(tmp_path / "x", win, scene=win.scene, target="lichtfeld", sets={"people": [1]},
+                       save_set=lambda n: False, delete_set=lambda n: None)
+    dlg.mask.setCurrentIndex(dlg.mask.findData(ExportDialog.EVERY))
+    dlg.to_new.setChecked(True)
+    dlg.convert.setCurrentIndex(dlg.convert.findData("pinhole"))
+    dlg.show()
+    for _ in range(3):
+        qapp.processEvents()
+    assert dlg.fontMetrics().horizontalAdvance(dlg.mask.currentText()) < dlg.mask.width() - 30  # the whole name
+    line = dlg.views_summary
+    assert "12 views" in line.text() and line.height() <= line.heightForWidth(line.width()) + 2  # no empty space
+    assert dlg.views_edit.isVisible()
