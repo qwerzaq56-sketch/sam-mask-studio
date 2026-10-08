@@ -10,6 +10,7 @@ splatbatch(`F:\Claude\SplatBatch`)가 SAM Mask Studio를 부를 때 기대해도
 
 - 앱 버전 문자열: `src.version.app_version()`. 포터블은 `VERSION` 파일, 개발 폴더는 `git describe`(예: `v0.5.1-128-g6259be4`). `run` 보고서의 `"version"`에도 같은 값이 들어갑니다.
 - 실행: 앱 폴더에서 `python -m src.cli …`(포터블은 그 안의 `python\python.exe`).
+- 약속 번호는 코드에서 `src.version.CLI_CONTRACT`, 포터블은 `PARTS.json`의 `cli_contract`(6장).
 
 ## 1. `run`
 
@@ -81,3 +82,16 @@ python -m src.cli preset show <이름> [--json]
 ## 5. 약속 밖
 
 `sky`, `person`, `lens`, `probe`, `truth` 명령과 `run`의 `steps` 내용은 splatbatch 약속이 아닙니다(앱 · 스터디용, 예고 없이 바뀔 수 있음).
+
+## 6. 포터블 나눈 묶음 (`tools/make_portable.py --split`)
+
+| 파일 | 안의 것 | 바뀔 때 |
+|---|---|---|
+| `sms-<버전>-app.zip` | `app\` (checkpoints 빼고), `SAM Mask Studio.bat`, `README.txt`, `PARTS.json` | 매 릴리스 |
+| `sms-runtime-<해시>.zip` | `python\` (Python + 모든 패키지) | 의존성이 바뀔 때 |
+| `sms-models-<해시>.zip` | `app\checkpoints\` (SAM2 tiny, SAM3, Sky) | 거의 없음 |
+| `sms-<버전>-parts.json` | 위 셋의 이름 · 바이트 · sha256 · 파일 수, `version`, `cli_contract` | |
+
+- 셋 다 포터블 폴더 이름(`SAMMaskStudio\…`)을 뿌리로 담음: **한 폴더에 셋을 풀면 지금 포터블과 같습니다.**
+- `<해시>`는 그 묶음의 파일 경로 + 크기에서 나온 12자리. 같은 파일이면 같은 이름이라 이미 받은 런타임 · 모델은 다시 받지 않아도 됩니다.
+- 앱 묶음의 `PARTS.json`: `{"version", "cli_contract", "runtime", "models"}` — 필요한 런타임 · 모델 이름(`.zip` 없이).

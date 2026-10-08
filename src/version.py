@@ -14,6 +14,8 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The command-line contract splatbatch relies on (docs/CLI_CONTRACT.md): raised when run / preset list change.
+CLI_CONTRACT = 1
 
 
 @functools.lru_cache(maxsize=1)
