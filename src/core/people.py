@@ -48,7 +48,11 @@ def people_mask(detections: Iterable, shape, labels: Sequence[str] = LABELS, att
             main |= d.mask
         elif d.label in attach:
             extra |= d.mask
-    out = main | touching(main, extra, touch)
-    if grow > 0 and out.any():
-        out = cv2.dilate(out.astype(np.uint8), _disc(grow)) > 0
-    return out
+    return grow_mask(main | touching(main, extra, touch), grow)
+
+
+def grow_mask(mask: np.ndarray, px: int = GROW) -> np.ndarray:
+    """*mask* grown by *px* (a disc)."""
+    if px <= 0 or not mask.any():
+        return mask
+    return cv2.dilate(mask.astype(np.uint8), _disc(px)) > 0

@@ -105,3 +105,101 @@ def test_person_waits_for_a_busy_gpu(frames, tmp_path, monkeypatch):
     assert cli.main(["person", str(images), "--out", str(out), "--recursive", "--model", str(model),
                      "--gpu-anyway", "--invert"]) == 0
     assert read(out / "cam0" / "00000.jpg.png")[150, 150]  # --invert: white = people
+
+
+def test_keyframe_indices_and_pieces():
+    assert cli.keyframe_indices(7, 3) == [0, 3, 6]
+    assert cli.keyframe_indices(8, 3) == [0, 3, 6, 7]
+    assert cli.keyframe_indices(1, 5) == [0]
+    m = box((100, 100), 10, 30, 10, 30) | box((100, 100), 60, 90, 60, 70)
+    m[0, 99] = True  # a speck
+    pieces = cli.mask_pieces(m)
+    assert sorted(pieces) == [1, 2] and not any(p[0, 99] for p in pieces.values())
+
+
+class ShiftEngine(FakeEngine):
+    """A person whose place follows the frame's brightness: each frame's mask is told apart."""
+    calls = []
+    order = []
+
+    def detect_many(self, image, labels):
+        h, w = image.shape[:2]
+        x = int(image[0, 0, 0]) // 10  # frames are 10 * i bright
+        ShiftEngine.calls.append(x)
+        return [Det("person", 0.9, box((h, w), 10, 30, 10 * x, 10 * x + 8))] if "person" in labels else []
+
+    def release(self):
+        ShiftEngine.order.append("release")
+
+
+def test_person_keyframes_propagate_between(tmp_path, monkeypatch):
+    from tests.fakes import fake_propagate
+
+    ShiftEngine.calls, ShiftEngine.order = [], []
+    monkeypatch.setattr(cli, "_engine", lambda model, device: ShiftEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    plans = []
+
+    def prop(ckpt, paths, plan, seeds, max_side, device="cuda", **kw):
+        ShiftEngine.order.append("sam2")
+        plans.append((plan.start, plan.current, plan.end, len(paths), ckpt))
+        yield from fake_propagate(ckpt, paths, plan, seeds, max_side, device)
+
+    images = tmp_path / "images"
+    for cam, n in (("cam0", 7), ("cam1", 3)):
+        (images / cam).mkdir(parents=True)
+        for i in range(n):
+            cv2.imencode(".jpg", np.full((200, 200, 3), 10 * i, np.uint8))[1].tofile(str(images / cam / f"{i:05d}.jpg"))
+    out = tmp_path / "people"
+    rep = cli.person_folder(images, out, recursive=True, labels=["person"], attach=[], grow=0, max_side=200,
+                            keyframes=3, propagate=prop, log=lambda s: None)
+    assert sorted(ShiftEngine.calls) == [0, 0, 2, 3, 6]  # SAM3 on the keyframes only: cam0 0 3 6, cam1 0 2
+    assert ShiftEngine.order[0] == "release" and ShiftEngine.order.count("sam2") == 5  # SAM3 gone before SAM2
+    assert (0, 0, 3, 7) == plans[0][:4] and plans[1][:3] == (0, 3, 6) and plans[0][4] == str(cli.SAM2_MODEL)
+    assert rep["written"] == 10 and rep["keyframe_count"] == 5 and rep["settings"]["keyframes"] == 3
+    f1 = rep["frames"]["cam0/00001.jpg"]
+    assert f1["from_keyframes"] == 2 and "found" in rep["frames"]["cam0/00003.jpg"]
+    m1 = read(out / "cam0" / "00001.jpg.png")  # black = people: keyframe 0's place and keyframe 3's
+    assert not m1[20, 4] and not m1[20, 34] and m1[20, 64] and m1[100, 100]
+    m3 = read(out / "cam0" / "00003.jpg.png")  # a keyframe keeps its own mask only
+    assert not m3[20, 34] and m3[20, 4]
+
+
+def test_person_keyframes_skip_existing_frames(tmp_path, monkeypatch):
+    from tests.fakes import fake_propagate
+
+    ShiftEngine.calls, ShiftEngine.order = [], []
+    monkeypatch.setattr(cli, "_engine", lambda model, device: ShiftEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    images = tmp_path / "images"
+    images.mkdir()
+    for i in range(5):
+        cv2.imencode(".jpg", np.full((100, 100, 3), 10 * i, np.uint8))[1].tofile(str(images / f"{i:05d}.jpg"))
+    out = tmp_path / "people"
+    out.mkdir()
+    for i in (1, 2, 3):  # what lies between the keyframes is done already
+        cv2.imencode(".png", np.full((100, 100), 255, np.uint8))[1].tofile(str(out / f"{i:05d}.jpg.png"))
+    runs = []
+
+    def prop(*a, **kw):
+        runs.append(1)
+        yield from fake_propagate(*a, **kw)
+
+    rep = cli.person_folder(images, out, labels=["person"], attach=[], max_side=100, keyframes=4,
+                            existing="skip", propagate=prop, log=lambda s: None)
+    assert rep["written"] == 2 and not runs  # keyframes 0 and 4 written, no SAM2 for frames already there
+    assert read(out / "00002.jpg.png").all()  # untouched
+
+
+def test_person_keyframes_option(frames, tmp_path, monkeypatch):
+    from tests.fakes import fake_propagate
+
+    images, model = frames
+    monkeypatch.setattr(cli, "_default_propagate", lambda: fake_propagate)
+    out = tmp_path / "people"
+    rep = tmp_path / "p.json"
+    assert cli.main(["person", str(images), "--out", str(out), "--recursive", "--model", str(model),
+                     "--keyframes", "5", "--report", str(rep)]) == 0
+    r = json.loads(rep.read_text(encoding="utf-8"))
+    assert r["settings"]["keyframes"] == 5 and r["keyframe_count"] == 2 and r["written"] == 2
+    assert not read(out / "cam0" / "00001.jpg.png")[150, 150]

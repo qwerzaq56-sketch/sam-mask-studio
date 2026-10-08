@@ -56,7 +56,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -71,6 +71,7 @@ LENS_SAMPLES = 16  # frames per camera folder the circle is found in
 SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
 SAM2_MODEL = SKY_SAM2  # SAM2 tiny: the engine wants a path; sky after By Color loads it
 GPU_NEEDED = 5.0  # GB free before person starts (SAM3 at 1024 px peaked at 4.2 GB on 0022)
+KEYFRAME_MIN_PIECE = 0.0005  # of the frame: smaller pieces of a keyframe's people are not propagated
 
 
 def _write_png(path: Path, mask: np.ndarray) -> None:
@@ -300,19 +301,81 @@ def _engine(model: Path, device: str):
     return eng
 
 
+def keyframe_indices(n: int, every: int) -> List[int]:
+    """The frames SAM3 looks at among *n* in a row: every *every*-th from the first, and the last."""
+    picks = list(range(0, n, max(1, every)))
+    if picks[-1] != n - 1:
+        picks.append(n - 1)
+    return picks
+
+
+def mask_pieces(mask: np.ndarray, min_share: float = KEYFRAME_MIN_PIECE) -> Dict[int, np.ndarray]:
+    """A mask's separate pieces as SAM2 objects 1, 2, ..., specks under *min_share* of the frame left out."""
+    n, lab = cv2.connectedComponents(mask.astype(np.uint8), connectivity=8)
+    out: Dict[int, np.ndarray] = {}
+    for i in range(1, n):
+        piece = lab == i
+        if piece.sum() >= min_share * mask.size:
+            out[len(out) + 1] = piece
+    return out
+
+
+def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], wanted: Callable[[int], bool],
+               max_side: int, device: str, propagate) -> Iterator[Tuple[int, np.ndarray, int]]:
+    """The people of each frame of one camera folder (*keys*, in order) at the working size, in order: the
+    keyframes' own masks (*marks*: index -> mask), a frame between two keyframes the union of what SAM2
+    carries forward from the one before and back from the one after. Yields (index, mask, how many keyframes
+    it came from; 0 for a keyframe). A keyframe's SAM2 run is left out when no frame it reaches is *wanted*."""
+    from src.core.propagation import Direction, PropagationPlan
+
+    paths = [images / k for k in keys]
+    picks = sorted(marks)
+    got: Dict[int, np.ndarray] = {}
+    hits: Dict[int, int] = {}
+    nxt = 0  # the next index to hand out
+    for j, k in enumerate(picks):
+        lo = picks[j - 1] if j else k
+        hi = picks[j + 1] if j + 1 < len(picks) else k
+        seeds = mask_pieces(marks[k])
+        if seeds and any(wanted(i) for i in range(lo + 1, hi) if i not in marks):
+            plan = PropagationPlan(lo, hi, k, Direction.BOTH)
+            for idx, objs in propagate(str(SAM2_MODEL), paths, plan, seeds, max_side, device=device):
+                if idx in marks:
+                    continue
+                m = got.get(idx, np.zeros_like(marks[k]))
+                for o in objs.values():
+                    if o.shape == m.shape:
+                        m = m | o
+                got[idx] = m
+                hits[idx] = hits.get(idx, 0) + 1
+        while nxt <= k:  # every frame up to this keyframe has had both its keyframes now
+            if nxt in marks:
+                yield nxt, marks[nxt], 0
+            else:
+                yield nxt, got.pop(nxt, np.zeros_like(marks[k])), hits.pop(nxt, 0)
+            nxt += 1
+
+
 def person_folder(images: Path, out: Path, recursive: bool = False, names: str = "name", invert: bool = False,
                   labels: Sequence[str] = (), attach: Sequence[str] = (), threshold: float = 0.4,
                   grow: int = 2, max_side: int = 1024, touch: int = 16, model: Path = SAM3_MODEL, device: str = "cuda",
-                  and_with: Optional[Path] = None, existing: str = "stop", log=print) -> dict:
+                  and_with: Optional[Path] = None, existing: str = "stop", keyframes: int = 0, propagate=None,
+                  log=print) -> dict:
     """The ``person`` command: black = people and what they carry (ignored in training), white = the rest
-    (``--invert``: white = people). Returns the report."""
-    from src.core.people import people_mask
+    (``--invert``: white = people). Returns the report.
+
+    *keyframes* N > 1: SAM3 only on every N-th frame of each camera folder (and its last), then SAM2
+    propagation as the app's (:func:`src.engine.video.propagate`, or *propagate*) from each keyframe to its
+    neighbours; a frame in between gets the union of both sides. SAM3 is released before SAM2 loads."""
+    from src.core.people import grow_mask, people_mask
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
+    every = keyframes if keyframes > 1 else 0
     b = Batch("person", images, out, recursive, names, existing, log=log, settings={
         "labels": list(labels), "attach": list(attach), "threshold": threshold, "touch": touch, "grow": grow,
         "max_side": max_side, "invert": invert, "model": str(model), "device": device,
-        "and_with": str(and_with) if and_with else None})
+        "and_with": str(and_with) if and_with else None,
+        **({"keyframes": every, "propagation_model": SAM2_MODEL.name} if every else {})})
     missing: List[str] = []
     if b.todo:
         t = time.time()
@@ -321,22 +384,42 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
     else:
         eng = None
 
-    def make(key):
+    def detect(key):
+        """(full size, the people at the working size before growing, what was found)."""
         rgb = read_rgb(images / key)
         work = to_working(rgb, max_side)
         dets = eng.detect_many(work, list(labels) + list(attach))
-        found = resize_mask(people_mask(dets, work.shape[:2], labels, attach, threshold, touch, grow), rgb.shape[:2])
-        keep = ~found
-        if and_with is not None:
-            keep = _multiply(keep, and_with, b.name(key), missing, key)
         counts: Dict[str, int] = {}
         for d in dets:
             if d.score >= threshold:
                 counts[d.label] = counts.get(d.label, 0) + 1
-        return (~keep if invert else keep), {"people": round(float(found.mean()), 4), "found": counts}
+        return rgb.shape[:2], people_mask(dets, work.shape[:2], labels, attach, threshold, touch, 0), counts
 
-    report = b.run(make, lambda note: f"masked {100 * note['people']:.1f}%  "
-                                      + (", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"))
+    def finish(key, people, size, note):
+        found = resize_mask(grow_mask(people, grow), size)
+        keep = ~found
+        if and_with is not None:
+            keep = _multiply(keep, and_with, b.name(key), missing, key)
+        return (~keep if invert else keep), dict(note, people=round(float(found.mean()), 4))
+
+    def make(key):
+        size, people, counts = detect(key)
+        return finish(key, people, size, {"found": counts})
+
+    def what(note):
+        if "from_keyframes" in note:
+            how = f"propagated from {note['from_keyframes']} keyframe(s)"
+        else:
+            how = ", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"
+        return f"masked {100 * note['people']:.1f}%  {how}"
+
+    if every and b.todo:
+        make = _keyframe_maker(b, images, every, detect, finish, max_side, device,
+                               propagate or _default_propagate(), eng, log)
+        eng = None  # released once the keyframes are done
+    report = b.run(make, what)
+    if every:
+        report["keyframe_count"] = sum(1 for n in report["frames"].values() if "found" in n)
     if and_with is not None:
         report["and_with_missing"] = missing
         if missing:
@@ -344,6 +427,52 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
     if eng is not None and hasattr(eng, "release"):
         eng.release()
     return report
+
+
+def _default_propagate():
+    from src.engine.video import propagate
+
+    return propagate
+
+
+def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_side: int, device: str, propagate,
+                    eng, log):
+    """``make`` for :func:`person_folder` with keyframes: SAM3 on every keyframe first (then released), then
+    each camera folder's frames in order from :func:`propagated`."""
+    from src.engine.imageio import read_rgb
+
+    todo = set(b.todo)
+    folders: Dict[str, List[str]] = {}
+    for k in b.keys:
+        folders.setdefault(_folder(k), []).append(k)
+    marks: Dict[str, Dict[int, np.ndarray]] = {}
+    sizes: Dict[str, tuple] = {}
+    found: Dict[str, dict] = {}
+    t = time.time()
+    for folder, keys in folders.items():
+        marks[folder] = {}
+        for i in keyframe_indices(len(keys), every):
+            sizes[keys[i]], marks[folder][i], found[keys[i]] = detect(keys[i])
+    log(f"SAM3 on {sum(len(m) for m in marks.values())} keyframe(s) (every {every}) in {time.time() - t:.0f} s; "
+        "SAM2 propagation between them")
+    if hasattr(eng, "release"):
+        eng.release()
+    streams = {f: propagated(images, keys, marks[f], lambda i, ks=keys: ks[i] in todo, max_side, device, propagate)
+               for f, keys in folders.items()}
+    where = {k: (f, i) for f, keys in folders.items() for i, k in enumerate(keys)}
+
+    def make(key):
+        folder, i = where[key]
+        for j, people, hits in streams[folder]:
+            if j == i:
+                break
+        else:
+            raise RuntimeError("propagation ended before this frame")
+        if key in found:
+            return finish(key, people, sizes[key], {"found": found[key]})
+        return finish(key, people, read_rgb(images / key).shape[:2], {"from_keyframes": hits})
+
+    return make
 
 
 def probe_folder(images: Path, out: Path, person, recursive: bool = False, also: Sequence[str] = (),
@@ -730,6 +859,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _gpu_options(person)
     person.add_argument("--and-with", type=Path, help="Mask folder (white = keep, same names) to multiply in, "
                                                       "e.g. the lens edge: one masks/ folder comes out")
+    person.add_argument("--keyframes", type=int, default=0, metavar="N",
+                        help="SAM3 only on every N-th frame of each camera folder (and its last), SAM2 propagation "
+                             "in between (as the app's Propagate). Default 0: SAM3 on every frame")
 
     probe = sub.add_parser("probe", help="Try SAM3 prompts on a few frames before a run (contact sheets, a table)",
                            description="What each prompt finds on a few frames per camera folder: in how many "
@@ -904,6 +1036,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             labels=p.labels, attach=p.attach, threshold=p.threshold, grow=p.grow, max_side=p.max_side,
             touch=p.touch, model=args.sam3_model, device=device, and_with=args.and_with, existing=existing,
+            keyframes=args.keyframes,
         )
     elif args.command == "run":
         from src.batchmask.presets import find_preset
