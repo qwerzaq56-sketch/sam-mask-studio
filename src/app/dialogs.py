@@ -7,6 +7,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from PyQt6 import sip
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
@@ -962,6 +963,8 @@ class ExportDialog(QDialog):
     def _fit_height(self, shrink: bool = False) -> None:
         """Tall enough for every word-wrapped line at the window's width now (EX-3, EX-4: nothing cut off);
         on a short screen as tall as it can be, the sections scroll."""
+        if sip.isdeleted(self) or sip.isdeleted(self._body):
+            return  # a 0 ms timer after the window went (p150: raising here would abort the app)
         body = self._body.layout()
         outer = self.layout()
         if body is None or outer is None:

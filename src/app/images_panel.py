@@ -56,8 +56,9 @@ MARK_COLORS = {  # the mark's text color in both views (✓ and ↓ keep the def
     "★": QColor(40, 110, 220),
     NO_MASK: QColor(150, 150, 150),
 }
-LEGEND = ("★ edited here · ✓ propagated · ↓ imported from a mask folder, unchanged · ⚠ suspicious (area jumped) · "
-          "✕ empty after propagation")
+LEGEND = ("★ edited here · ✓ propagated (here, or by the batch run that made an imported folder) · "
+          "↓ imported from a mask folder, unchanged · ⚠ worth a look (area jumped, or the batch report says why: "
+          "hover the frame) · ✕ empty after propagation")
 LEGEND_ONE = LEGEND + " · – the Object has no mask here"
 
 
@@ -75,6 +76,19 @@ def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
             if fs.mask is not None:
                 seen.setdefault(k, set()).add(fs.status)
     return {k: next(m for st, m in PRIORITY if st in sts) for k, sts in seen.items()}
+
+
+def image_notes(project: Project, only: Optional[int] = None) -> Dict[str, str]:
+    """Each image's frame notes (where an imported mask came from, why it is worth a look; p150), one line an
+    Object: ``people_masks: propagated from cam0/00006 forward``. *only*: that Object's alone."""
+    notes: Dict[str, List[str]] = {}
+    for o in project.objects:
+        if only is not None and o.id != only:
+            continue
+        for k, fs in o.frames.items():
+            if fs.note and fs.mask is not None:
+                notes.setdefault(k, []).append(f"{o.name}: {fs.note}")
+    return {k: "\n".join(v) for k, v in notes.items()}
 
 
 PIN_COLOR = QColor(255, 225, 140)  # pinned tiles
@@ -300,6 +314,7 @@ class ImagesPanel(QWidget):
         self._pinned: Set[int] = set()
         self._excluded: Set[str] = set()  # ⊘: left out of a new dataset
         self._marks: Dict[str, str] = {}
+        self._notes: Dict[str, str] = {}  # image key -> its frame notes (tooltip, p150)
         self._only: Optional[int] = None  # marks for this Object only (None: every Object)
         self._summaries: List[QLabel] = []
         self._loaded: Set[int] = set()  # rows whose thumbnail is set (or queued)
@@ -383,7 +398,7 @@ class ImagesPanel(QWidget):
             self.list.addItem(self._text(i))
             it = self.list.item(i)
             it.setIcon(blank)
-            it.setToolTip(self._keys[i])
+            it.setToolTip(self._tip(i))
             it.setSizeHint(QSize(TILE_W, THUMB_H + 44))
         self._updating = False
         self._visible_timer.start()
@@ -394,6 +409,10 @@ class ImagesPanel(QWidget):
         marks = " ".join(m for m in (self._marks.get(k, ""), "◎" if i == self._reference else "",
                                      "📌" if i in self._pinned else "", "⊘" if k in self._excluded else "") if m)
         return f"{i + 1}  {marks}\n{k}"
+
+    def _tip(self, i: int) -> str:
+        k = self._keys[i]
+        return f"{k}\n{self._notes[k]}" if k in self._notes else k
 
     def status_mark(self, i: int) -> str:
         return self._marks.get(self._keys[i], " ")
@@ -408,6 +427,11 @@ class ImagesPanel(QWidget):
             marks = {k: marks.get(k, NO_MASK) for k in self._keys}
         self._marks = marks
         self._only = only
+        notes = image_notes(project, only)
+        if notes != self._notes:
+            self._notes = notes
+            for i in range(min(self.list.count(), len(self._keys))):
+                self.list.item(i).setToolTip(self._tip(i))
         self._retext()
         self._summarize()
 

@@ -155,6 +155,7 @@ class FrameState:
     status: FrameStatus = FrameStatus.MANUAL
     edit: Optional[EditLayer] = None
     layers: Tuple[PromptLayer, ...] = ()  # point layers over the prompt mask (Original)
+    note: str = ""  # where an imported mask came from / why it is worth a look (a batch report, p150)
 
     @property
     def has_prompts(self) -> bool:
@@ -198,9 +199,15 @@ class FrameState:
         return freeze((base | self.edit.add) & ~self.edit.sub)
 
     @staticmethod
-    def from_mask(mask: np.ndarray, score: float = 1.0, status: FrameStatus = FrameStatus.MANUAL) -> "FrameState":
+    def from_mask(mask: np.ndarray, score: float = 1.0, status: FrameStatus = FrameStatus.MANUAL,
+                  note: str = "") -> "FrameState":
         m = freeze(mask)
-        return FrameState(base_mask=m, variants=(Variant(m, score),), status=status)
+        return FrameState(base_mask=m, variants=(Variant(m, score),), status=status, note=note)
+
+
+def _unnoted(frame: FrameState) -> FrameState:
+    """A frame edited here (★) drops the imported report's note: it no longer says where the mask came from."""
+    return dataclasses.replace(frame, note="") if frame.note and frame.status == FrameStatus.MANUAL else frame
 
 
 @dataclass(frozen=True)
@@ -656,7 +663,7 @@ class Project:
         if frame is None:
             frames.pop(key, None)
         else:
-            frames[key] = frame
+            frames[key] = _unnoted(frame)
         self._replace(dataclasses.replace(obj, frames=frames))
 
     def clear_frames(self, obj_ids: Iterable[int], keys: Iterable[str]) -> int:
@@ -707,7 +714,7 @@ class Project:
             if obj is None:
                 continue
             frames = dict(obj.frames)
-            frames.update(per_key)
+            frames.update({k: _unnoted(fs) for k, fs in per_key.items()})
             self._replace(dataclasses.replace(obj, frames=frames))
 
     def select_variant(self, obj_id: int, key: str, index: int) -> None:
