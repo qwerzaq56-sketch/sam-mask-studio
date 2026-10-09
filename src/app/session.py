@@ -170,8 +170,15 @@ class Session:
         """Open *image_dir* (loading its sidecar project, if any). Returns the image count."""
         from src.core.colmap import scene_root
 
+        from src.core.rig import is_rig, rig_images
+
         root = scene_root(image_dir)
-        paths = find_images(image_dir, recursive=root is not None and root != image_dir)  # cam0/, cam1/ of a scene
+        if root is not None and root != image_dir:
+            paths = find_images(image_dir, recursive=True)  # cam0/, cam1/ of a scene
+        elif is_rig(image_dir):
+            paths = rig_images(image_dir)  # a rig without a model: its camera folders only (06 2.1)
+        else:
+            paths = find_images(image_dir)
         if not paths:
             raise FileNotFoundError(f"No images found in {image_dir}")
         self.image_dir = image_dir

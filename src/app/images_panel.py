@@ -277,6 +277,7 @@ class ImagesPanel(QWidget):
         self.list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Ctrl/Shift-click picks several images; the clicked one becomes current.
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list.setSelectionRectVisible(False)  # icon mode drew a rubber-band box on a drag (p132)
         self._tiles = TileDelegate(self.list)
         self.list.setItemDelegate(self._tiles)
         self.list.currentRowChanged.connect(self._on_row)

@@ -3143,3 +3143,53 @@ def test_run_sam_on_the_cpu_from_settings_or_the_command_line(qapp, folder, tmp_
     finally:
         w._autosave.stop()
         w.close()
+
+
+# --- p132: a camera rig without a COLMAP model opens whole (docs/specs/06-colmap.md 2.1) ------------------
+
+
+def test_a_rig_without_a_model_opens_every_camera(qapp, win, tmp_path):
+    from tests.unit.test_rig import make_rig
+
+    root = make_rig(tmp_path / "rig", n=2)
+    (root / "masks" / "cam1" / "frame_001.png.png").unlink()
+    assert win.open_folder(root / "images" / "cam0")  # one camera picked: the whole rig
+    assert win.session.image_dir == root / "images" and win.scene is None
+    assert win.session.keys == ["cam0/frame_000.png", "cam0/frame_001.png", "cam1/frame_000.png", "cam1/frame_001.png"]
+    assert win.session.store.root == tmp_path / "rig.sms"
+    log = win.log_view.toPlainText()
+    assert "Camera rig" in log and "cam0 2 + cam1 2 images, masks cam0 2 + cam1 1" in log
+    assert "masks/cam1/: 1 of 2 image(s) have no mask: frame_001.png" in log
+
+
+def test_a_camera_with_its_own_work_asks_how_to_open(qapp, win, tmp_path):
+    from tests.unit.test_rig import make_rig
+
+    root = make_rig(tmp_path / "rig", n=1, masks=False)
+    cam0 = root / "images" / "cam0"
+    (root / "images" / "cam0.sms").mkdir()  # work saved when cam0 was opened alone (before p132)
+    from src.app.dialogs import OptionsDialog
+
+    asked = []
+
+    def real_dialog_then_alone(title, text, groups, ok="OK"):
+        dlg = OptionsDialog(title, text, groups, ok, win)  # the groups fit the real dialog (p132 crashed here)
+        asked.append(text)
+        dlg.deleteLater()
+        return [1]
+
+    win.choose = real_dialog_then_alone
+    assert win.open_folder(cam0) and win.session.image_dir == cam0  # alone, with its work
+    assert win.session.keys == ["frame_000.png"] and "cam0.sms" in asked[0]
+    win.choose = lambda *a, **kw: [0]
+    assert win.open_folder(cam0) and win.session.image_dir == root / "images"
+    win.choose = lambda *a, **kw: None
+    assert not win.open_folder(cam0)
+    asked.clear()
+    win.choose = lambda title, text, groups, ok="OK": asked.append(text) or [1]
+    assert win.open_folder(root / "images" / "cam1") and not asked  # cam1 has no work of its own: no question
+
+
+def test_dragging_on_the_strip_draws_no_box(qapp, win):
+    """A drag on the thumbnail strip drew icon mode's rubber band (user report, p132)."""
+    assert not win.images_panel.list.isSelectionRectVisible()

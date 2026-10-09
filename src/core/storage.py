@@ -39,8 +39,10 @@ def sidecar_dir(image_dir: Path) -> Path:
     """``<folder>.sms`` beside the image folder; for a COLMAP scene's ``images/``, beside the
     scene (``<scene>.sms``) so trainers reading the scene never see it. A project already
     saved at the old place (inside the scene) keeps being used."""
+    from src.core.rig import rig_root
+
     old = image_dir.parent / f"{image_dir.name}.sms"
-    root = scene_root(image_dir)
+    root = scene_root(image_dir) or rig_root(image_dir)  # a rig's images/ without a model too (06 2.1)
     if root is None or root == image_dir:
         return old
     new = root.parent / f"{root.name}.sms"
