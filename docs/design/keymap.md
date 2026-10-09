@@ -16,7 +16,7 @@
 
   A  S  D  F  G  H  J  K  L  ;  '
   A  S  D  F  G  H  ·  ·  ·  ·  ·          오토 툴: A 취소  S Fill  D Paint  F Apply & Close  G Apply & Continue
-                                            그 밖: D 브러쉬   F 기준(◎)으로   H Hide Masks
+                                            그 밖: D Paint     F 기준(◎)으로   H Hide Masks
 
    Z  X  C  V  B  N  M  ,  .  /
    Z  X  C  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X 흑백(Final↔Object)   C 잘라보기(안↔밖)   V Mask Preview   N New Object   , . 키프레임

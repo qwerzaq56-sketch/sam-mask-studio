@@ -86,6 +86,7 @@ class PropagationPanel(QWidget):
         self.scope = QComboBox()
         for value, text in SCOPES:
             self.scope.addItem(text, value)
+        self.scope.setCurrentIndex(self.scope.findData("all"))  # the whole folder, as the manual says (U9)
         self.scope.setToolTip(
             "Selection: the images picked in the Frame List (Shift/Ctrl-click), or the pinned ones\n"
             "Range: Start ~ End · Custom: IDs and ID ranges, e.g. 1-4, 35, 23 · All images: the whole folder"
