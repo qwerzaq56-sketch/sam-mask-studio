@@ -6,7 +6,7 @@
 <p align="center"><i>Object-based masking tool for image sequences and 3DGS / COLMAP datasets:
 SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carries masks across frames.</i></p>
 
-현재 버전: **v0.5.1** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
+현재 버전: **v0.6.0** · [`catfield123/sam-mask-gui`](https://github.com/catfield123/sam-mask-gui)(MIT)에서 출발했습니다.
 
 문서 지도와 정리 원칙: [`docs/README.md`](docs/README.md)
 
@@ -111,7 +111,7 @@ $env:SAM2_BUILD_CUDA = "0"                              # SAM2 CUDA 확장은 �
 > SAM3 가중치가 들어 있어 공개하지 않으니, 링크에서 **액세스 요청**을 보내 주세요(승인 후 다운로드, 개인 사용 목적만).
 
 ```powershell
-.venv\Scripts\python.exe tools\make_portable.py <출력 폴더> [--force] [--ref v0.5.1] [--zip]
+.venv\Scripts\python.exe tools\make_portable.py <출력 폴더> [--force] [--ref v0.6.0] [--zip] [--split]
 ```
 
 `--ref`는 묶을 태그(기본 HEAD), `--zip`은 폴더 옆에 `<폴더 이름>-<버전>-portable.zip`도 만듭니다(모델 가중치는 압축 없이 담아 빠름).
