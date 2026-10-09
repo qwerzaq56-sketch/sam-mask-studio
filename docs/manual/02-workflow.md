@@ -29,7 +29,7 @@ bedroom/
 
 **조작**
 
-1. File → **Open Folder…** (`Ctrl+O`).
+1. File → **Open Folder…** (`Ctrl+O`). 폴더를 열기 전 빈 화면에는 **Recent folders**(최근 3개, 누르면 열림)가 나오고, 폴더나 이미지 파일을 창에 끌어다 놓아도 엽니다(파일이면 그 폴더).
 2. **장면 루트**(`bedroom/`)를 고릅니다. 그 안의 `images/`를 골라도 됩니다.
 
 **확인할 것**

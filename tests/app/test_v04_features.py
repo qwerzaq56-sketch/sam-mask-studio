@@ -3408,3 +3408,51 @@ def test_small_fixes_of_the_ux_audit_d(qapp, win, tmp_path):
     assert rows["SAM2 checkpoint"].missing.isHidden()
     dlg.deleteLater()
     assert win.act_brush.text().replace("&", "") == "Paint"
+
+
+def test_start_panel_offers_recent_folders_and_drops(qapp, win, folder, tmp_path):
+    """p140 (U13): before a folder is open, the canvas lists the recent folders (a click opens one); a folder
+    dropped on the window opens too."""
+    from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
+    from PyQt6.QtGui import QDropEvent
+
+    from src.app.main_window import MainWindow
+
+    sp = win.start_panel
+    sp.set_recent([str(folder), str(tmp_path / "gone")])
+    assert [b.toolTip() for b in sp.buttons] == [f"Open {folder}"]  # a folder no longer there is left out
+    sp.buttons[0].click()
+    assert win.session.image_dir == folder and sp.isHidden()
+    assert win.settings.recent_dirs[0] == str(folder)
+    md = QMimeData()
+    md.setUrls([QUrl.fromLocalFile(str(next(folder.iterdir())))])  # an image: its folder
+    ev = QDropEvent(QPointF(5, 5), Qt.DropAction.CopyAction, md, Qt.MouseButton.NoButton,
+                    Qt.KeyboardModifier.NoModifier)
+    assert MainWindow._dropped_folder(ev) == folder
+
+
+def test_preset_checks_fold_and_mask_loading_shows_a_window(qapp, win, tmp_path):
+    """p140: U10 a preset's "Checked on" list is folded behind a link; U12 loading mask folders shows a
+    progress window (closed when done)."""
+    import cv2
+    import numpy as np
+
+    from src.app.batch_mask_dialog import BatchMaskDialog
+    from src.batchmask.presets import list_presets
+
+    dlg = BatchMaskDialog(win.session.image_dir, tmp_path / "scene")
+    p = next(p for p in list_presets() if p.checked_on)
+    dlg.preset.setCurrentIndex(dlg.preset.findData(p.name))
+    assert f"Checked on ({len(p.checked_on)}) ▸" in dlg.about.text() and p.checked_on[0] not in dlg.about.text()
+    dlg.about.linkActivated.emit("checked")
+    assert p.checked_on[0] in dlg.about.text()
+    dlg.deleteLater()
+    masks = tmp_path / "masks"
+    masks.mkdir()
+    for k in win.session.keys:
+        m = np.zeros((48, 64), np.uint8)
+        m[5:20, 5:20] = 255
+        cv2.imwrite(str(masks / f"{k}.png"), m)
+    win.choose = lambda title, text, groups, ok="OK": [1] * len(groups)
+    ids = win.offer_masks([masks], "Import Masks")
+    assert ids and win._mask_bar.maximum() == len(win.session.keys) and not win._mask_bar.isVisible()

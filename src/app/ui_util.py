@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from PyQt6.QtCore import QEvent, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -199,3 +199,72 @@ class DockTitleBar(QWidget):
         """A narrow dock: drop the title and the float button, so the other buttons fit unclipped."""
         self.title.setVisible(not on)
         self.float_btn.setVisible(not on)
+
+
+class StartPanel(QWidget):
+    """What the empty canvas offers before a folder is open (U13): how to open one, the last folders opened
+    (a click opens one), and that a folder can be dropped on the window. Kept centered on its parent."""
+
+    open_requested = pyqtSignal(object)  # a Path
+
+    SHOWN = 3  # recent folders listed
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("StartPanel { background: transparent; } QLabel { color: rgb(170, 170, 170); }"
+                           "QPushButton { text-align: left; color: rgb(120, 175, 255); border: none; padding: 2px; }"
+                           "QPushButton:hover { text-decoration: underline; }")
+        lay = QVBoxLayout(self)
+        lay.setSpacing(4)
+        self.head = QLabel("Open an image folder (Ctrl+O), or drop a folder on the window")
+        self.head.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.head)
+        self.recent_label = QLabel("Recent folders")
+        self.recent_label.setContentsMargins(0, 10, 0, 0)
+        lay.addWidget(self.recent_label)
+        self._list = QVBoxLayout()
+        self._list.setSpacing(0)
+        lay.addLayout(self._list)
+        self.buttons: list = []
+        parent.installEventFilter(self)
+
+    def set_recent(self, folders) -> None:
+        """The recent folders (newest first); those gone from the disk are left out."""
+        from pathlib import Path
+
+        for b in self.buttons:
+            self._list.removeWidget(b)
+            b.deleteLater()
+        self.buttons = []
+        for f in [Path(f) for f in folders if f and Path(f).is_dir()][: self.SHOWN]:
+            b = QPushButton(str(f))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setToolTip(f"Open {f}")
+            b.clicked.connect(lambda _c=False, p=f: self.open_requested.emit(p))
+            self._list.addWidget(b)
+            self.buttons.append(b)
+        self.recent_label.setVisible(bool(self.buttons))
+        self._center()
+        QTimer.singleShot(0, self._center)
+
+    def eventFilter(self, obj, event):
+        if obj is self.parent() and event.type() == QEvent.Type.Resize:
+            self._center()
+        return super().eventFilter(obj, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._center()
+
+    def _center(self) -> None:
+        p = self.parentWidget()
+        if p is None:
+            return
+        w = max(1, min(self.head.sizeHint().width() + 200, p.width() - 20))
+        fm = self.fontMetrics()
+        for b in self.buttons:  # a long path keeps its end (the folder's own name)
+            b.setText(fm.elidedText(b.toolTip()[len("Open "):], Qt.TextElideMode.ElideLeft, w - 30))
+        self.layout().activate()
+        self.resize(w, self.sizeHint().height())
+        self.move(max(0, (p.width() - w) // 2), max(0, (p.height() - self.height()) // 2))
