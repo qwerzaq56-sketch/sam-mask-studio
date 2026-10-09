@@ -128,16 +128,6 @@ class BatchMaskDialog(QDialog):
                                "selfie stick may not find another's: try them first")
         self.attach = QLineEdit()
         self.attach.setToolTip("Masked only where they touch the above (a worn bag, not one on a bench)")
-        # p146: steady (p145), like attach but only where the touch lasts
-        self.steady = QLineEdit()
-        self.steady.setToolTip("Masked only where they keep touching the above over the frames around "
-                               "(a cart pulled along, not a parked one walked past)")
-        self.steady_frames = QSpinBox()
-        self.steady_frames.setRange(1, 50)
-        self.steady_frames.setPrefix("touching in ")
-        self.steady_frames.setToolTip("How many of the frames around (2N-1, this one in the middle) must touch")
-        self.steady_frames.valueChanged.connect(self._steady_suffix)
-        self.steady.textChanged.connect(lambda t: self.steady_frames.setEnabled(bool(t.strip())))
         self.also = QLineEdit()
         self.also.setPlaceholderText("e.g. selfie stick; tripod; backpack")
         self.also.setToolTip("Try only: measured and outlined on the contact sheets, not put in the mask")
@@ -149,8 +139,6 @@ class BatchMaskDialog(QDialog):
         self.grow.setSuffix(" px at 1024")
         pf.addRow("Mask", self.labels)
         pf.addRow("Mask if touching", self.attach)
-        pf.addRow("Mask if touching long", self.steady)
-        pf.addRow("", self.steady_frames)
         pf.addRow("Also try", self.also)
         pf.addRow("Score at least", self.threshold)
         pf.addRow("Grow", self.grow)
@@ -363,9 +351,6 @@ class BatchMaskDialog(QDialog):
         if name:
             self._show_about(find_preset(name))
 
-    def _steady_suffix(self, n: int) -> None:
-        self.steady_frames.setSuffix(f" of {2 * n - 1} frames around")
-
     def _load(self) -> None:
         name = self.preset.currentData()
         if not name:
@@ -376,10 +361,6 @@ class BatchMaskDialog(QDialog):
         self.person_box.setChecked(p.person is not None)
         self.labels.setText("; ".join(person.labels))
         self.attach.setText("; ".join(person.attach))
-        self.steady.setText("; ".join(person.steady))
-        self.steady_frames.setValue(person.steady_frames)
-        self._steady_suffix(person.steady_frames)
-        self.steady_frames.setEnabled(bool(person.steady))
         self.threshold.setValue(person.threshold)
         self.grow.setValue(person.grow)
         self.keyframes.setValue(person.keyframes)
@@ -440,8 +421,7 @@ class BatchMaskDialog(QDialog):
         person = lens = sky = None
         if self.person_box.isChecked():
             person = PersonStep(**dict(asdict(self._person_rest), labels=split(self.labels.text()),
-                                       attach=split(self.attach.text()), steady=split(self.steady.text()),
-                                       steady_frames=self.steady_frames.value(), threshold=round(self.threshold.value(), 3),
+                                       attach=split(self.attach.text()), threshold=round(self.threshold.value(), 3),
                                        grow=self.grow.value(), keyframes=self.keyframes.value(),
                                        union=self.union.isChecked() and self.keyframes.value() > 1))
         if self.lens_box.isChecked():

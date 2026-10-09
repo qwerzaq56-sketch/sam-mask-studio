@@ -1032,6 +1032,10 @@
 - **Mask if touching long**(`;` 구분 라벨)과 그 아래 장수 칸(`touching in 5 of 9 frames around`, 뒤 숫자는 2N−1로 따라 바뀜). 장수 칸은 라벨이 있을 때만 켜짐. Save as Preset · Run이 이 값을 씀.
 - 테스트 335개 통과(새 1개).
 
+## v0.4-p148 — steady 칸 되돌림: 안정판 v0.6.0 준비 (2026-10-09)
+- 사용자 결정(10-09): 안정판 v0.6.0 = SAM3 + 키프레임 10 전파 + union, 리어카는 attach로. 연속 닿음(steady)은 기능째 뺌(실험은 태그 `v0.4-p145`에서 다시 꺼냄).
+- p146의 Batch Masking 창 People 칸 steady 칸 · 테스트를 되돌림(`git revert 5ada5a6`, PROGRESS 기록은 남김). 명령줄 · 프리셋 쪽은 배치 마스킹 스터디 p147.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
