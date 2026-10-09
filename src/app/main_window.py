@@ -265,6 +265,8 @@ class MainWindow(QMainWindow):
         self.timeline_panel = TimelinePanel()
         self.timeline_panel.cell_clicked.connect(self.timeline_clicked)
         self.timeline_panel.cell_menu.connect(self.timeline_menu)
+        self.timeline_panel.set_split(self.settings.timeline_by_camera)
+        self.timeline_panel.split_toggled.connect(lambda on: self._remember("timeline_by_camera", on))
         timeline_dock = self._dock("Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.tabifyDockWidget(frames_dock, timeline_dock)
         frames_dock.raise_()

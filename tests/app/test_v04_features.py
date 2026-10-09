@@ -3559,11 +3559,11 @@ def test_timeline_shows_a_row_per_object_and_a_click_opens_that_frame_and_object
     win.refresh()
     qapp.processEvents()
     view = win.timeline_panel.view
-    assert view.isVisible() and [r[0] for r in view._rows] == ids
-    rows = {oid: frames for oid, _n, frames in view._rows}
-    assert rows[ids[0]] == {k[0]: p.get(ids[0]).frame(k[0]).status}
-    assert rows[ids[1]][k[2]] == FrameStatus.PROPAGATED and rows[ids[1]][k[3]] == FrameStatus.WARNING
-    assert k[1] not in rows[ids[1]] and set(FILL) == set(FrameStatus)
+    assert view.isVisible() and [r.oid for r in view._rows] == ids
+    rows = {r.oid: r.kinds for r in view._rows}
+    assert rows[ids[0]] == {k[0]: "manual"}
+    assert rows[ids[1]][k[2]] == "propagated" and rows[ids[1]][k[3]] == "warning"
+    assert k[1] not in rows[ids[1]] and set(FILL) >= {"manual", "propagated", "imported", "warning", "failed"}
     tip = view.cell_text(1, 3)
     assert k[3] in tip and p.get(ids[1]).name in tip and "⚠ worth a look" in tip and "area jumped" in tip
     assert "no mask" in view.cell_text(0, 1)
@@ -3675,3 +3675,59 @@ def test_a_low_sam2_object_score_marks_the_frame_worth_a_look(qapp, win):
     wait_until(qapp, lambda: win._busy is None)
     assert s.project.get(oid).frame(k[4]).status == FrameStatus.PROPAGATED
     assert "score" not in win.images_panel.list.item(4).toolTip()
+
+
+def test_timeline_by_camera_rows_and_batch_colors(qapp, win):
+    """p154: By camera gives a row per Object and camera folder, cells by the frame's place in its folder;
+    a batch run's detections and the frames its report says nothing about have their own colors."""
+    import numpy as np
+
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from src.app.timeline_panel import HEAD_H, NAME_W, ROW_H, TimelinePanel
+    from src.core.project import FrameState, FrameStatus, Project, Source
+
+    keys = ["cam0/a.png", "cam0/b.png", "cam0/c.png", "cam1/a.png", "cam1/b.png"]
+    m = np.zeros((4, 4), bool)
+    m[1, 1] = True
+    p = Project(keys)
+    frames = {keys[0]: FrameState.from_mask(m, status=FrameStatus.IMPORTED, note="SAM3"),
+              keys[1]: FrameState.from_mask(m, status=FrameStatus.PROPAGATED, note="propagated from cam0/a"),
+              keys[3]: FrameState.from_mask(m, status=FrameStatus.IMPORTED),  # not in the report
+              keys[4]: FrameState.from_mask(m, status=FrameStatus.WARNING, note="⚠ why")}
+    plain = {keys[2]: FrameState.from_mask(m, status=FrameStatus.IMPORTED)}  # no report at all
+    a, b = p.add_label_objects({"people": frames, "other": plain}, Source.IMPORTED)
+
+    panel = TimelinePanel()
+    panel.resize(600, 200)
+    panel.show()
+    panel.update_from(p, keys, 4, 0, [a])
+    qapp.processEvents()
+    view = panel.view
+    assert panel.split_btn.isVisible() and not view.split and len(view._rows) == 2
+    kinds = {r.oid: r.kinds for r in view._rows}
+    assert kinds[a] == {keys[0]: "detected", keys[1]: "propagated", keys[3]: "unknown", keys[4]: "warning"}
+    assert kinds[b] == {keys[2]: "imported"}
+    assert "not in the batch report" in view.cell_text(0, 3) and "detected" in view.cell_text(0, 0)
+
+    clicked = []
+    panel.cell_clicked.connect(lambda oid, i: clicked.append((oid, i)))
+    panel.split_btn.setChecked(True)
+    qapp.processEvents()
+    assert view.split and [r.label for r in view._rows] == \
+        ["people #1 · cam0", "people #1 · cam1", "other #1 · cam0", "other #1 · cam1"]
+    assert view._rows[1].cols == ("cam1/a.png", "cam1/b.png", None) and view._cols == 3
+    assert [r.count for r in view._rows] == [2, 2, 1, 0]
+    assert view._col(4) == 1  # cam1/b.png: second in its folder
+    w = view.cell_width()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=QPoint(NAME_W + w + w // 2, HEAD_H + ROW_H + ROW_H // 2))  # people · cam1, place 2
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=QPoint(NAME_W + 2 * w + w // 2, HEAD_H + ROW_H + ROW_H // 2))  # past cam1's end
+    assert clicked == [(a, 4)]
+    panel.close()
+
+    assert win.timeline_panel.split_btn.isChecked() is False
+    win.timeline_panel.split_btn.setChecked(True)
+    assert win.settings.timeline_by_camera is True
