@@ -144,6 +144,7 @@
 | **Copy Mask to Picked Frames** | 선택한 Object의 기준 ◎(없으면 열린 프레임) 마스크로 고른 프레임의 마스크를 **바꿈** |
 | **Copy Mask to Picked Frames (Options)…** | Their masks there: **Replace** / **Add**(합치기) |
 | **Clear Masks on Picked Frames** | 고른 프레임에서 선택한 Object의 마스크를 비움(잠긴 Object도) |
+| **Clear a Propagation Run…** | 선택한 Object에서 전파 한 회차가 남긴 마스크를 지움: 회차 · 방향(양쪽 / ◀ / ▶) · 기준 옆 몇 장은 남길지. 지워질 칸을 Timeline에 미리 보여 줌, `Ctrl+Z` 한 번. 고친 프레임(★)은 남음. Timeline 칸 우클릭 = 그 칸부터 바깥쪽으로 |
 | Go → **Exclude from Dataset / Include** | 고른 프레임(없으면 지금 프레임)을 ⊘. 새 데이터셋에서만 빠짐 |
 
 - 모두 Undo 한 단계, 편집 중에는 안 됩니다.

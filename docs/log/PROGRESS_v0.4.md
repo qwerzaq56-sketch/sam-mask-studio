@@ -1070,6 +1070,14 @@
 - 탭이 가려져 있으면 그리지 않고, 보일 때 한 번 그림. 데이터가 같으면 다시 그리지 않음.
 - 테스트 339개 통과(새 테스트 1).
 
+## v0.4-p152 — 전파 회차 기록 · 회차 지우기 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ①(sam3 video tool의 "기준 프레임 · 방향으로 지우기, 미리 보기").
+- 기록: 앱 안 전파가 남긴 프레임마다 `Origin`(회차 번호 · 기준 이미지 · 방향 · 기준에서 몇 장째). 회차 = Propagate 한 번(지금 남은 최대 회차 + 1), Resume은 같은 회차로 이어 감(기준 · 거리도 처음 계획 기준). `project.json`에 `origin`으로 저장. 여기서 고치면(★) `note`처럼 지움.
+- 표시: Frame List · Timeline 툴팁에 `propagated from cam0/00006 forward, 3 away (run 2)`. 배치 보고서 note가 있으면 그쪽이 먼저.
+- 지우기: Objects > **Clear a Propagation Run…**(새 `src/app/clear_run_dialog.py`): 선택한 Object의 회차 목록(최근 것 먼저, ◀ · ▶ 장 수), 방향(양쪽 / ◀ / ▶), "기준 옆 N장은 남김". 창이 열린 동안 Timeline이 지워질 칸을 흐리게 줄 그어 보여 줌(미리 보기), 요약 줄에 장 수와 프레임 ID. Clear = 한 번의 Undo(`Project.remove_frames`). Timeline 칸 우클릭 = **Clear Run N from Here On ◀/▶**(그 칸부터 바깥쪽) · **Clear Run N (Both Ways)**.
+- 지운 자리는 비게 됨(전파가 덮어쓴 이전 마스크로 돌아가지 않음; 그건 Ctrl+Z). p152 전 전파 · 불러온 마스크는 기록이 없어 대상 아님.
+- 테스트 343개 통과(새 테스트 4).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

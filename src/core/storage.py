@@ -29,8 +29,8 @@ import numpy as np
 from src.engine.imageio import key_stem, read_rgb
 from src.core.sky_edges import sky_edges
 from src.core.special import LABELS, SKY, Special
-from src.core.project import (EditLayer, FrameState, FrameStatus, MaskBar, MaskObject, Point, Project, PromptLayer,
-                              Source, Variant, freeze, union)
+from src.core.project import (EditLayer, FrameState, FrameStatus, MaskBar, MaskObject, Origin, Point, Project,
+                              PromptLayer, Source, Variant, freeze, union)
 
 FORMAT_VERSION = 1
 
@@ -65,6 +65,16 @@ def _write_png(path: Path, mask: np.ndarray) -> None:
     if not ok:
         raise IOError(f"PNG encode failed for {path}")
     buf.tofile(str(path))  # tofile handles non-ASCII Windows paths; cv2.imwrite does not
+
+
+def _origin(data) -> Optional[Origin]:
+    """A frame's saved propagation origin (p152); None when missing or unreadable."""
+    if not isinstance(data, dict):
+        return None
+    try:
+        return Origin(int(data["run"]), str(data["ref"]), bool(data["forward"]), int(data["step"]))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _read_png(path: Path) -> Optional[np.ndarray]:
@@ -186,6 +196,8 @@ class ProjectStore:
                     "box": list(fs.box) if fs.box else None,
                     "status": fs.status.value,
                     **({"note": fs.note} if fs.note else {}),
+                    **({"origin": {"run": fs.origin.run, "ref": fs.origin.ref, "forward": fs.origin.forward,
+                                   "step": fs.origin.step}} if fs.origin is not None else {}),
                     "score": sel.score if sel else None,
                     "has_mask": m is not None,
                     "edit": fs.edit is not None,
@@ -306,6 +318,7 @@ class ProjectStore:
                     edit=edit,
                     layers=tuple(layers),
                     note=fj.get("note", ""),
+                    origin=_origin(fj.get("origin")),
                 )
             project.objects.append(
                 MaskObject(

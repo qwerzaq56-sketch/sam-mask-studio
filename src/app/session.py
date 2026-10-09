@@ -33,7 +33,8 @@ from src.core.project import (
     freeze,
     union,
 )
-from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
+from src.core.propagation import (Direction, PropagationPlan, RunSummary, existing_targets, grade, origins,
+                                  run_frames, run_summaries)
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, SKY, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import (
@@ -1033,6 +1034,19 @@ class Session:
         self.selected_point = None
         return True
 
+    def run_summaries(self, ids: Iterable[int]) -> List[RunSummary]:
+        return run_summaries(self.project.objects, ids)
+
+    def run_frames(self, ids: Iterable[int], run: int, ref: str, direction: Direction,
+                   keep: int = 0) -> Dict[int, List[str]]:
+        return run_frames(self.project.objects, ids, run, ref, direction, keep)
+
+    def clear_run(self, frames: Dict[int, List[str]]) -> int:
+        """Remove a propagation run's frames ({Object id: keys}, from run_frames) as one undo step."""
+        gone = self.project.remove_frames(frames)
+        self.sync()
+        return gone
+
     def clear_frames(self, ids: Iterable[int], rows: Iterable[int]) -> int:
         """Empty the Objects' masks on the images *rows* (one undo step); returns how many masks went."""
         gone = self.project.clear_frames(ids, [self.keys[i] for i in rows])
@@ -1441,12 +1455,15 @@ class Session:
         return existing_targets(frames, self.keys, plan)
 
     def apply_propagation(
-        self, results: Dict[int, Dict[int, np.ndarray]], reference: Dict[int, np.ndarray]
+        self, results: Dict[int, Dict[int, np.ndarray]], reference: Dict[int, np.ndarray],
+        origin: Optional[Tuple[int, PropagationPlan]] = None,
     ) -> Dict[int, FrameStatus]:
         """Store propagated masks (``{index: {obj_id: mask}}``) as one undo step.
 
+        *origin*: (run number, the run's first plan): each frame records where it came from (p152).
         Returns each frame's worst status (FAILED > WARNING > PROPAGATED).
         """
+        where = origins(origin[1], origin[0], self.keys) if origin is not None else {}
         rank = {FrameStatus.PROPAGATED: 0, FrameStatus.WARNING: 1, FrameStatus.FAILED: 2}
         ref_area = {oid: int(m.sum()) for oid, m in reference.items()}
         updates: Dict[int, Dict[str, FrameState]] = {}
@@ -1456,7 +1473,7 @@ class Session:
             worst = FrameStatus.PROPAGATED
             for oid, m in by_obj.items():
                 st = grade(m, ref_area.get(oid, 0))
-                updates.setdefault(oid, {})[key] = FrameState.from_mask(m, status=st)
+                updates.setdefault(oid, {})[key] = FrameState.from_mask(m, status=st, origin=where.get(idx))
                 if rank[st] > rank[worst]:
                     worst = st
             per_frame[idx] = worst

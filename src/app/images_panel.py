@@ -78,16 +78,25 @@ def image_marks(project: Project, only: Optional[int] = None) -> Dict[str, str]:
     return {k: next(m for st, m in PRIORITY if st in sts) for k, sts in seen.items()}
 
 
+def frame_note(fs) -> str:
+    """Where a frame's mask came from: the batch report's note (p150), else the app run it was propagated in
+    (p152); "" for neither."""
+    if fs.note:
+        return fs.note
+    return fs.origin.describe() if fs.origin is not None else ""
+
+
 def image_notes(project: Project, only: Optional[int] = None) -> Dict[str, str]:
-    """Each image's frame notes (where an imported mask came from, why it is worth a look; p150), one line an
-    Object: ``people_masks: propagated from cam0/00006 forward``. *only*: that Object's alone."""
+    """Each image's frame notes (where an imported or propagated mask came from, why it is worth a look; p150,
+    p152), one line an Object: ``people_masks: propagated from cam0/00006 forward``. *only*: that Object's alone."""
     notes: Dict[str, List[str]] = {}
     for o in project.objects:
         if only is not None and o.id != only:
             continue
         for k, fs in o.frames.items():
-            if fs.note and fs.mask is not None:
-                notes.setdefault(k, []).append(f"{o.name}: {fs.note}")
+            note = frame_note(fs)
+            if note and fs.mask is not None:
+                notes.setdefault(k, []).append(f"{o.name}: {note}")
     return {k: "\n".join(v) for k, v in notes.items()}
 
 

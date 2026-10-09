@@ -14,7 +14,7 @@ from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import QAbstractScrollArea, QLabel, QToolTip, QVBoxLayout, QWidget
 
-from src.app.images_panel import REFERENCE_OUTLINE, camera_heads
+from src.app.images_panel import REFERENCE_OUTLINE, camera_heads, frame_note
 from src.core.project import FrameStatus, Project
 
 FILL = {  # the cell colors: the Frame List's mark colors, ✓ and ↓ told apart here
@@ -36,7 +36,8 @@ LEGEND = ("<span style='color:#286edc'>■</span>★ <span style='color:#46a55f'
           "<span style='color:#d72828'>■</span>✕ · blank: no mask")
 LEGEND_TIP = ("★ edited here · ✓ propagated · ↓ imported, unchanged · ⚠ worth a look · ✕ empty after propagation.\n"
               "Click a cell: that frame and Object. Click a name: that Object, on its nearest frame with a mask.\n"
-              "Hover a cell: its status and, for a batch mask, where it came from.")
+              "Hover a cell: its status and where it came from (a batch report, or the run it was propagated in).\n"
+              "Right-click a propagated cell: clear its run from there on (Objects > Clear a Propagation Run…).")
 
 ROW_H = 18
 HEAD_H = 14  # the line over the rows: the open frame ▼, the reference ◎, camera names
@@ -56,9 +57,11 @@ class TimelineView(QAbstractScrollArea):
     """The grid: names on the left (they stay when the frames scroll sideways), a cell per frame."""
 
     cell_clicked = pyqtSignal(int, int)  # Object id, frame index (-1: its name)
+    cell_menu = pyqtSignal(int, int, QPoint)  # right-click on a cell: Object id, frame index, where (global)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._preview: Dict[int, set] = {}  # Object id -> image keys a Clear would remove (p152), crossed out
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.viewport().setMouseTracking(True)
@@ -86,6 +89,13 @@ class TimelineView(QAbstractScrollArea):
         if moved:
             self.show_frame(current)
         self.viewport().update()
+
+    def set_preview(self, frames: Dict[int, Sequence[str]]) -> None:
+        """Cross out the cells a Clear would remove ({Object id: image keys}); {} ends the preview."""
+        preview = {oid: set(keys) for oid, keys in frames.items() if keys}
+        if preview != self._preview:
+            self._preview = preview
+            self.viewport().update()
 
     def cell_width(self) -> int:
         n = max(1, len(self._keys))
@@ -139,6 +149,8 @@ class TimelineView(QAbstractScrollArea):
 
     def mousePressEvent(self, e):
         hit = self.cell_at(e.position().toPoint())
+        if hit is not None and hit[1] is not None and e.button() == Qt.MouseButton.RightButton:
+            self.cell_menu.emit(self._rows[hit[0]][0], hit[1], e.globalPosition().toPoint())
         if hit is not None and e.button() == Qt.MouseButton.LeftButton:
             row, i = hit
             self.cell_clicked.emit(self._rows[row][0], -1 if i is None else i)  # -1: the name
@@ -197,6 +209,13 @@ class TimelineView(QAbstractScrollArea):
                 st = frames.get(self._keys[i])
                 if st is not None:
                     p.fillRect(NAME_W + i * w - hx, y + 2, max(1, w - (1 if w > 4 else 0)), ROW_H - 4, FILL[st])
+            gone = self._preview.get(oid)
+            if gone:  # what a Clear would remove: dimmed, with a dark line through
+                for i in range(first, last):
+                    if self._keys[i] in gone:
+                        x = NAME_W + i * w - hx
+                        p.fillRect(x, y + 2, max(1, w - (1 if w > 4 else 0)), ROW_H - 4, QColor(255, 255, 255, 170))
+                        p.fillRect(x, y + ROW_H // 2 - 1, max(1, w), 2, QColor(40, 40, 40))
         # camera folders: a line where the next one starts, its name in the head line
         p.setPen(QPen(line, 1))
         for i, head in self._heads.items():
@@ -248,6 +267,7 @@ class TimelinePanel(QWidget):
     """The Timeline dock: the legend over the grid."""
 
     cell_clicked = pyqtSignal(int, int)  # Object id, frame index (-1: its name)
+    cell_menu = pyqtSignal(int, int, QPoint)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -257,6 +277,7 @@ class TimelinePanel(QWidget):
         self.legend.setMinimumWidth(10)
         self.view = TimelineView()
         self.view.cell_clicked.connect(self.cell_clicked)
+        self.view.cell_menu.connect(self.cell_menu)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 2, 4, 4)
         lay.setSpacing(2)
@@ -269,7 +290,7 @@ class TimelinePanel(QWidget):
             self._stale = (project, keys, current, reference, selected)  # drawn when the tab is shown
             return
         self._stale = None
-        notes = {(o.id, k): fs.note for o in project.objects for k, fs in o.frames.items() if fs.note}
+        notes = {(o.id, k): n for o in project.objects for k, fs in o.frames.items() if (n := frame_note(fs))}
         self.view.set_data(keys, object_rows(project), notes, current, reference, selected)
 
     def showEvent(self, e):
