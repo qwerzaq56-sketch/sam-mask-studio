@@ -3535,3 +3535,46 @@ def test_imported_masks_show_the_batch_reports_source_and_warnings(qapp, win, tm
     assert "from " + keys[0].rsplit(".", 1)[0] + " forward" in win.images_panel.list.item(1).toolTip()
     assert win.images_panel.list.item(4).toolTip() == keys[4]
     assert "batch report report.json: ✓ 1 propagated, ⚠ 2 worth a look" in win.log_view.toPlainText()
+
+
+def test_timeline_shows_a_row_per_object_and_a_click_opens_that_frame_and_object(qapp, win):
+    """p151: the Timeline dock has a row per Object, a cell per frame colored by its status (blank: no mask);
+    hovering says the status and the batch note, a click goes to that frame and selects that Object."""
+    import dataclasses
+
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from src.app.timeline_panel import FILL, HEAD_H, NAME_W, ROW_H
+    from src.core.project import FrameStatus
+
+    ids = make_objects(win, 2)
+    p = win.session.project
+    k = win.session.keys
+    fs = p.get(ids[1]).frame(k[0])
+    p.set_frame(ids[1], k[2], dataclasses.replace(fs, status=FrameStatus.PROPAGATED, note="from k0 forward"))
+    p.set_frame(ids[1], k[3], dataclasses.replace(fs, status=FrameStatus.WARNING, note="area jumped"))
+    assert "Timeline" in [d.windowTitle() for d in win._docks]
+    win._timeline_dock.raise_()
+    win.refresh()
+    qapp.processEvents()
+    view = win.timeline_panel.view
+    assert view.isVisible() and [r[0] for r in view._rows] == ids
+    rows = {oid: frames for oid, _n, frames in view._rows}
+    assert rows[ids[0]] == {k[0]: p.get(ids[0]).frame(k[0]).status}
+    assert rows[ids[1]][k[2]] == FrameStatus.PROPAGATED and rows[ids[1]][k[3]] == FrameStatus.WARNING
+    assert k[1] not in rows[ids[1]] and set(FILL) == set(FrameStatus)
+    tip = view.cell_text(1, 3)
+    assert k[3] in tip and p.get(ids[1]).name in tip and "⚠ worth a look" in tip and "area jumped" in tip
+    assert "no mask" in view.cell_text(0, 1)
+
+    w = view.cell_width()
+    pos = QPoint(NAME_W + 2 * w + w // 2, HEAD_H + ROW_H + ROW_H // 2)  # Object 2, frame 3
+    assert view.cell_at(pos) == (1, 2)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    settle(qapp)
+    assert win.session.index == 2 and win.objects_panel.selected_ids() == [ids[1]]
+    assert view._current == 2 and view._selected == (ids[1],)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(10, HEAD_H + ROW_H // 2))
+    settle(qapp)
+    assert win.session.index == 0 and win.objects_panel.selected_ids() == [ids[0]]  # a name: its nearest mask
