@@ -142,7 +142,9 @@ def next_run(objects: Iterable) -> int:
 # A propagated mask whose area drifts this far from the reference is flagged.
 WARN_AREA_RATIO = 4.0
 # SAM2's object score (0..1) under this on a frame with a mask: it is unsure the object is there (p153).
-# At 0.5 or below SAM2 empties the mask itself (✕). Provisional until measured on real runs.
+# At 0.5 or below SAM2 empties the mask itself (✕). Measured on 0022 / 0015 (p156, 2,385 propagated frames, SAM2
+# tiny): a good run sits at 0.999+, the few frames under 0.8 are mostly lost or partial; under 0.6 adds nothing to the
+# area rule and over 0.8 only adds false alarms.
 LOW_SCORE = 0.8
 
 
