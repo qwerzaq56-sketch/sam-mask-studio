@@ -3802,3 +3802,30 @@ def test_a_click_on_another_objects_row_while_editing_edits_that_one(qapp, win):
     assert s.editing == a  # Ctrl+click: selection only
     click_row(b)
     assert s.editing == b and win.objects_panel.selected_ids() == [b]
+
+
+def test_h_tap_toggles_hide_masks_and_h_held_peeks(qapp, win):
+    """p162: a tap of H toggles Hide Masks as before; held past HOLD_SECONDS, the masks come back on release."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    make_objects(win, 1)
+    win.activateWindow()
+    win.canvas.setFocus()
+    qapp.processEvents()
+    act = win.act_hide_masks
+    QTest.keyClick(win.canvas, Qt.Key.Key_H)  # tap: on
+    assert act.isChecked() and win._h_press is None
+    QTest.keyClick(win.canvas, Qt.Key.Key_H)  # tap: off
+    assert not act.isChecked()
+    QTest.keyPress(win.canvas, Qt.Key.Key_H)  # held: hidden while down...
+    assert act.isChecked()
+    win._h_press = (win._h_press[0] - 1.0, win._h_press[1])  # ...for a second
+    QTest.keyRelease(win.canvas, Qt.Key.Key_H)
+    assert not act.isChecked()  # back on release
+    act.setChecked(True)  # hidden from the toolbar: a long H shows them while down, hides again
+    QTest.keyPress(win.canvas, Qt.Key.Key_H)
+    assert not act.isChecked()
+    win._h_press = (win._h_press[0] - 1.0, win._h_press[1])
+    QTest.keyRelease(win.canvas, Qt.Key.Key_H)
+    assert act.isChecked()

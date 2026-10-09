@@ -1312,7 +1312,7 @@ SHORTCUTS = (
         ("C", "Mask Preview cut out: inside the mask <-> outside it (in black and white: to the cut-out)"),
         ("O", "Outline on / off"),
         ("Q / `", "Solo: color only the selected Objects"),
-        ("H", "Hide Masks: the plain image"),
+        ("H", "Hide Masks: the plain image (held: only while down)"),
         ("T", "Hold while picking colors: Original, the photo alone (no tool preview either), back on release. The Original button toggles it"),
         ("Right-click while picking colors", "A color to leave out (−); Shift: one more, Alt: the 5×5 mean"),
         ("R", "Show Changes (the edit layer's green / red tints) on / off"),
