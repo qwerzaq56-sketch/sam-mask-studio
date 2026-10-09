@@ -165,6 +165,35 @@ def test_person_keyframes_propagate_between(tmp_path, monkeypatch):
     assert not m3[20, 34] and m3[20, 4]
 
 
+def test_person_keyframes_union_adds_propagation_to_every_frame(tmp_path, monkeypatch):
+    from tests.fakes import fake_propagate
+
+    ShiftEngine.calls, ShiftEngine.order = [], []
+    monkeypatch.setattr(cli, "_engine", lambda model, device: ShiftEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    images = tmp_path / "images"
+    for cam, n in (("cam0", 7), ("cam1", 3)):
+        (images / cam).mkdir(parents=True)
+        for i in range(n):
+            cv2.imencode(".jpg", np.full((200, 200, 3), 10 * i, np.uint8))[1].tofile(str(images / cam / f"{i:05d}.jpg"))
+    out = tmp_path / "people"
+    rep = cli.person_folder(images, out, recursive=True, labels=["person"], attach=[], grow=0, max_side=200,
+                            keyframes=3, union=True, propagate=fake_propagate, log=lambda s: None)
+    assert sorted(ShiftEngine.calls) == [0, 0, 1, 1, 2, 2, 3, 4, 5, 6]  # SAM3 on every frame
+    assert rep["written"] == 10 and rep["keyframe_count"] == 5 and rep["settings"]["union"] is True
+    f1 = rep["frames"]["cam0/00001.jpg"]
+    assert f1["from_keyframes"] == 2 and "found" in f1 and f1["added"] > 0
+    m1 = read(out / "cam0" / "00001.jpg.png")  # black = people: its own place (10) and keyframes 0 and 3's
+    assert not m1[20, 14] and not m1[20, 4] and not m1[20, 34] and m1[20, 64]
+    m3 = read(out / "cam0" / "00003.jpg.png")  # a keyframe keeps its own mask only
+    assert not m3[20, 34] and m3[20, 4] and m3[20, 14]
+
+
+def test_person_union_needs_keyframes(frames, tmp_path):
+    with pytest.raises(SystemExit):
+        cli.main(["person", str(frames), "--out", str(tmp_path / "o"), "--union"])
+
+
 def test_person_keyframes_skip_existing_frames(tmp_path, monkeypatch):
     from tests.fakes import fake_propagate
 

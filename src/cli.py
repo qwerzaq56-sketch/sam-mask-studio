@@ -371,7 +371,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
                   labels: Sequence[str] = (), attach: Sequence[str] = (), threshold: float = 0.4,
                   grow: int = 2, max_side: int = 1024, touch: int = 16, model: Path = SAM3_MODEL, device: str = "cuda",
                   and_with: Optional[Path] = None, existing: str = "stop", keyframes: int = 0, propagate=None,
-                  split: Optional[Path] = None, hands: Sequence[str] = (), log=print) -> dict:
+                  split: Optional[Path] = None, hands: Sequence[str] = (), union: bool = False, log=print) -> dict:
     """The ``person`` command: black = people and what they carry (ignored in training), white = the rest
     (``--invert``: white = people). Returns the report.
 
@@ -381,7 +381,11 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
 
     *split*: only the photographer (the pole, who touches it, their bag, *hands* on the pole or the lens rim:
     :func:`src.core.people.split_people`) goes to *out*; everyone else to *split*, same names and colours.
-    With keyframes the two are propagated apart."""
+    With keyframes the two are propagated apart.
+
+    *union* (with *keyframes*): SAM3 on every frame as without keyframes, and what SAM2 carries from the
+    keyframes added on top: a frame SAM3 alone misses something in (a pole hidden by a hand) gets it from its
+    neighbours. As slow as SAM3 on every frame plus the propagation; masks only grow."""
     from src.core.people import grow_mask, people_mask, split_people
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
@@ -391,6 +395,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         "max_side": max_side, "invert": invert, "model": str(model), "device": device,
         "and_with": str(and_with) if and_with else None,
         **({"keyframes": every, "propagation_model": SAM2_MODEL.name} if every else {}),
+        **({"union": True} if every and union else {}),
         **({"split": str(split), "hands": list(hands)} if split is not None else {})})
     missing: List[str] = []
     if split is not None:
@@ -439,7 +444,10 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         return finish(key, people, size, {"found": counts})
 
     def what(note):
-        if "from_keyframes" in note:
+        if "found" in note and "from_keyframes" in note:
+            how = ", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"
+            how += f" + propagated from {note['from_keyframes']} keyframe(s) (+{100 * note['added']:.2f}%)"
+        elif "from_keyframes" in note:
             how = f"propagated from {note['from_keyframes']} keyframe(s)"
         else:
             how = ", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"
@@ -448,11 +456,12 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
 
     if every and b.todo:
         make = _keyframe_maker(b, images, every, detect, finish, max_side, device,
-                               propagate or _default_propagate(), eng, log)
+                               propagate or _default_propagate(), eng, log, dense=union)
         eng = None  # released once the keyframes are done
     report = b.run(make, what)
     if every:
-        report["keyframe_count"] = sum(1 for n in report["frames"].values() if "found" in n)
+        report["keyframe_count"] = sum(1 for n in report["frames"].values()
+                                       if "found" in n and "from_keyframes" not in n)
     if and_with is not None:
         report["and_with_missing"] = missing
         if missing:
@@ -469,9 +478,10 @@ def _default_propagate():
 
 
 def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_side: int, device: str, propagate,
-                    eng, log):
+                    eng, log, dense: bool = False):
     """``make`` for :func:`person_folder` with keyframes: SAM3 on every keyframe first (then released), then
-    each camera folder's frames in order from :func:`propagated`."""
+    each camera folder's frames in order from :func:`propagated`. *dense* (``--union``): SAM3 on every frame
+    to be written too, each one's mask the union of its own and the propagated one."""
     from src.engine.imageio import read_rgb
 
     todo = set(b.todo)
@@ -481,12 +491,18 @@ def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_si
     marks: Dict[str, Dict[int, np.ndarray]] = {}
     sizes: Dict[str, tuple] = {}
     found: Dict[str, dict] = {}
+    own: Dict[str, np.ndarray] = {}  # dense: SAM3's own mask of a frame between keyframes
     t = time.time()
     for folder, keys in folders.items():
         marks[folder] = {}
-        for i in keyframe_indices(len(keys), every):
-            sizes[keys[i]], marks[folder][i], found[keys[i]] = detect(keys[i])
-    log(f"SAM3 on {sum(len(m) for m in marks.values())} keyframe(s) (every {every}) in {time.time() - t:.0f} s; "
+        picks = set(keyframe_indices(len(keys), every))
+        for i, key in enumerate(keys):
+            if i in picks:
+                sizes[key], marks[folder][i], found[key] = detect(key)
+            elif dense and key in todo:
+                sizes[key], own[key], found[key] = detect(key)
+    log(f"SAM3 on {sum(len(m) for m in marks.values())} keyframe(s) (every {every})"
+        + (f" and {len(own)} frame(s) between" if dense else "") + f" in {time.time() - t:.0f} s; "
         "SAM2 propagation between them")
     if hasattr(eng, "release"):
         eng.release()
@@ -501,6 +517,15 @@ def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_si
                 break
         else:
             raise RuntimeError("propagation ended before this frame")
+        if key in own:
+            mine = own.pop(key)
+            if people.shape != mine.shape:  # the propagated mask at another working size
+                people = np.stack([cv2.resize(p.astype(np.uint8), mine.shape[::-1][:2], interpolation=cv2.INTER_NEAREST) > 0
+                                   for p in (people if people.ndim == 3 else people[None])]).reshape(mine.shape)
+            both = mine | people
+            added = float((both & ~mine).mean()) if mine.ndim == 2 else float((both[0] & ~mine[0]).mean())
+            return finish(key, both, sizes[key], {"found": found[key], "from_keyframes": hits,
+                                                  "added": round(added, 4)})
         if key in found:
             return finish(key, people, sizes[key], {"found": found[key]})
         return finish(key, people, read_rgb(images / key).shape[:2], {"from_keyframes": hits})
@@ -911,6 +936,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     person.add_argument("--keyframes", type=int, default=0, metavar="N",
                         help="SAM3 only on every N-th frame of each camera folder (and its last), SAM2 propagation "
                              "in between (as the app's Propagate). Default 0: SAM3 on every frame")
+    person.add_argument("--union", action="store_true",
+                        help="With --keyframes: SAM3 on every frame too, the propagation added on top (catches "
+                             "what SAM3 misses in a frame; as slow as SAM3 on every frame)")
     person.add_argument("--split", type=Path, metavar="DIR",
                         help="Only the photographer to --out (the pole, who touches it, their bag, a hand on the "
                              "pole or the lens rim); everyone else to DIR, black = people as in --out")
@@ -1085,12 +1113,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     elif args.command == "person":
         p, _ = _settings(parser, args, "person")
+        if args.union and args.keyframes < 2:
+            parser.error("--union needs --keyframes N (N > 1)")
         device = _device(parser, args)
         report = person_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             labels=p.labels, attach=p.attach, threshold=p.threshold, grow=p.grow, max_side=p.max_side,
             touch=p.touch, model=args.sam3_model, device=device, and_with=args.and_with, existing=existing,
             keyframes=args.keyframes, split=args.split, hands=_hands(args.hands) if args.split else (),
+            union=args.union,
         )
     elif args.command == "run":
         from src.batchmask.presets import find_preset
