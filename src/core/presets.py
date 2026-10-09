@@ -65,8 +65,15 @@ PRESETS: Tuple[Preset, ...] = (
         either_name=False,  # COLMAP reads a.jpg.png only
     ),
 )
+# A camera rig without a model (docs/specs/06-colmap.md 2.1 R3): no trainer to name yet, the layout they all read
+RIG = Preset(
+    "rig", "Camera rig dataset",
+    note="Masks go to masks/cam0, masks/cam1 … beside images/, named as COLMAP names them (a.jpg.png): "
+         "black is ignored, white is trained, as Brush, LichtFeld Studio and Spirula read them.",
+    verified="docs/specs/06-colmap.md 2.1 (the COLMAP layout of the presets above)",
+)
 CUSTOM = "custom"  # the dialog's own choices (the export as before v0.4-p24)
 
 
 def preset(key: Optional[str]) -> Optional[Preset]:
-    return next((p for p in PRESETS if p.key == key), None)
+    return next((p for p in PRESETS + (RIG,) if p.key == key), None)

@@ -39,7 +39,7 @@ from PyQt6.QtWidgets import (
 
 from src.app.settings import Settings
 from src.core.colmap_model import dataset_blocker
-from src.core.presets import CUSTOM, PRESETS, preset
+from src.core.presets import CUSTOM, PRESETS, RIG, preset
 from src.app.view_preview import RigPreview, ViewPreview
 from src.core.colmap import read_cameras_full
 from src.core.reproject import (ALL_LAYOUTS, CONVERTIBLE, FISHEYE_LAYOUTS, FISHEYES, MIN_VIEW_SHARE, VIEW_LAYOUTS, Erp,
@@ -420,7 +420,8 @@ class ExportDialog(QDialog):
         self._scene = scene
         self._custom_dir = str(default_dir)
         self.target = QComboBox()
-        for p in PRESETS if scene is not None else ():
+        modelled = scene is not None and scene.model_dir is not None  # a rig without a model: no trainer presets
+        for p in PRESETS if modelled else (RIG,) if scene is not None else ():
             self.target.addItem(p.label, p.key)
         self.target.addItem("Custom (choose below)", CUSTOM)
         i = self.target.findData(target)
@@ -456,12 +457,13 @@ class ExportDialog(QDialog):
         self.folders.setStyleSheet("color: gray;")
         # where a preset writes: into the scene, or a new dataset (images linked, model filtered)
         self._excluded = excluded
-        self.to_scene = QRadioButton("Into the scene")
+        self.to_scene = QRadioButton("Into the scene" if modelled else "Into the dataset")
         self.to_new = QRadioButton("New dataset")
         self.to_scene.setChecked(True)
         self.dataset = QLineEdit(str(scene.root.parent / f"{scene.root.name}_dataset") if scene is not None else "")
         self.dataset.setToolTip("A new folder: images/ (hard links, no extra space on the same drive), "
-                                "sparse/0/ without the ⊘ frames, and the masks")
+                                + ("sparse/0/ without the ⊘ frames, and the masks" if modelled
+                                   else "and the masks, without the ⊘ frames (no model to carry over)"))
         self._out_row = QWidget()
         orow = QHBoxLayout(self._out_row)
         orow.setContentsMargins(0, 0, 0, 0)
@@ -510,7 +512,7 @@ class ExportDialog(QDialog):
         self.rig_preview = RigPreview()  # the same views as cameras in 3D (p124)
         self._source = "360" if self._erp else "fisheye" if fisheye else "pinhole"
         self._cameras = []
-        if scene is not None and not self._erp:  # a fisheye's views are checked against its lens
+        if modelled and not self._erp:  # a fisheye's views are checked against its lens
             try:
                 self._cameras = [c for c in read_cameras_full(scene.model_dir).values() if c.model in FISHEYES]
             except (OSError, ValueError):
@@ -1176,7 +1178,8 @@ class ExportDialog(QDialog):
                     else f"{len(self._groups)} 360 image(s) stitched from camera pairs" if isinstance(v, Stitch)
                     else "one 360 image each" if isinstance(v, Erp)
                     else f"{self._kept_views(v)} pinhole views per image ({v.fov:.0f}°)" if v is not None
-                    else "images/ linked, sparse/0/ filtered")
+                    else "images/ linked, sparse/0/ filtered" if sc.model_dir is not None
+                    else "images/ linked (no model)")
             rows.append(line(not why, why or f"New dataset: {root.name}/ — {what}"
                                               + (f", {self._excluded} ⊘ frame(s) left out" if self._excluded else "")))
         elif self._excluded:

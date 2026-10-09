@@ -15,6 +15,7 @@ Its mask folders (``masks/``, ``masks_*/``, ``masks/<set>/``) are offered as Obj
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
@@ -91,6 +92,31 @@ def mask_sets(root: Path) -> List[Path]:
             out += sorted((s for s in d.iterdir() if s.is_dir() and not CAMERA_DIR.match(s.name) and _has_cameras(s)),
                           key=lambda p: p.name.lower())
     return out
+
+
+@dataclass
+class RigDataset:
+    """A rig without a model, where Export writes as into a scene (06 2.1 R3): the fields Export reads of a
+    ``Scene``, with no model (``model_dir`` None, no camera models, no moments to stitch)."""
+
+    root: Path
+    images_dir: Path
+    model_dir: Optional[Path] = None
+    image_names: List[str] = field(default_factory=list)
+    camera_models: List[str] = field(default_factory=list)
+
+    @property
+    def mask_dirs(self) -> List[Path]:
+        return mask_sets(self.root)
+
+    def rig_groups(self) -> List[List[str]]:
+        return []
+
+
+def rig_dataset(images_dir: Path) -> Optional[RigDataset]:
+    """The dataset of a rig's ``images/``; None when its folder is named otherwise (no ``<root>/masks`` to write)."""
+    root = rig_root(images_dir)
+    return RigDataset(root=root, images_dir=Path(images_dir)) if root is not None else None
 
 
 def _listed(names) -> str:

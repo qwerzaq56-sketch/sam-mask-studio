@@ -38,7 +38,7 @@ COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들
 - 인식되면 제목 표시줄과 상태 표시줄에 `COLMAP scene: <이름> · 카메라 N · 이미지 M · 3D 점 K`.
 - 이미지 목록은 `images/` 폴더 기준(지금과 같음). `images.bin`에 있는데 파일이 없거나, 파일은 있는데 `images.bin`에 없는 이미지는 Frame List에 ⚠ 표시.
 
-### 2.1 어안 데이터셋 · 카메라 하위 폴더(`cam0/`, `cam1/`) — R1 구현 `v0.4-p132`, R2 `v0.4-p136`(2026-10-09), R3~R4 남음
+### 2.1 어안 데이터셋 · 카메라 하위 폴더(`cam0/`, `cam1/`) — R1 구현 `v0.4-p132`, R2 `v0.4-p136`, R3 `v0.4-p137`(2026-10-09), R4 남음
 
 듀얼 피시아이 같은 리그는 이미지가 카메라별 하위 폴더에 있다(`images/cam0/0001.jpg`, `images/cam1/0001.jpg`).
 
@@ -66,7 +66,7 @@ COLMAP으로 정렬된 3DGS 데이터셋을 그대로 열어 마스크를 만들
    - 카메라끼리 짝: cam0에만 / cam1에만 있는 이름.
    - 마스크: 이미지는 있는데 마스크가 없는 것, 마스크만 있는 것(카메라별 수).
    - 모델이 있으면 지금의 모델-이미지 대조도 그대로.
-6. **덮어쓰기**: Export Output에 **Into the dataset**(지금의 Into the scene을 모델 없는 데이터셋까지 넓힘). `<root>/masks/camN/`에 쓰고, 바뀌는 파일은 먼저 `<root>/masks_backup_<시각>/camN/`으로 옮긴다(지금 장면과 같은 규칙, 조용히 덮어쓰지 않음).
+6. **덮어쓰기**: Export Output에 **Into the dataset**(지금의 Into the scene을 모델 없는 데이터셋까지 넓힘). `<root>/masks/camN/`에 쓰고, 바뀌는 파일은 먼저 `<root>/masks_backup_<시각>/camN/`으로 옮긴다(지금 장면과 같은 규칙, 조용히 덮어쓰지 않음). R3 구현 p137: For = `Camera rig dataset`(프리셋 `RIG`, 학습기 프리셋 대신), `rig.RigDataset`이 Export에 장면 자리로 들어감.
 7. **새 데이터셋**: 빈 폴더를 고르면 `images/camN`(원본 링크, 안 되면 복사) + `masks/camN` + 모델이 있으면 `sparse/` 복사. 뺀 프레임(Exclude)은 넣지 않음.
 8. **작업 파일**: `<root>` 옆 `<root>.sms/`(장면과 같음). 예전에 `cam0` 하나만 열어 만든 `cam0.sms/`가 있으면 이름(`0001.jpg` → `cam0/0001.jpg`)이 달라 자동으로 합치지 않고, 불러올지 묻는다.
 

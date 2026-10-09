@@ -968,6 +968,11 @@
 - 후보: `masks/`(`mask/`) · `masks_*/` 중 카메라 폴더가 있는 것, 그리고 `masks/<세트>/camN`의 세트마다 하나(`rig.mask_sets`). 세트는 `masks/people/`처럼 보이고 Object 이름은 세트 이름. 모델이 있는 리그도 세트가 더해짐.
 - 저장된 작업이 있으면 지금처럼 다시 묻지 않음. 테스트 321개 통과(새 2개).
 
+## v0.4-p137 — 리그 데이터셋으로 내보내기 (06 2.1 R3) (2026-10-09)
+- 모델 없는 리그도 Export에 **For = Camera rig dataset**(학습기 프리셋 대신 하나, `presets.RIG`): `masks/cam0`, `masks/cam1`에 COLMAP 이름(`a.jpg.png`), 검정 = 무시, 모든 이미지.
+- **Output = Into the dataset**: `<root>/masks/camN/`에 쓰고, 덮어쓸 파일은 먼저 `masks_backup_<시각>/camN/`으로(장면과 같은 규칙). **New dataset**: 빈 폴더에 `images/camN`(하드 링크, 안 되면 복사) + `masks/camN`, ⊘ 프레임 뺌, 모델 없음(검사 목록 `images/ linked (no model)`).
+- `rig.RigDataset`이 Export 창에 장면 자리로 들어감(모델 · 카메라 모델 없음 → 변환 목록 없음). 0022 리그 8장 사본(모델 뺌)으로 창 확인. 테스트 322개 통과(새 1개).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
