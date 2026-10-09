@@ -370,6 +370,10 @@ def test_person_report_warns_where_sam2_was_unsure(tmp_path, monkeypatch):
         for idx, objs in fake_propagate(ckpt, paths, plan, seeds, max_side, device):
             if scores is not None:  # SAM2 unsure of what keyframe 3 carries back into frame 2
                 scores[idx] = {o: (0.3 if plan.current == 3 and idx == 2 else 0.999) for o in objs}
+                if plan.current == 0 and idx == 1:  # and a piece that has left frame 1: empty, scored low
+                    gone = max(objs) + 1
+                    objs = {**objs, gone: np.zeros_like(next(iter(objs.values())))}
+                    scores[idx][gone] = 0.01
             yield idx, objs
 
     images = tmp_path / "images"
@@ -379,6 +383,6 @@ def test_person_report_warns_where_sam2_was_unsure(tmp_path, monkeypatch):
     rep = cli.person_folder(images, tmp_path / "people", recursive=True, labels=["person"], attach=[], grow=0,
                             max_side=200, keyframes=3, propagate=prop, log=lambda s: None)
     f1, f2 = rep["frames"]["cam0/00001.jpg"], rep["frames"]["cam0/00002.jpg"]
-    assert f1["score"] == 0.999 and "low_score" not in f1.get("warn", [])
+    assert f1["score"] == 0.999 and "low_score" not in f1.get("warn", [])  # the empty piece is not counted (p160)
     assert f2["score"] == 0.3 < LOW_SCORE and "low_score" in f2["warn"] and rep["warned"]["low_score"] == 1
     assert "score" not in rep["frames"]["cam0/00000.jpg"]  # a keyframe: SAM3's own
