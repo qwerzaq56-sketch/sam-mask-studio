@@ -54,6 +54,7 @@ from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import THUMB, ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
+from src.app.timeline_panel import TimelinePanel
 from src.app.objects_panel import SOURCE_SHORT, ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
@@ -245,7 +246,14 @@ class MainWindow(QMainWindow):
         self._list_title = DockTitleBar(list_dock, [self.marks_btn, self.names_btn])
         list_dock.setTitleBarWidget(self._list_title)
         self._list_dock = list_dock
-        self._docks = (list_dock, left_dock, right_dock, frames_dock)  # View > Panels
+        # the Timeline (p151): a row per Object, a tab beside the frame strip
+        self.timeline_panel = TimelinePanel()
+        self.timeline_panel.cell_clicked.connect(self.timeline_clicked)
+        timeline_dock = self._dock("Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self.tabifyDockWidget(frames_dock, timeline_dock)
+        frames_dock.raise_()
+        self._timeline_dock = timeline_dock
+        self._docks = (list_dock, left_dock, right_dock, frames_dock, timeline_dock)  # View > Panels
         # the frame strip spans only the canvas: the side docks keep the full height
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
@@ -836,6 +844,7 @@ class MainWindow(QMainWindow):
         self.images_panel.set_excluded(project.excluded)
         self.images_panel.update_marks(project, self.marks_object())
         self.images_panel.set_current(s.index)
+        self.timeline_panel.update_from(project, s.keys, s.index, self._reference, self.timeline_rows_marked())
         ref = self._reference if self._reference is not None else s.index
         self.propagation_panel.set_reference(ref, self._reference is not None)
         self.propagation_panel.set_pinned(self._pinned)
@@ -849,7 +858,7 @@ class MainWindow(QMainWindow):
         self.act_export_one.setEnabled(has_folder and not busy and self.session.key is not None)
         self.act_brush.setEnabled(s.mode != Mode.NEW_OBJECT and not busy)  # D not editing: edit with the brush
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel,
-                  self.images_panel.frame_list):
+                  self.images_panel.frame_list, self.timeline_panel):
             w.setEnabled(has_folder and not busy)
         self.detection_panel.setEnabled(has_folder)
         self.detection_panel.set_busy(busy)
@@ -1725,6 +1734,31 @@ class MainWindow(QMainWindow):
     def _remember(self, name: str, value) -> None:
         setattr(self.settings, name, value)
         self.settings.save(self.settings_path)
+
+    def timeline_rows_marked(self) -> list:
+        """The Objects whose Timeline rows are tinted: the one being edited, else the selected ones."""
+        if self.session.editing is not None:
+            return [self.session.editing]
+        return list(self.objects_panel.selected_ids())
+
+    def timeline_clicked(self, oid: int, index: int) -> None:
+        """A Timeline cell: open that frame and select that Object (while editing, the frame only).
+        A name (*index* -1): select that Object, on its nearest frame with a mask when this one has none."""
+        s = self.session
+        o = s.project.get(oid)
+        if o is None:
+            return
+        if index < 0:
+            index = s.index
+            if o.mask(s.key) is None:
+                have = [i for i, k in enumerate(s.keys) if o.mask(k) is not None]
+                if have:
+                    index = min(have, key=lambda i: abs(i - s.index))
+        if index != s.index:
+            self.go_to(index)
+        if s.editing is None:
+            self.objects_panel.select_ids([oid])
+        self.refresh()
 
     def marks_object(self) -> Optional[int]:
         """The Object the frame marks are for (None: every Object)."""
