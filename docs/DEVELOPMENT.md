@@ -332,6 +332,17 @@ audit on a real 123-image folder (tags `v0.4-p1` … `v0.4-p7.1`; details in `PR
   empty states hidden; side docks start within ~55 % of a small window; natural-size dock title
   buttons, compact title when the Frame List is folded.
 
+**v0.6.0 released** (2026-10-09, the stable masking): tags `v0.4-p60` … `v0.4-p148` (details in
+`docs/log/PROGRESS_v0.4.md`). splatbatch pins this version (portable `--split` parts, CLI contract 4).
+- Command line `python -m src.cli`: `lens`, `person`, `sky`, `run --preset`, `probe`, `preset`, `truth`; `--cpu`.
+- People: SAM3 on keyframes every 10 frames + SAM2 propagation, union with SAM3 on every frame (`--keyframes 10
+  --union`), `attach` labels masked where they touch a person (OSMO preset: bag; cane; handcart), `--split` for the
+  rig's own person. The "steady" touch rule (`v0.4-p145`) is not in this release (taken out in p147 / p148).
+- Sky: full-resolution edges, `--color-preset` (By Color in batch), the tree-tip cut, SAM2 finish. Lens: one circle
+  per camera folder, `masks/` (training) and `masks_sfm/` (SfM). Batch Masking window.
+- App: Edit Layer By Color, camera rigs opened whole, the Export window's mask rows and pinhole view layouts for
+  fisheye scenes, `↓` for imported masks, UX audit 2 (narrow windows, 150 % scale).
+
 **v0.5.1 hotfix** (2026-10-02): `v0.4-p59` only. Logging no longer blocks the GUI thread on a paused console
 (QuickEdit selection / Pause): a file log (`logs/sam-mask-studio.log`), the console through a dropping queue, Qt
 messages into the log once, QuickEdit off at startup; the Export dialog resizes once (no `setGeometry` warnings).
