@@ -1,6 +1,6 @@
 # SAM Mask Studio v0.4 진행 현황
 
-**v0.6.0 안정판 (2026-10-09):** 60~148단계(`v0.4-p60` ~ `v0.4-p148`)가 `main`에 병합되고 `v0.6.0` 태그가 붙었습니다. 명령줄 · 배치 마스킹(사람 = SAM3 + 키프레임 10 전파 + union, 닿으면 가리는 물건 bag · cane · handcart)이 중심이고, splatbatch가 이 버전을 고정해 부릅니다. 포터블은 배치 배포용 세 조각(`H:\Dev\Masking\dist0.6.0`, `--split`, 명령줄 약속 4). 연속 닿음(steady, p145)은 빼고 실험은 `dev`에서. 공개 포터블 zip은 v0.5.1 그대로.
+**v0.6.0 안정판 (2026-10-09):** 60~148단계(`v0.4-p60` ~ `v0.4-p148`)가 `main`에 병합되고 `v0.6.0` 태그가 붙었습니다. 명령줄 · 배치 마스킹(사람 = SAM3 + 키프레임 10 전파 + union, 닿으면 가리는 물건 bag · cane · handcart)이 중심이고, splatbatch가 이 버전을 고정해 부릅니다. 포터블은 배치 배포용 세 조각(`H:\Dev\Masking\dist\v0.6.0`, `--split`, 명령줄 약속 4). 연속 닿음(steady, p145)은 빼고 실험은 `dev`에서. 공개 포터블 zip은 v0.5.1 그대로.
 
 **v0.5.1 핫픽스 (2026-10-02):** 59단계(`v0.4-p59`, "응답 없음" 멈춤)만 더한 수정판입니다. 콘솔 창이 일시정지(빠른 편집 선택, Pause)되면 화면 스레드의 로그 쓰기가 끝나지 않아 앱이 멈추던 문제를 고쳤습니다([이슈 #2](https://github.com/qwerzaq56-sketch/sam-mask-studio/issues/2)). 기능과 화면은 v0.5.0과 같고, 안정판 실행기와 포터블도 v0.5.1입니다. [GitHub Release v0.5.1](https://github.com/qwerzaq56-sketch/sam-mask-studio/releases/tag/v0.5.1)은 노트만, 포터블 zip(5.76 GB)은 Google Drive 같은 폴더에 올림(2026-10-03).
 
@@ -1052,6 +1052,15 @@
 - 지난 측정 보고서로 센 경고: 0022 cam0 94장 0장, 0015 리어카 구간 46장 2장(cam1 00095 added_big = 전파가 실어 온 리어카, cam1 00105 area_jump = 리어카가 화면 밖으로 나감). GPU로 다시 돌리지는 않음.
 - 앱 몫(나중, 사용자 선택 시): FrameState 출처 표시 · ③ 타임라인(p150~), SAM2 object score(`low_score`)는 `engine/video.py`가 점수를 내보내야 해서 앱 몫으로 남김.
 - 테스트 333개 통과(새 테스트 1, 키프레임 · union 테스트에 출처 확인 추가).
+
+## v0.4-p150 — 불러온 마스크에 배치 보고서의 출처 · 경고 표시 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ③ 타임라인 몫. p149 보고서 키(`source` · `from` · `warn`)를 앱이 읽음.
+- Import Masks(장면을 열 때 포함)가 마스크 폴더에서 위로 4단계까지 `*report*.json`(명령줄 `--report` 파일)과 SplatBatch의 `runs/splatbatch/masks_report.json`을 찾음. 그 보고서의 `out`이 이 폴더를 품을 때만 씀. 이름에 report가 없는 JSON은 열지 않음. `run` 보고서의 `masks/` · `masks_sfm/`(렌즈 단계)은 사람 단계의 기록을, `sky_masks/`는 자기 기록을 씀.
+- 표시: `propagated` · `union` = `✓`, `warn`이 있으면 `⚠`(빈 마스크라도 프레임을 남겨 `[` `]`로 찾음), 나머지 = `↓` 그대로. Frame List 칸에 마우스를 올리면 이유(`people_masks: SAM3 + propagated from cam0/00006 forward · ⚠ …`), 로그 줄에 `batch report …: ✓ N propagated, ⚠ N worth a look`.
+- 이유는 FrameState `note`로 프로젝트에 저장, 여기서 고치면(★) 지움. 범례 ⚠ 문구를 "worth a look"으로.
+- 고친 버그: Export 창의 0 ms 타이머(`_fit_height`)가 창이 지워진 뒤에 돌면 PyQt6가 앱을 끔(`C0000409`). 테스트 순서에 따라 드러남, 지워졌으면 건너뜀.
+- `low_score`(SAM2 object score)는 아직(`engine/video.py`가 점수를 내보내야 함).
+- 테스트 338개 통과(새 테스트 5).
 
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과

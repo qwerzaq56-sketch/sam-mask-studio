@@ -185,6 +185,7 @@ class ProjectStore:
                     "points": [[p.x, p.y, 1 if p.positive else 0] for p in fs.points],
                     "box": list(fs.box) if fs.box else None,
                     "status": fs.status.value,
+                    **({"note": fs.note} if fs.note else {}),
                     "score": sel.score if sel else None,
                     "has_mask": m is not None,
                     "edit": fs.edit is not None,
@@ -304,6 +305,7 @@ class ProjectStore:
                     status=FrameStatus(fj.get("status", "manual")),
                     edit=edit,
                     layers=tuple(layers),
+                    note=fj.get("note", ""),
                 )
             project.objects.append(
                 MaskObject(

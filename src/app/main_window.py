@@ -1221,7 +1221,14 @@ class MainWindow(QMainWindow):
         self._select_new(ids)
         for oid in ids:
             o = self.session.project.get(oid)
-            self.log(f"Loaded {o.name}: masks on {len(o.frames)} image(s)")
+            line = f"Loaded {o.name}: masks on {len(o.frames)} image(s)"
+            report = self.session.mask_reports.get(oid)
+            if report is not None:  # p150: the batch report's ✓ propagated / ⚠ worth a look
+                n = {st: sum(fs.status is st for fs in o.frames.values())
+                     for st in (FrameStatus.PROPAGATED, FrameStatus.WARNING)}
+                line += (f"; batch report {report.name}: ✓ {n[FrameStatus.PROPAGATED]} propagated, "
+                         f"⚠ {n[FrameStatus.WARNING]} worth a look (hover a frame for why)")
+            self.log(line)
         return ids
 
     def choose_mask_folder(self) -> None:

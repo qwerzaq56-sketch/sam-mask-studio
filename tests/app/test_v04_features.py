@@ -3493,3 +3493,45 @@ def test_batch_masking_fits_the_screen_with_its_buttons_in_view(qapp, tmp_path):
     for b in (dlg.try_btn, dlg.run_btn, dlg.stop_btn, dlg.cmd_btn):
         assert not dlg._left_scroll.isAncestorOf(b)
     dlg.close()
+
+
+def test_imported_masks_show_the_batch_reports_source_and_warnings(qapp, win, tmp_path):
+    """p150: importing a folder a batch run made reads its report: propagated frames ✓, the ones worth a
+    look ⚠ (an empty one kept so [ / ] finds it), the reason in the Frame List's tooltip."""
+    import json
+
+    import cv2
+    import numpy as np
+
+    from src.app.images_panel import image_marks
+    from src.core.project import FrameStatus
+
+    keys = list(win.session.keys)
+    out = tmp_path / "scene" / "people_masks"
+    out.mkdir(parents=True)
+    for i, k in enumerate(keys):
+        m = np.zeros((48, 64), np.uint8)
+        if i != 3:
+            m[5:20, 5:20] = 255
+        cv2.imwrite(str(out / f"{k}.png"), m)
+    frames = {keys[0]: {"source": "keyframe"},
+              keys[1]: {"source": "propagated", "from": [{"key": keys[0], "dir": "fwd"}]},
+              keys[2]: {"source": "union", "warn": ["area_jump"]},
+              keys[3]: {"source": "propagated", "warn": ["empty"]}}
+    (tmp_path / "scene" / "report.json").write_text(
+        json.dumps({"command": "person", "out": str(out), "frames": frames}), encoding="utf-8")
+    win.choose = lambda title, text, groups, ok="OK": [1] * len(groups)  # white = the object
+    oid = win.offer_masks([out], "Import Masks")[0]
+    o = win.session.project.get(oid)
+    st = {k: fs.status for k, fs in o.frames.items()}
+    assert st[keys[0]] == FrameStatus.IMPORTED and st[keys[1]] == FrameStatus.PROPAGATED
+    assert st[keys[2]] == st[keys[3]] == FrameStatus.WARNING and not o.frames[keys[3]].mask.any()
+    assert keys[4] in o.frames and o.frames[keys[4]].note == ""  # not in the report: ↓ as before
+    marks = image_marks(win.session.project)
+    assert [marks[k] for k in keys] == ["↓", "✓", "⚠", "⚠", "↓"]
+    win.images_panel.update_marks(win.session.project)
+    tip = win.images_panel.list.item(2).toolTip()
+    assert keys[2] in tip and f"{o.name}: SAM3 + propagated" in tip and "jumped" in tip
+    assert "from " + keys[0].rsplit(".", 1)[0] + " forward" in win.images_panel.list.item(1).toolTip()
+    assert win.images_panel.list.item(4).toolTip() == keys[4]
+    assert "batch report report.json: ✓ 1 propagated, ⚠ 2 worth a look" in win.log_view.toPlainText()

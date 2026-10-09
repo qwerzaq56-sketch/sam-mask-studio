@@ -120,6 +120,7 @@ class Session:
         self.max_side = max_side
         self.image_dir: Optional[Path] = None
         self.paths: List[Path] = []
+        self.mask_reports: Dict[int, Path] = {}  # the last import's batch reports: Object id -> report file
         self.store: Optional[ProjectStore] = None
         self.project = Project([])
         self.index = -1
@@ -568,13 +569,23 @@ class Session:
         Each image's mask file (``a.jpg.png`` or ``a.png``) is read, flipped when black
         marks the object, and brought to the working resolution. Images with an empty
         mask get no frame. One undo step for all; returns the new ids.
+
+        A batch run's report for the folder (src/core/mask_report.py, p150) marks its
+        propagated frames ✓ and the ones worth a look ⚠ (an empty one kept, to be found),
+        with the reason in the frame's note; the reports used are in ``self.mask_reports``.
         """
+        from src.core import mask_report
         from src.core.colmap import matched, read_mask
 
         frames_by_label: Dict[str, Dict[str, FrameState]] = {}
         todo = [(Path(d), black, matched(Path(d), list(self.keys))) for d, black in folders]
         total, done = sum(len(m) for _, _, m in todo), 0
+        reports: Dict[str, Path] = {}
         for folder, black, files in todo:
+            hit = mask_report.find(folder)
+            notes = mask_report.notes_for(files, hit[1], hit[2]) if hit else {}
+            if notes:
+                reports[folder.name] = hit[0]
             frames: Dict[str, FrameState] = {}
             for key, path in files.items():
                 m = read_mask(path)
@@ -585,15 +596,21 @@ class Session:
                     continue
                 if black:
                     m = ~m
-                if not m.any():
+                note = notes.get(key) or {}
+                warn = mask_report.warned(note)
+                if not m.any() and not warn:
                     continue
                 h0, w0 = self.original_size(key)
                 if m.shape != (h0, w0):
                     m = resize_mask(m, (h0, w0))  # a mask saved at another size: match the image first
                 m = resize_mask(m, working_size(h0, w0, self.max_side))
-                frames[key] = FrameState.from_mask(m, status=FrameStatus.IMPORTED)  # ↓, not ✓ (U2)
+                status = (FrameStatus.WARNING if warn else FrameStatus.PROPAGATED if mask_report.propagated(note)
+                          else FrameStatus.IMPORTED)  # ↓, not ✓ (U2), unless the report says propagated
+                frames[key] = FrameState.from_mask(m, status=status, note=mask_report.describe(note))
             frames_by_label[folder.name] = frames
         ids = self.project.add_label_objects(frames_by_label, Source.IMPORTED)
+        filled = [label for label, frames in frames_by_label.items() if frames]  # add_label_objects' order
+        self.mask_reports = {oid: reports[label] for oid, label in zip(ids, filled) if label in reports}
         self.sync()
         return ids
 
