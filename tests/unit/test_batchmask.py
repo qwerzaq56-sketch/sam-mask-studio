@@ -25,8 +25,8 @@ def test_builtin_presets_read_and_say_what_they_were_checked_on(mine):
     names = {p.name: p for p in P.list_presets()}
     osmo = names["osmo360-selfie-stick"]
     assert osmo.builtin and osmo.steps == ["person", "lens", "sky"]
-    assert osmo.person.labels == ["person", "black pole"] and osmo.person.attach == ["bag", "cane"]
-    assert osmo.person.steady == ["handcart"] and osmo.person.steady_frames == 5  # p145
+    assert osmo.person.labels == ["person", "black pole"] and osmo.person.attach == ["bag", "cane", "handcart"]
+    assert osmo.person.keyframes == 10 and osmo.person.union  # p147: the v0.6.0 stable
     assert osmo.checked_on and "0022" in osmo.checked_on[0]
     assert names["people-only"].steps == ["person"] and not names["people-only"].checked_on
     assert not P.broken_presets()
@@ -42,7 +42,7 @@ def test_save_find_and_change(mine, tmp_path):
     with pytest.raises(ValueError, match="built-in"):
         P.save_preset(osmo)
     mine_ = P.with_changes(osmo, name="silver-stick", person={"labels": ["person", "silver pole"]}, lens=None)
-    assert mine_.person.attach == ["bag", "cane"] and mine_.lens is None and mine_.sky is not None
+    assert mine_.person.attach == ["bag", "cane", "handcart"] and mine_.lens is None and mine_.sky is not None
     path = P.save_preset(mine_)
     assert path == mine / "silver-stick.json"
     with pytest.raises(FileExistsError):
@@ -99,7 +99,7 @@ def test_person_takes_a_preset_and_the_options_change_it(tmp_path, monkeypatch, 
     rep = tmp_path / "r.json"
     assert cli.main(["person", str(images), "--out", str(out2), "--recursive", "--model", str(model),
                      "--preset", "osmo360-selfie-stick", "--attach", "", "--grow", "0", "--report", str(rep)]) == 0
-    assert seen[-1] == ["person", "black pole", "handcart"]  # --attach "" leaves the preset's steady
+    assert seen[-1] == ["person", "black pole"]
     s = json.loads(rep.read_text(encoding="utf-8"))["settings"]
     assert s["attach"] == [] and s["grow"] == 0
     with pytest.raises(SystemExit):
@@ -160,7 +160,7 @@ def test_preset_command_list_show_save(mine, capsys):
     assert cli.main(["preset", "save", "pinhole-people", "--from", "osmo360-selfie-stick", "--no-lens",
                      "--labels", "person;tripod", "--checked-on", "scene X: looked at"]) == 0
     pr = P.find_preset("pinhole-people")
-    assert pr.lens is None and pr.person.labels == ["person", "tripod"] and pr.person.attach == ["bag", "cane"]
+    assert pr.lens is None and pr.person.labels == ["person", "tripod"] and pr.person.attach == ["bag", "cane", "handcart"]
     assert pr.checked_on == ["scene X: looked at"]  # not the built-in's
     capsys.readouterr()
     with pytest.raises(SystemExit):

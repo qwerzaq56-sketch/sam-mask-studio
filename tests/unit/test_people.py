@@ -189,45 +189,6 @@ def test_person_keyframes_union_adds_propagation_to_every_frame(tmp_path, monkey
     assert not m3[20, 34] and m3[20, 4] and m3[20, 14]
 
 
-class CartEngine(FakeEngine):
-    """A person standing still; a cart touching them in the frames of CART (frames are 10 * i bright)."""
-    CART = {1, 2, 3, 4, 5, 6, 11}  # pulled along over 1..6, brushed past in 11 alone
-    calls = []
-
-    def detect_many(self, image, labels):
-        h, w = image.shape[:2]
-        x = int(image[0, 0, 0]) // 10
-        CartEngine.calls.append(x)
-        out = [Det("person", 0.9, box((h, w), 50, 150, 50, 90))] if "person" in labels else []
-        if "cart" in labels and x in CartEngine.CART:
-            out.append(Det("cart", 0.8, box((h, w), 100, 150, 95, 140)))  # 5 px from the person
-        return out
-
-
-@pytest.mark.parametrize("union", [False, True])
-def test_person_steady_keeps_a_pulled_cart_not_one_brushed_past(tmp_path, monkeypatch, union):
-    from tests.fakes import fake_propagate
-
-    CartEngine.calls = []
-    monkeypatch.setattr(cli, "_engine", lambda model, device: CartEngine())
-    images = tmp_path / "images" / "cam0"
-    images.mkdir(parents=True)
-    for i in range(13):
-        cv2.imencode(".jpg", np.full((200, 200, 3), 10 * i, np.uint8))[1].tofile(str(images / f"{i:05d}.jpg"))
-    out = tmp_path / "people"
-    rep = cli.person_folder(images.parent, out, recursive=True, labels=["person"], attach=[], steady=["cart"],
-                            steady_frames=3, grow=0, max_side=200, log=lambda s: None,
-                            **({"keyframes": 4, "union": True, "propagate": fake_propagate} if union else {}))
-    assert sorted(CartEngine.calls) == list(range(13))  # SAM3 once a frame, the neighbours ahead kept
-    assert rep["settings"]["steady"] == ["cart"] and rep["settings"]["steady_frames"] == 3
-    for i in (1, 4, 6):  # 3 or more of the 5 frames around touch: masked (black)
-        assert not read(out / "cam0" / f"{i:05d}.jpg.png")[120, 120], i
-    m11 = read(out / "cam0" / "00011.jpg.png")  # one frame only: kept as scene (union: keyframes 8, 12 have none)
-    assert m11[120, 120] and not m11[100, 70]
-    assert rep["frames"]["cam0/00011.jpg"]["found"]["cart not steady"] == 1
-    assert "cart" not in rep["frames"]["cam0/00011.jpg"]["found"]
-
-
 def test_person_union_needs_keyframes(frames, tmp_path):
     with pytest.raises(SystemExit):
         cli.main(["person", str(frames), "--out", str(tmp_path / "o"), "--union"])

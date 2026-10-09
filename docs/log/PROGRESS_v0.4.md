@@ -1036,6 +1036,13 @@
 - 사용자 결정(10-09): 안정판 v0.6.0 = SAM3 + 키프레임 10 전파 + union, 리어카는 attach로. 연속 닿음(steady)은 기능째 뺌(실험은 태그 `v0.4-p145`에서 다시 꺼냄).
 - p146의 Batch Masking 창 People 칸 steady 칸 · 테스트를 되돌림(`git revert 5ada5a6`, PROGRESS 기록은 남김). 명령줄 · 프리셋 쪽은 배치 마스킹 스터디 p147.
 
+## v0.4-p147 — 연속 닿음(steady) 기능 뺌, OSMO 프리셋 attach에 리어카: 안정판 v0.6.0 마스킹 (2026-10-09)
+- 사용자 결정(10-09 정정): 안정판 = SAM3 + 키프레임 10 전파 + union, OSMO 사람 단계 attach `bag; cane; handcart`. 연속 닿음은 화면 겹침이라 오판할 수 있어 기능째 뺌(실험은 태그 `v0.4-p145`에서 다시 꺼냄). 앱 쪽 칸은 p148에서 되돌림.
+- `src/cli.py` · `presets.py` · `probe.py` · `tests/unit/test_people.py`를 p145 이전으로 되돌림(`--steady`, `--steady-frames`, `PersonStep.steady`, probe의 steady 역할).
+- OSMO 프리셋: attach에 `handcart`, steady 줄 삭제, checked_on 첫 줄에 안정판 확인 기록(0022 마스크는 p142와 같음, 0015 리어카는 사람에 닿은 19장에서 가림: p145 측정 근거, 다시 돌리지 않음).
+- 리어카를 attach로 두면 행인이 세워 둔 리어카를 스쳐 지나가는 장에서는 리어카도 가려짐. 움직이는 물건 판정은 실험 스터디(P6 2단계, 정합 뒤 3D 점).
+- 테스트 332개 통과(steady 테스트 2개 삭제).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

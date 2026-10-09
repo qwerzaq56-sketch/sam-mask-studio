@@ -46,10 +46,6 @@ class PersonStep:
     # union keeps SAM3 on every frame and adds the propagation on top (src/cli.py ``person --keyframes --union``)
     keyframes: int = 0
     union: bool = False
-    # p145: like attach, but kept only where the label keeps touching in steady_frames of the 2N-1 frames around
-    # (a cart pulled along, not a parked one walked past; src/cli.py ``person --steady``)
-    steady: List[str] = field(default_factory=list)
-    steady_frames: int = 5
 
 
 @dataclass
@@ -153,8 +149,6 @@ class MaskPreset:
         if self.person:
             p = self.person
             lines.append(f"person: {'; '.join(p.labels)}" + (f" + touching {'; '.join(p.attach)}" if p.attach else "")
-                         + (f" + touching in {p.steady_frames} of {2 * p.steady_frames - 1} frames {'; '.join(p.steady)}"
-                            if p.steady else "")
                          + f" (score >= {p.threshold}, grow {p.grow} px)"
                          + (f"; SAM3 every frame + propagation from every {p.keyframes}th (union)" if p.union and p.keyframes > 1
                             else f"; SAM3 every {p.keyframes}th frame, propagation between" if p.keyframes > 1 else ""))
