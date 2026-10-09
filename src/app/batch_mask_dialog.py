@@ -113,7 +113,10 @@ class BatchMaskDialog(QDialog):
         form.addLayout(row)
         self.about = QLabel()
         self.about.setWordWrap(True)
-        self.about.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.about.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
+                                           | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.about.linkActivated.connect(self._toggle_checked)
+        self._checked_open = False  # the "Checked on" list folded: the settings stay in view (U10)
         form.addWidget(self.about)
 
         # people
@@ -301,16 +304,30 @@ class BatchMaskDialog(QDialog):
         self.preset.setCurrentIndex(max(i, 0))
         self._load()
 
+    def _show_about(self, p) -> None:
+        """The preset's title and description; what it was checked on behind a "Checked on (N) ▸" link (U10)."""
+        if not p.checked_on:
+            checked = "<b>Not checked on any data yet</b>: try the prompts on your frames before a whole run."
+        elif self._checked_open:
+            checked = f"<a href='checked'>Checked on ({len(p.checked_on)}) ▴</a><br>" + "<br>".join(p.checked_on)
+        else:
+            checked = f"<a href='checked'>Checked on ({len(p.checked_on)}) ▸</a>"
+        self.about.setText(f"<b>{p.title or p.name}</b><br>{p.description}<br><i>{checked}</i><br>"
+                           "<small>Prompts that fit the data a preset was checked on may not fit other scenes or "
+                           "rigs: Try Prompts on a few frames first.</small>")
+
+    def _toggle_checked(self, _link: str = "") -> None:
+        self._checked_open = not self._checked_open
+        name = self.preset.currentData()
+        if name:
+            self._show_about(find_preset(name))
+
     def _load(self) -> None:
         name = self.preset.currentData()
         if not name:
             return
         p = find_preset(name)
-        checked = ("Checked on:<br>" + "<br>".join(p.checked_on)) if p.checked_on else \
-            "<b>Not checked on any data yet</b>: try the prompts on your frames before a whole run."
-        self.about.setText(f"<b>{p.title or p.name}</b><br>{p.description}<br><i>{checked}</i><br>"
-                           "<small>Prompts that fit the data a preset was checked on may not fit other scenes or "
-                           "rigs: Try Prompts on a few frames first.</small>")
+        self._show_about(p)
         person, lens, sky = p.person or PersonStep(), p.lens or LensStep(), p.sky or SkyStep()
         self.person_box.setChecked(p.person is not None)
         self.labels.setText("; ".join(person.labels))

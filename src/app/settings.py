@@ -27,6 +27,7 @@ class Settings:
     max_side: int = DEFAULT_MAX_SIDE
     use_cpu: bool = False  # SAM2 / SAM3 on the CPU: the GPU is left to a training (p120; also main.py --cpu)
     last_dir: Optional[str] = None
+    recent_dirs: list = field(default_factory=list)  # the folders opened last, newest first (the start screen, U13)
     autosave_ms: int = 1500
     outline_visible: bool = True  # white outline around the edited mask
     outline_width: float = 1.0  # screen px

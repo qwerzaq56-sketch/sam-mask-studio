@@ -209,6 +209,7 @@ class Canvas(QWidget):
     brush_size_changed = pyqtSignal(int)
     color_picked = pyqtSignal(object, bool)  # (r, g, b) under a click while picking colors, Shift (add a color)
     color_picked_out = pyqtSignal(object, bool)  # ...under a right-click: a color to leave out (BC-P4 b)
+    empty_text = "Open an image folder (Ctrl+O)"  # drawn before a folder is open ("": the window shows its own)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -587,7 +588,7 @@ class Canvas(QWidget):
         painter.fillRect(self.rect(), QColor(32, 32, 36))
         if self.image is None:
             painter.setPen(QColor(160, 160, 160))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Open an image folder (Ctrl+O)")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.empty_text)
             return
         h, w = self.image.shape[:2]
         o, s = self._origin(), self._scale()

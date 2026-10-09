@@ -60,7 +60,7 @@ from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, LENS_MARGINS, LENS_SFM, SKY, SkyModel, detect_lens_circle
 from src.app.session import IMAGE_TOOLS, Mode, Session
-from src.app.ui_util import DockTitleBar
+from src.app.ui_util import DockTitleBar, StartPanel
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.project import FrameStatus
@@ -164,6 +164,11 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         self.canvas = Canvas()
+        self.canvas.empty_text = ""  # the start panel says it (U13)
+        self.start_panel = StartPanel(self.canvas)
+        self.start_panel.open_requested.connect(self.open_folder)
+        self.start_panel.set_recent(self.settings.recent_dirs)
+        self.setAcceptDrops(True)  # a folder (or an image in it) dropped on the window opens it
         # the work bar over the canvas: which frame, which Object, which tool - at a glance
         self.work_bar = QLabel()
         self.work_bar.setObjectName("work_bar")
@@ -1024,6 +1029,26 @@ class MainWindow(QMainWindow):
         if d:
             self.open_folder(Path(d))
 
+    @staticmethod
+    def _dropped_folder(event) -> Optional[Path]:
+        """The folder a drag carries: a dropped folder, or the folder of a dropped file (U13)."""
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        local = [Path(u.toLocalFile()) for u in urls if u.isLocalFile()]
+        if not local:
+            return None
+        p = local[0]
+        return p if p.is_dir() else p.parent if p.is_file() else None
+
+    def dragEnterEvent(self, event) -> None:
+        if not self._busy and self._dropped_folder(event) is not None:
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        folder = self._dropped_folder(event)
+        if folder is not None and not self._busy:
+            event.acceptProposedAction()
+            self.open_folder(folder)
+
     def open_folder(self, folder: Path) -> bool:
         if self._busy:
             return False
@@ -1056,6 +1081,8 @@ class MainWindow(QMainWindow):
             self.warn(str(e))
             return False
         self.settings.last_dir = str(folder)
+        self.settings.recent_dirs = [str(folder)] + [d for d in self.settings.recent_dirs if d != str(folder)][:9]
+        self.start_panel.hide()
         self.settings.save(self.settings_path)
         self.images_panel.set_images(
             self.session.keys, self.session.paths, self.session.store.root / "thumbs" if self.session.store else None
@@ -1164,12 +1191,31 @@ class MainWindow(QMainWindow):
         if not chosen:
             return []
 
+        # a window with a bar, as Export's: 188 4K masks take ~17 s (U12, was a status bar line only)
+        bar = QProgressDialog("Loading masks…", "", 0, 0, self)
+        bar.setWindowTitle(title)
+        bar.setCancelButton(None)  # one undo step for all: no half-loaded Objects
+        bar.setWindowModality(Qt.WindowModality.WindowModal)
+        bar.setMinimumDuration(0)
+        bar.setMinimumWidth(420)
+        bar.setAutoClose(False)
+        bar.setAutoReset(False)
+        bar.show()
+        self._mask_bar = bar  # (tests read it)
+        names = ", ".join(f"{d.name}/" for d, _ in chosen)
+
         def progress(done, total):
-            if done % 50 == 0 or done == total:
+            if done % 10 == 0 or done == total:
+                bar.setMaximum(total)
+                bar.setValue(done)
+                bar.setLabelText(f"Loading masks from {names}  {done} / {total}")
                 self.statusBar().showMessage(f"Loading masks {done} / {total}…")
                 QApplication.processEvents()
 
-        ids = self.session.import_masks(chosen, progress)
+        try:
+            ids = self.session.import_masks(chosen, progress)
+        finally:
+            bar.close()
         if not undoable:
             self.session.project.forget_history()
         self._select_new(ids)
