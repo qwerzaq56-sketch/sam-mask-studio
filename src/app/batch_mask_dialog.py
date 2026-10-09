@@ -142,6 +142,21 @@ class BatchMaskDialog(QDialog):
         pf.addRow("Also try", self.also)
         pf.addRow("Score at least", self.threshold)
         pf.addRow("Grow", self.grow)
+        # p143: the preset's keyframes and union (p141, p142), shown instead of only kept
+        self.keyframes = QSpinBox()
+        self.keyframes.setRange(0, 100)
+        self.keyframes.setSpecialValueText("off: SAM3 on every frame")
+        self.keyframes.setPrefix("SAM3 on 1 frame in ")
+        self.keyframes.setSuffix(", SAM2 between")
+        self.keyframes.setToolTip("SAM3 finds the people on every N-th frame of each camera folder and SAM2 carries "
+                                  "them to the frames between: fewer misses where SAM3 loses a pole or a hand. "
+                                  "0 or 1 = off")
+        self.union = QCheckBox("SAM3 on every frame too, the propagation added on top (union)")
+        self.union.setToolTip("Keeps SAM3's own mask on every frame and adds the keyframes' propagation: the fewest "
+                              "misses, a little more masked, slower (0022: 3.5 s a frame)")
+        self.keyframes.valueChanged.connect(lambda v: self.union.setEnabled(v > 1))
+        pf.addRow("Keyframes", self.keyframes)
+        pf.addRow("", self.union)
         form.addWidget(self.person_box)
 
         self.lens_box = QGroupBox("Fisheye lens edge")
@@ -334,6 +349,9 @@ class BatchMaskDialog(QDialog):
         self.attach.setText("; ".join(person.attach))
         self.threshold.setValue(person.threshold)
         self.grow.setValue(person.grow)
+        self.keyframes.setValue(person.keyframes)
+        self.union.setChecked(person.union)
+        self.union.setEnabled(person.keyframes > 1)
         self._person_rest = person
         self.lens_box.setChecked(p.lens is not None)
         self.margin.setValue(lens.margin)
@@ -390,7 +408,8 @@ class BatchMaskDialog(QDialog):
         if self.person_box.isChecked():
             person = PersonStep(**dict(asdict(self._person_rest), labels=split(self.labels.text()),
                                        attach=split(self.attach.text()), threshold=round(self.threshold.value(), 3),
-                                       grow=self.grow.value()))
+                                       grow=self.grow.value(), keyframes=self.keyframes.value(),
+                                       union=self.union.isChecked() and self.keyframes.value() > 1))
         if self.lens_box.isChecked():
             lens = LensStep(**dict(asdict(self._lens_rest), margin=self.margin.value(),
                                    radius=self.radius.value() or None,

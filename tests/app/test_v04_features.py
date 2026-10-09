@@ -3456,3 +3456,22 @@ def test_preset_checks_fold_and_mask_loading_shows_a_window(qapp, win, tmp_path)
     win.choose = lambda title, text, groups, ok="OK": [1] * len(groups)
     ids = win.offer_masks([masks], "Import Masks")
     assert ids and win._mask_bar.maximum() == len(win.session.keys) and not win._mask_bar.isVisible()
+
+
+def test_batch_masking_shows_the_people_keyframes_and_union(qapp, tmp_path):
+    """p143: a preset's people keyframes and union (p141, p142) are shown and edited, not only kept."""
+    from src.app.batch_mask_dialog import BatchMaskDialog
+    from src.batchmask.presets import list_presets
+
+    dlg = BatchMaskDialog(tmp_path, tmp_path / "scene")
+    p = next(p for p in list_presets() if p.person)
+    dlg.preset.setCurrentIndex(dlg.preset.findData(p.name))
+    assert dlg.keyframes.value() == p.person.keyframes and dlg.union.isChecked() == p.person.union
+    dlg.keyframes.setValue(10)
+    dlg.union.setChecked(True)
+    assert dlg.union.isEnabled() and dlg.keyframes.text() == "SAM3 on 1 frame in 10, SAM2 between"
+    assert (dlg.current().person.keyframes, dlg.current().person.union) == (10, True)
+    dlg.keyframes.setValue(0)  # off: union means nothing without keyframes
+    assert not dlg.union.isEnabled() and dlg.keyframes.text() == "off: SAM3 on every frame"
+    assert (dlg.current().person.keyframes, dlg.current().person.union) == (0, False)
+    dlg.deleteLater()
