@@ -78,7 +78,7 @@ class BrushEngine:
         self._draw_circle(self.brush_mask, (x, y), radius, self.brush_mode)
 
         if self.last_pos is not None:
-            self._draw_line(self.brush_mask, self.last_pos, (x, y), radius * 2, self.brush_mode)
+            self._draw_line(self.brush_mask, self.last_pos, (x, y), radius * 2 + 1, self.brush_mode)
 
         self.last_pos = (x, y)
         return self.brush_mask

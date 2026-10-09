@@ -85,7 +85,7 @@
 - 실무 요인: **겹침**이 있으면 COLMAP 매칭이 안정(COLMAP이 overlapping을 기본으로 둔 이유). 뷰가 많으면 같은 픽셀을 여러 번 학습해 시간만 늘 수 있음.
   위 / 아래 뷰는 하늘 · 촬영자가 많아 빼거나 마스크(Horizon 4, 또는 Sky 특수 Object).
 
-**결정**: 표준 배치를 프리셋으로(기본 COLMAP overlapping 12, 전의 기본과 같되 위 줄만 45° 돌림), 격자는 Custom으로 남김. 피시아이 원본은 한 방향을 보므로 전처럼 격자.
+**결정**: 표준 배치를 프리셋으로(기본 COLMAP overlapping 12, 전의 기본과 같되 위 줄만 45° 돌림), 격자는 Custom으로 남김. 피시아이 원본은 한 방향을 보므로 전처럼 격자(→ p121부터 렌즈용 배치 목록, 8.2).
 
 ### 8.1 프리셋의 역할과 구조 (`v0.4-p58`, GPT 리뷰 반영)
 
@@ -106,10 +106,46 @@
 - **미리보기**: Export 창에 뷰 지도(구를 360 이미지처럼 펼친 것: 가운데 = 정면, 위 = 위쪽). 뷰마다 윤곽선과 가운데 점, 선이 겹치는 곳이 겹침.
   피시아이가 못 채워 빠지는 뷰는 회색 점선. 배치의 역할 · 뷰 개수 · 겹침을 한 줄로.
 
+### 8.2 피시아이 렌즈용 배치 (`v0.4-p121`, 기획 Export 10장 C-9 (a))
+
+피시아이 장면에서 Layout 줄이 숨어 "프리셋이 없어진" 것처럼 보였음. 360 배치를 렌즈 하나에 쓰면 뷰 절반이 렌즈 밖을 담음
+(0022, FOV 90°: COLMAP · 12는 12개 중 8개만 남고 다 보이는 건 4개). 그래서 피시아이에는 렌즈 안에 다 들어가는 배치만.
+
+| 배치 | 뷰 | 역할 |
+|---|---|---|
+| **Fisheye Grid · 9 Views**(기본) | 방위 −45 / 0 / 45 × 고도 −35 / 0 / 35 | 전의 기본 격자와 같음. 렌즈가 보는 대부분, 매칭용 겹침 |
+| **Fisheye Cross · 5 Views** | 정면 + 왼 / 오른 / 위 / 아래 45° | 이미지 수를 줄임, 렌즈 모서리 쪽은 안 씀 |
+| **Fisheye Level · 3 Views** | 수평 −45 / 0 / 45 | 수평 공간, 빠름. 하늘과 아래쪽 촬영자 빠짐 |
+| **Custom** | yaw × pitch 직접 | 전과 같음 |
+
+- 구조: `ViewLayout.points` = 낱개 (yaw, pitch) 방향(렌즈 축 기준). `FISHEYE_LAYOUTS`, 360 배치와 합친 `ALL_LAYOUTS`.
+  겹침 계산은 고도가 같은 뷰끼리의 가장 가까운 yaw 간격 + 고도 사이 간격으로 일반화(360 배치 값은 전과 같음).
+- 목록은 변환 종류에 따라 다시 채움(고른 배치는 종류마다 기억). 평범한 Pinhole 원본은 목록 없이 격자.
+
+### 8.3 카메라 짝 → Pinhole (`v0.4-p122`, 기획 Export 10장 C-10 (a))
+
+- 변환 목록 **Pinhole views from camera pairs (N moments)**: 한 순간(리그의 렌즈들)을 구 하나로 보고 360 배치 목록(8.1)을 씀.
+- `stitch_to_erp(..., views=Views)`(`Stitch.views`): 360 이음과 같은 코드에서 출력만 바뀜. 뷰의 각 픽셀 광선을 렌즈마다 투영해
+  이미지 원 가중치로 섞음(보간 한 번). 한 렌즈 안의 뷰는 그 렌즈 단독 재투영과 같은 픽셀, 걸친 뷰는 360과 같은 이음.
+  마스크는 더 강한 렌즈 값, 어느 렌즈도 못 본 곳은 무시. 렌즈들이 절반도 못 채우는 뷰는 만들지 않음.
+- 포즈 = 뷰 회전 × 그 순간의 기준 카메라 포즈(`R = R_v·R_ref`, `t = R_v·t_ref`), 카메라 하나(PINHOLE), 이름 `<순간>_y090_p00.jpg`.
+- 0022 실물(2순간 × COLMAP 12, FOV 90, auto 2096 px): 24장, 빠진 뷰 0, CPU 51초. 렌즈 경계를 지나는 아래쪽 뷰(y090 / y270, −35°)에
+  가는 이음선이 보임(360 이음과 같은 섞기).
+
 출처: [COLMAP `pycolmap/panorama.py`](https://github.com/colmap/colmap/blob/main/python/pycolmap/panorama.py) ·
 [COLMAP Rig Support](https://colmap.github.io/rigs.html) ·
 [nerfstudio custom data](https://docs.nerf.studio/quickstart/custom_dataset.html) ·
 [LichtFeld 360 plugin](https://github.com/alexmgee/lichtfeld-360-plugin) ·
 [OmniGS (WACV 2025)](https://openaccess.thecvf.com/content/WACV2025/papers/Li_OmniGS_Fast_Radiance_Field_Reconstruction_using_Omnidirectional_Gaussian_Splatting_WACV_2025_paper.pdf) ·
 [ODGS (NeurIPS 2024)](https://papers.nips.cc/paper_files/paper/2024/file/6882dbdc34bcd094e6f858c06ce30edb-Paper-Conference.pdf)
+
+### 8.4 가상 카메라 배치 그림 (`v0.4-p124`)
+
+사용자 요청(10-08): “핀홀 변환 시 가상 퍼스펙 카메라 배치가 어떻게 되는지 가독성 좋은 참고 이미지 필수”.
+
+- Export 창: 지도(`ViewPreview`) 옆에 `RigPreview`(190 px): 구 위에 뷰마다 타일(이미지의 네 모서리, 실제 FOV의 0.42배로 줄여 이웃과 떨어지게),
+  중심에서 점선, 번호는 지도 점 옆 번호와 같음. 색 = 줄(위 > 10° 주황, 수평 파랑, 아래 < −10° 초록, 빠지는 뷰 회색 점선). 지도 윤곽도 같은 색.
+  시점: 원본 앞쪽 왼편 위(방위 330°, 고도 30°). 뒤쪽 타일은 흐리게. 피시아이 = 렌즈 끝(정면 90° 원), 카메라 짝 = 두 렌즈가 만나는 원을 빨강.
+  (뒤에서 본 시점도 시험했으나 정면 뷰들이 멀고 겹쳐 읽기 어려웠음.)
+- 참고 그림: `python tools/layout_pictures.py [폴더] [--fov 90]` → `layout_<배치>.png`(1100 × 512, 지도 + 3D + 색 설명). 매뉴얼 C8 · C9에 넣음.
 

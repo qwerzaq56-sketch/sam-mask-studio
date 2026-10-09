@@ -44,18 +44,20 @@ PRIORITY = (
     (FrameStatus.WARNING, "⚠"),
     (FrameStatus.MANUAL, "★"),
     (FrameStatus.PROPAGATED, "✓"),
+    (FrameStatus.IMPORTED, "↓"),
 )
 
 
 NO_MASK = "–"  # marks for one Object: it has no mask on this image
 PROBLEMS = ("✕", "⚠", NO_MASK)  # what [ / ] jump between
-MARK_COLORS = {  # the mark's text color in both views (✓ keeps the default)
+MARK_COLORS = {  # the mark's text color in both views (✓ and ↓ keep the default: gray rows are ⊘ excluded)
     "✕": QColor(215, 40, 40),
     "⚠": QColor(215, 130, 0),
     "★": QColor(40, 110, 220),
     NO_MASK: QColor(150, 150, 150),
 }
-LEGEND = "★ edited here · ✓ propagated · ⚠ suspicious (area jumped) · ✕ empty after propagation"
+LEGEND = ("★ edited here · ✓ propagated · ↓ imported from a mask folder, unchanged · ⚠ suspicious (area jumped) · "
+          "✕ empty after propagation")
 LEGEND_ONE = LEGEND + " · – the Object has no mask here"
 
 
@@ -177,11 +179,33 @@ def cached_thumbnail(path: Path, cache: Optional[Path]) -> Optional[np.ndarray]:
     return img
 
 
+def camera_heads(keys: Sequence[str]) -> Dict[int, str]:
+    """The rows where another folder's images start (a rig's ``cam0/``, ``cam1/``): row -> ``"cam1 · 94"``.
+    {} when every image sits in the image folder itself."""
+    folders = [k.rpartition("/")[0] for k in keys]
+    if not any(folders):
+        return {}
+    heads, counts = {}, {}
+    for f in folders:
+        counts[f] = counts.get(f, 0) + 1
+    for i, f in enumerate(folders):
+        if i == 0 or f != folders[i - 1]:
+            heads[i] = f"{f or '(images)'} · {counts[f]}"
+    return heads
+
+
+HEAD_FILL = QColor(128, 128, 128, 45)  # a camera's head line in the Frame List
+
+
 class OneLineDelegate(QStyledItemDelegate):
-    """The vertical frame list: ``12  ★ ◎ 📌  name`` on one line, no thumbnail."""
+    """The vertical frame list: ``12  ★ ◎ 📌  name`` on one line, no thumbnail.
+
+    A rig's images (``cam0/0001.jpg``) show their file name only, under a head line where each camera
+    starts (``cam1 · 94``), so the number that tells frames apart is what stays when the name is cut (U6)."""
 
     names = True  # False: only the ID and the marks (a narrower list)
     reference: Optional[int] = None  # the ◎ row (set by the panel)
+    heads: Dict[int, str] = {}  # row -> head line above it (set by the panel)
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
@@ -191,13 +215,31 @@ class OneLineDelegate(QStyledItemDelegate):
         option.icon = QIcon()
         option.features &= ~option.ViewItemFeature.HasDecoration
 
+    def row_height(self, fm) -> int:
+        return fm.height() + 6
+
     def sizeHint(self, option, index):
-        return QSize(option.rect.width(), option.fontMetrics.height() + 6)
+        h = self.row_height(option.fontMetrics)
+        return QSize(option.rect.width(), h * 2 if index.row() in self.heads else h)
 
     def paint(self, painter, option, index):
         """ID, marks and name in fixed columns, so 9 and 10 line up."""
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
+        head = self.heads.get(index.row())
+        if head is not None:  # the camera's head line, then the row itself below it
+            h = self.row_height(opt.fontMetrics)
+            band = QRect(opt.rect.left(), opt.rect.top(), opt.rect.width(), opt.rect.height() - h)
+            painter.save()
+            painter.fillRect(band, HEAD_FILL)
+            f = painter.font()
+            f.setBold(True)
+            painter.setFont(f)
+            painter.setPen(opt.palette.color(QPalette.ColorRole.Text))
+            painter.drawText(band.adjusted(6, 0, -4, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             painter.fontMetrics().elidedText(head, Qt.TextElideMode.ElideRight, band.width() - 10))
+            painter.restore()
+            opt.rect = QRect(opt.rect.left(), band.bottom() + 1, opt.rect.width(), h)
         raw = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         first, _, name = raw.replace(" ", "\n").partition("\n")  # "12  ★ ◎" / file name
         opt.text = ""
@@ -236,7 +278,9 @@ class OneLineDelegate(QStyledItemDelegate):
         painter.setPen(color)
         if self.names and name:
             x += marks_w
-            text = fm.elidedText(name, Qt.TextElideMode.ElideMiddle, max(0, r.right() - x))
+            if self.heads:
+                name = name.rpartition("/")[2]  # the camera is in the head line
+            text = fm.elidedText(name, Qt.TextElideMode.ElideLeft, max(0, r.right() - x))  # keep the number
             painter.drawText(QRect(x, r.top(), r.right() - x, r.height()), Qt.AlignmentFlag.AlignLeft | v, text)
         painter.restore()
         if outlined:
@@ -272,11 +316,12 @@ class ImagesPanel(QWidget):
         self.list.setIconSize(QSize(TILE_W - 12, THUMB_H))
         self.list.setGridSize(QSize(TILE_W, THUMB_H + 44))
         self.list.setWordWrap(True)
-        self.list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideLeft)  # cam0/…00083.jpg: the number stays (U6)
         self.list.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Ctrl/Shift-click picks several images; the clicked one becomes current.
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list.setSelectionRectVisible(False)  # icon mode drew a rubber-band box on a drag (p132)
         self._tiles = TileDelegate(self.list)
         self.list.setItemDelegate(self._tiles)
         self.list.currentRowChanged.connect(self._on_row)
@@ -303,9 +348,9 @@ class ImagesPanel(QWidget):
         self._delegate = OneLineDelegate(self.frame_list)
         self.frame_list.setItemDelegate(self._delegate)
         self.frame_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.frame_list.setUniformItemSizes(True)
+        self.frame_list.setUniformItemSizes(False)  # a camera's first row is taller: its head line (U6)
         self.frame_list.setAlternatingRowColors(True)  # striped rows: easier to follow a row across
-        self.frame_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.frame_list.setTextElideMode(Qt.TextElideMode.ElideLeft)
         self.frame_list.doubleClicked.connect(lambda ix: self.reference_requested.emit(ix.row()))
         self.frame_list.setToolTip(self.list.toolTip())
         self.frame_list.setMinimumWidth(170)  # ID, marks and most of the file name
@@ -330,6 +375,7 @@ class ImagesPanel(QWidget):
         self._cache = cache
         self._loaded.clear()
         self._pending.clear()
+        self._delegate.heads = camera_heads(self._keys)
         self._updating = True
         self.list.clear()
         blank = _blank_icon()
@@ -395,7 +441,8 @@ class ImagesPanel(QWidget):
             m = self._marks.get(k)
             if m:
                 counts[m] = counts.get(m, 0) + 1
-        order = ["★", "✓", "⚠", "✕"] + ([NO_MASK] if self._only is not None else [])
+        # ↓ only when there are imported masks: most projects have none
+        order = ["★", "✓"] + (["↓"] if counts.get("↓") else []) + ["⚠", "✕"] + ([NO_MASK] if self._only is not None else [])
         parts = []
         for m in order:
             c = MARK_COLORS.get(m)
@@ -477,7 +524,9 @@ class ImagesPanel(QWidget):
         self._visible_timer.start()
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
+        if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
+            # a double click arrives as press, release, double-click, release: the middle button's second click
+            # opens the frame too, the picks kept (p125)
             view = next((v for v in (self.list, self.frame_list) if obj is v.viewport()), None)
             if view is not None and event.button() == Qt.MouseButton.RightButton:
                 return True  # no selection change: the menu (context menu event) works on the picks as they are

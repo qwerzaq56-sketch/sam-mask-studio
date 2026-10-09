@@ -1,6 +1,20 @@
 """Build a portable SAM Mask Studio folder that runs on another Windows PC without installing anything.
 
-    .venv\\Scripts\\python.exe tools\\make_portable.py H:\\Dev\\Masking\\dist\\SAMMaskStudio
+    .venv\\Scripts\\python.exe tools\\make_portable.py H:\\Dev\\Masking\\dist\\SAMMaskStudio --ref v0.5.1 --force --zip
+
+``--zip`` also writes ``<out>-<version>-portable.zip`` next to the folder (root folder inside: the folder's name).
+``--split`` also writes it as three parts next to the folder, for splatbatch's releases (its DEPLOY_PLAN 3.3):
+
+    sms-<version>-app.zip          the program, launcher, README, PARTS.json (a few MB, every release)
+    sms-runtime-<hash>.zip         python\\ (Python + packages, changes with the dependencies)
+    sms-models-<hash>.zip          app\\checkpoints\\ (SAM2 tiny, SAM3, Sky; hardly ever changes)
+    sms-<version>-parts.json       the three names, sizes, sha256, version and CLI contract number
+
+Every part is rooted at the portable folder, so the three unzipped into one folder are the portable. ``<hash>`` comes
+from the part's file list (path and size), so a part with the same files keeps its name and an existing one is not
+written again; PARTS.json in the app part names the runtime and models it needs.
+Model weights and already-compressed files are stored as they are (deflate barely shrinks them and costs most of the
+time); the rest is deflated at a fast level.
 
 Layout of the result (all paths inside are relative, so the folder can be copied anywhere):
 
@@ -21,12 +35,16 @@ Notes
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -44,6 +62,9 @@ VC_DLLS = (
     "vcomp140.dll",
 )
 SKIP_SITE = {"_virtualenv.pth", "_virtualenv.py", "__pycache__"}
+# Stored, not deflated, in --zip: weights (float noise to deflate) and files that are compressed already.
+STORE_SUFFIXES = {".pt", ".pth", ".safetensors", ".onnx", ".bin", ".ckpt",
+                  ".zip", ".whl", ".gz", ".bz2", ".xz", ".7z", ".png", ".jpg", ".jpeg", ".webp", ".mp4"}
 
 LAUNCHER = r"""@echo off
 rem SAM Mask Studio (portable). Everything it needs is in this folder.
@@ -56,11 +77,15 @@ cd /d "%~dp0app"
 if errorlevel 1 pause
 """
 
+LAUNCHER_CPU = LAUNCHER.replace("rem SAM Mask Studio (portable).", "rem SAM Mask Studio (portable), SAM on the CPU: "
+                                "the GPU is left to a training.").replace("-m src.main %*", "-m src.main --cpu %*")
+
 README = """SAM Mask Studio {version} (portable)
 =====================================
 
 실행: "SAM Mask Studio.bat" 더블클릭
       (이미지 폴더를 끌어다 놓아도 됩니다: bat 파일 위에 폴더를 드롭)
+      "SAM Mask Studio (CPU).bat": SAM을 CPU로 (학습 중 GPU를 비워 둠, 클릭 · 전파는 느림, 브러시는 같음)
 
 요구 사항
 - Windows 10 / 11 (64비트)
@@ -98,11 +123,96 @@ def link_or_copy(src: Path, dst: Path) -> str:
         return "copied"
 
 
+def zip_folder(folder: Path, dest: Path, level: int = 1, files=None) -> int:
+    """``folder`` into ``dest`` under the folder's own name; weights / compressed files stored, the rest deflated.
+    *files*: only these (default every file). Written to ``<dest>.part`` first, so a stopped run never leaves a zip
+    that looks finished. Returns the file count."""
+    part = dest.with_name(dest.name + ".part")
+    files = sorted(p for p in folder.rglob("*") if p.is_file()) if files is None else sorted(files)
+    total = sum(p.stat().st_size for p in files) or 1
+    done, step, t0 = 0, total // 10, time.time()
+    with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED, compresslevel=level, allowZip64=True) as z:
+        for p in files:
+            arc = (Path(folder.name) / p.relative_to(folder)).as_posix()
+            if p.suffix.lower() in STORE_SUFFIXES:
+                z.write(p, arc, compress_type=zipfile.ZIP_STORED)
+            else:
+                z.write(p, arc)
+            before, done = done, done + p.stat().st_size
+            if step and before // step != done // step:
+                log(f"    zip {100 * done // total}% ({time.time() - t0:.0f}s)")
+    part.replace(dest)
+    return len(files)
+
+
+PART_NAMES = ("app", "runtime", "models")
+
+
+def part_of(rel: Path) -> str:
+    """Which --split part a path inside the portable folder belongs to."""
+    if rel.parts[0] == "python":
+        return "runtime"
+    if rel.parts[:2] == ("app", "checkpoints"):
+        return "models"
+    return "app"
+
+
+def files_hash(folder: Path, files) -> str:
+    """12 hex digits from the files' paths and sizes: the same files, the same name (contents are not read)."""
+    h = hashlib.sha256()
+    for p in sorted(files):
+        h.update(f"{p.relative_to(folder).as_posix()}\t{p.stat().st_size}\n".encode("utf-8"))
+    return h.hexdigest()[:12]
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 22), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def split_zip(folder: Path, version: str, dest_dir: Path, contract: int, log=log) -> dict:
+    """The portable *folder* as three zips in *dest_dir* (see the module notes). Returns the manifest, also written
+    as ``sms-<version>-parts.json``; a runtime / models zip already there under its name is kept, not rewritten."""
+    groups = {k: [] for k in PART_NAMES}
+    for p in folder.rglob("*"):
+        if p.is_file() and p.name != "PARTS.json":
+            groups[part_of(p.relative_to(folder))].append(p)
+    names = {"app": f"sms-{version}-app"}
+    for k in ("runtime", "models"):
+        names[k] = f"sms-{k}-{files_hash(folder, groups[k])}" if groups[k] else None
+    need = {"version": version, "cli_contract": contract, "runtime": names["runtime"], "models": names["models"]}
+    (folder / "PARTS.json").write_text(json.dumps(need, indent=1) + "\n", encoding="utf-8")
+    groups["app"].append(folder / "PARTS.json")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {**need, "parts": {}}
+    for k in PART_NAMES:
+        if not names[k]:
+            log(f"    {k}: nothing in it, no zip")
+            continue
+        dest = dest_dir / f"{names[k]}.zip"
+        if k != "app" and dest.is_file():
+            log(f"    {k}: {dest.name} already there, kept")
+        else:
+            t0 = time.time()
+            n = zip_folder(folder, dest, files=groups[k])
+            log(f"    {k}: {dest.name}, {n} files, {dest.stat().st_size / 1e9:.2f} GB in {time.time() - t0:.0f}s")
+        manifest["parts"][k] = {"file": dest.name, "bytes": dest.stat().st_size, "sha256": sha256_file(dest),
+                                "files": len(groups[k])}
+    (dest_dir / f"sms-{version}-parts.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
+    return manifest
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("out", type=Path)
     ap.add_argument("--force", action="store_true", help="replace an existing output folder")
     ap.add_argument("--ref", default="HEAD", help="the git commit or tag to package (default HEAD)")
+    ap.add_argument("--zip", action="store_true", help="also write <out>-<version>-portable.zip next to the folder")
+    ap.add_argument("--split", action="store_true",
+                    help="also write it as three zips next to the folder: app, runtime (python), models (checkpoints)")
     args = ap.parse_args()
     out: Path = args.out
     if out.exists():
@@ -112,7 +222,7 @@ def main() -> int:
         shutil.rmtree(out)
 
     version = subprocess.run(
-        ["git", "-C", str(REPO), "describe", "--tags", "--always", args.ref], capture_output=True, text=True, check=True
+        ["git", "-C", str(REPO), "describe", "--tags", "--always", "--match", "v[0-9]*.[0-9]*.[0-9]*", args.ref], capture_output=True, text=True, check=True
     ).stdout.strip()
 
     log("1/6 Python")
@@ -161,11 +271,25 @@ def main() -> int:
         how = link_or_copy(REPO / "checkpoints" / rel, app / "checkpoints" / rel)
         log(f"    {rel}: {how}")
     (out / "SAM Mask Studio.bat").write_text(LAUNCHER.replace("\n", "\r\n"), encoding="ascii")
+    (out / "SAM Mask Studio (CPU).bat").write_text(LAUNCHER_CPU.replace("\n", "\r\n"), encoding="ascii")
     torch_version = next((p.name.split("-")[1] for p in SITE.glob("torch-*.dist-info")), "?")
     (out / "README.txt").write_text(
         README.format(version=version, torch=torch_version).replace("\n", "\r\n"), encoding="utf-8-sig"
     )
     log(f"done: {out} ({version})")
+    if args.zip:
+        dest = out.with_name(f"{out.name}-{version}-portable.zip")
+        log(f"zip: {dest}")
+        t0 = time.time()
+        n = zip_folder(out, dest)
+        log(f"zip done: {n} files, {dest.stat().st_size / 1e9:.2f} GB in {time.time() - t0:.0f}s")
+    if args.split:
+        sys.path.insert(0, str(app))
+        import src.version  # the packaged ref's number, not this checkout's
+
+        log(f"split: {out.parent}")
+        split_zip(out, version, out.parent, getattr(src.version, "CLI_CONTRACT", None))
+        sys.path.remove(str(app))
     return 0
 
 

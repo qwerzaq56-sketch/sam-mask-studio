@@ -10,6 +10,8 @@ That keeps the interaction rules testable without a display or a GPU.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Protocol, Sequence, Set, Tuple
@@ -22,6 +24,7 @@ from src.core.project import (
     EditLayer,
     FrameState,
     FrameStatus,
+    MaskObject,
     Point,
     Project,
     PromptLayer,
@@ -32,11 +35,15 @@ from src.core.project import (
 )
 from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
 from src.core.special import LABELS as SPECIAL_LABELS
-from src.core.special import LENS_EDGE, Special, lens_edge_mask, sky_maps, sky_mask
-from src.core.refine import close_gaps, fill_holes, grow_mask, grow_to_edges, remove_specks, shrink_mask, within
+from src.core.special import LENS_EDGE, SKY, Special, lens_edge_mask, sky_maps, sky_mask
+from src.core.refine import (
+    RANGE_KEYS, apply_by_color, close_gaps, fill_holes, grow_mask, grow_to_edges, near_edge, range_selection,
+    remove_specks, select_range, shrink_mask,
+    within,
+)
 from src.core.storage import ExportOptions, ProjectStore, export_final_masks
 from src.engine.batch import LabelHit
-from src.engine.imageio import find_images, image_key, read_rgb, resize_mask, to_working, working_size
+from src.engine.imageio import find_images, image_key, original_size, read_rgb, resize_mask, to_working, working_size
 
 DEFAULT_MAX_SIDE = 1024
 # auto tool -> the settings it uses (Grow and Shrink share one amount)
@@ -47,7 +54,32 @@ AUTO_PARAMS = {
     "grow": ("amount",),
     "shrink": ("amount",),
     "close_gaps": ("gap",),
+    "invert": (),
+    "by_color": ("color_band", "color_band_on", "color_action", "color_samples", "color_tol", "color_use", "color_not",
+                 "color_samples_out", "color_tol_out", "bright_range", "bright_use", "bright_not", "range_join", "color_invert"),
 }
+IMAGE_TOOLS = ("object_fill", "by_color")  # auto tools that read the image (computed off the UI thread)
+
+
+def compute_tool(tool: str, base: np.ndarray, image: Optional[np.ndarray], settings: dict) -> np.ndarray:
+    """Auto tool *tool* on mask *base* everywhere (*image*: only the IMAGE_TOOLS read it)."""
+    if tool == "fill_holes":
+        return fill_holes(base, settings.get("fill_area", 200))
+    if tool == "remove_specks":
+        return remove_specks(base, settings.get("speck_area", 200))
+    if tool == "object_fill":
+        return grow_to_edges(image, base, settings.get("max_grow", 20), settings.get("sensitivity", 50))
+    if tool == "grow":
+        return grow_mask(base, settings.get("amount", 3))
+    if tool == "shrink":
+        return shrink_mask(base, settings.get("amount", 3))
+    if tool == "close_gaps":
+        return close_gaps(base, settings.get("gap", 10))
+    if tool == "invert":
+        return ~base
+    if tool == "by_color":  # Range only (the Auto ways went in p97, BC-P5)
+        return apply_by_color(base, image, settings)
+    raise ValueError(f"Unknown auto tool: {tool}")
 
 
 class Engine(Protocol):
@@ -74,19 +106,6 @@ class Mode(str, Enum):
     IDLE = "idle"  # clicks never create or change anything (except the very first Object)
     NEW_OBJECT = "new"  # the next click / box creates an Object
     EDIT = "edit"  # clicks add prompts to the Object being edited
-
-
-def original_size(path: Path) -> Tuple[int, int]:
-    """(height, width) of an image file, reading only its header when possible."""
-    try:
-        from PIL import Image
-
-        with Image.open(path) as im:
-            w, h = im.size
-        return h, w
-    except Exception:
-        h, w = read_rgb(path).shape[:2]
-        return h, w
 
 
 class Session:
@@ -121,9 +140,14 @@ class Session:
         # gray). Nothing is written until the tool closes; switching modes keeps both.
         self.auto_tool: Optional[str] = None
         self.auto_mode = "fill"
+        # By Color Range's picked colors and left-out colors (the panel holds them; kept here too so a change is
+        # an undo step, p92; both in one value so one step covers either, p98)
+        self._colors: Tuple[tuple, tuple] = ((), ())
         self._picked: Optional[np.ndarray] = None  # Paint mode: the area strokes picked
         self._result: Optional[Tuple[str, np.ndarray, List[np.ndarray]]] = None  # (tool, target, masks it fits)
         self._auto_cache: Optional[tuple] = None  # ((tool, settings), base, target)
+        self._area_cache: Optional[tuple] = None  # (base, band, By Color's Near edge area)
+        self._ab_cache: Optional[tuple] = None  # (filter settings, image, By Color Range's A, overlap)
         self.detections: List[Detection] = []
         self.detection_checked: List[bool] = []
         # Detection results are kept per image (spec 01 §15: Image -> DetectionResults).
@@ -146,8 +170,15 @@ class Session:
         """Open *image_dir* (loading its sidecar project, if any). Returns the image count."""
         from src.core.colmap import scene_root
 
+        from src.core.rig import is_rig, rig_images
+
         root = scene_root(image_dir)
-        paths = find_images(image_dir, recursive=root is not None and root != image_dir)  # cam0/, cam1/ of a scene
+        if root is not None and root != image_dir:
+            paths = find_images(image_dir, recursive=True)  # cam0/, cam1/ of a scene
+        elif is_rig(image_dir):
+            paths = rig_images(image_dir)  # a rig without a model: its camera folders only (06 2.1)
+        else:
+            paths = find_images(image_dir)
         if not paths:
             raise FileNotFoundError(f"No images found in {image_dir}")
         self.image_dir = image_dir
@@ -560,7 +591,7 @@ class Session:
                 if m.shape != (h0, w0):
                     m = resize_mask(m, (h0, w0))  # a mask saved at another size: match the image first
                 m = resize_mask(m, working_size(h0, w0, self.max_side))
-                frames[key] = FrameState.from_mask(m, status=FrameStatus.PROPAGATED)
+                frames[key] = FrameState.from_mask(m, status=FrameStatus.IMPORTED)  # ↓, not ✓ (U2)
             frames_by_label[folder.name] = frames
         ids = self.project.add_label_objects(frames_by_label, Source.IMPORTED)
         self.sync()
@@ -588,7 +619,26 @@ class Session:
         self._record("region")
         self.region = region
 
-    UI_STATE = {"region": "region", "picks": "_picked"}  # undoable UI state -> attribute
+    UI_STATE = {"region": "region", "picks": "_picked", "colors": "_colors"}  # undoable UI state -> attribute
+
+    @property
+    def color_samples(self) -> tuple:
+        return self._colors[0]
+
+    @property
+    def color_samples_out(self) -> tuple:
+        """By Color's left-out colors (right-click while picking, BC-P4 b)."""
+        return self._colors[1]
+
+    def set_color_samples(self, colors, out=None) -> None:
+        """The picked (and left-out, *out*; None: as they are) colors changed (a click on the image, Shift+click,
+        a swatch, Clear): one undo step."""
+        def clean(cs):
+            return tuple(tuple(int(v) for v in c) for c in cs)
+        new = (clean(colors), self._colors[1] if out is None else clean(out))
+        if new != self._colors:
+            self._record("colors")
+            self._colors = new
 
     def _record(self, kind: str) -> None:
         """Remember the current *kind* value as an undo step (before it changes)."""
@@ -596,9 +646,12 @@ class Session:
         self._ui_redo.clear()
 
     def _forget(self, kind: Optional[str] = None) -> None:
-        """Drop the history of *kind* (all UI state when None): it no longer means anything."""
-        self._ui_undo = [e for e in self._ui_undo if kind is not None and e[1] != kind]
-        self._ui_redo = [e for e in self._ui_redo if kind is not None and e[2] != kind]
+        """Drop the history of *kind* (all UI state but the picked colors when None): it no longer means
+        anything. The picked colors stay with the tool across frames and edit targets, so does their history."""
+        def keep(k: str) -> bool:
+            return k == "colors" if kind is None else k != kind
+        self._ui_undo = [e for e in self._ui_undo if keep(e[1])]
+        self._ui_redo = [e for e in self._ui_redo if keep(e[2])]
 
     def _reset_region(self) -> None:
         """Leaving the edit target ends its region, the region's history and any auto-tool result."""
@@ -626,6 +679,69 @@ class Session:
         fs = self.editing_frame()
         return fs.mask if fs is not None else None
 
+    def auto_area(self, settings: dict) -> Optional[np.ndarray]:
+        """Where By Color decides pixels again: the Near edge band around the mask (inside the region if any);
+        None when it is the whole image (or region) or another tool is in use."""
+        base = self.auto_base()
+        if self.auto_tool != "by_color" or base is None or not settings.get("color_band_on", True):
+            return None
+        band = settings.get("color_band", 30)
+        if band <= 0:
+            return None
+        c = self._area_cache
+        if c is None or c[0] is not base or c[1] != band:
+            c = self._area_cache = (base, band, near_edge(base, band))
+        return c[2] & self.region if self.region is not None else c[2]
+
+    def auto_ab(self, settings: dict) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+        """By Color Range's (A, B) where it decides (the Near edge area if on, inside the region if any):
+        A = what the filter catches (after Swap), B = the rest. None for other tools."""
+        if self.auto_tool != "by_color" or self.image is None:
+            return None
+        a = self._range(settings)[0]
+        area = self.auto_area(settings)
+        if area is None and self.region is not None:
+            area = self.region
+        if area is None:
+            return a, ~a
+        return a & area, ~a & area
+
+    def _range(self, settings: dict) -> tuple:
+        """By Color Range's A, overlap (picked and left-out colors both claim it) and what the color condition
+        alone takes (None: not in use), on the whole image, cached."""
+        key = tuple((k, settings.get(k)) for k in RANGE_KEYS)
+        c = self._ab_cache
+        if c is None or c[0] != key or c[1] is not self.image:
+            c = self._ab_cache = (key, self.image) + range_selection(self.image, settings, with_parts=True)
+        return c[2], c[3], c[4]
+
+    def auto_color_cover(self, settings: dict) -> Optional[float]:
+        """The share (0-1) of the pixels By Color decides that the color condition alone takes; None when it is
+        not in use. Near 0 or 1 the colors decide nothing: the tolerance is off (p99: 100 took everything)."""
+        if self.auto_tool != "by_color" or self.image is None:
+            return None
+        color = self._range(settings)[2]
+        if color is None:
+            return None
+        area = self.auto_area(settings)
+        if area is None and self.region is not None:
+            area = self.region
+        part = color[area] if area is not None else color
+        return float(part.mean()) if part.size else None
+
+    def auto_overlap(self, settings: dict) -> Optional[np.ndarray]:
+        """Where a picked and a left-out color both claim pixels (the nearer one decided), inside the area By
+        Color decides; None when there is none or the tool is not By Color (BC-P4 b)."""
+        if self.auto_tool != "by_color" or self.image is None:
+            return None
+        overlap = self._range(settings)[1]
+        area = self.auto_area(settings)
+        if area is None and self.region is not None:
+            area = self.region
+        if area is not None:
+            overlap = overlap & area
+        return overlap if overlap.any() else None
+
     def auto_stale(self) -> bool:
         """The mask changed by something other than this tool's strokes (undo, a click, ...)."""
         if self.auto_tool is None:
@@ -651,20 +767,7 @@ class Session:
         target = self.auto_cached(tool, base, settings)
         if target is not None:
             return target
-        if tool == "fill_holes":
-            target = fill_holes(base, settings.get("fill_area", 200))
-        elif tool == "remove_specks":
-            target = remove_specks(base, settings.get("speck_area", 200))
-        elif tool == "object_fill":
-            target = grow_to_edges(self.image, base, settings.get("max_grow", 20), settings.get("sensitivity", 50))
-        elif tool == "grow":
-            target = grow_mask(base, settings.get("amount", 3))
-        elif tool == "shrink":
-            target = shrink_mask(base, settings.get("amount", 3))
-        elif tool == "close_gaps":
-            target = close_gaps(base, settings.get("gap", 10))
-        else:
-            raise ValueError(f"Unknown auto tool: {tool}")
+        target = compute_tool(tool, base, self.image, settings)
         self._auto_cache = (self._auto_key(tool, settings), base, target)
         return target
 
@@ -740,6 +843,63 @@ class Session:
         if taken is None or fs is None or not taken.any():
             return False
         return self._set_target(freeze(np.where(taken, r[1], fs.mask)))
+
+    def auto_all_keys(self) -> List[str]:
+        """Apply to Frames: the images where the edited Object has a mask (others stay empty)."""
+        o = self.project.get(self.editing) if self.editing is not None else None
+        if o is None:
+            return []
+        return [k for k in self.keys if o.mask(k) is not None]
+
+    def auto_targets(self, tool: str, settings: dict, keys: Sequence[str], progress=None,
+                     cancelled=None) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+        """*tool* with *settings* on the edited Object's mask on each of *keys*: {key: (that mask, the result
+        bit-packed)}. Safe off the UI thread (reads masks and images only)."""
+        o = self.project.get(self.editing) if self.editing is not None else None
+        out: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+        if o is None:
+            return out
+        for n, key in enumerate(keys):
+            if cancelled is not None and cancelled():
+                break
+            base = o.mask(key)
+            if base is not None:
+                image = None
+                if tool in IMAGE_TOOLS:
+                    image = self.image if key == self.key else self.working_image(key)
+                out[key] = (base, np.packbits(compute_tool(tool, base, image, settings), axis=None))
+            if progress:
+                progress(n + 1, len(keys))
+        return out
+
+    def apply_auto_all(self, results: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> Tuple[int, int]:
+        """Write *results* (from :meth:`auto_targets`) into the edited Object as one undo step, each into that
+        frame's edit layer like Fill does on one image, inside the region when there is one. A frame whose mask
+        changed meanwhile, or (with a region) of another size, is left alone. Returns (changed, skipped)."""
+        o = self.project.get(self.editing) if self.editing is not None else None
+        if o is None:
+            return 0, 0
+        per: Dict[str, FrameState] = {}
+        skipped = 0
+        for key, (base, packed) in results.items():
+            fs = o.frame(key)
+            if fs is None or fs.mask is not base:
+                skipped += 1
+                continue
+            target = np.unpackbits(packed, count=base.size).reshape(base.shape).astype(bool)
+            if self.region is not None:
+                if self.region.shape != base.shape:
+                    skipped += 1
+                    continue
+                target = np.where(self.region, target, base)
+            if (target == base).all():
+                continue
+            layer = EditLayer.between(fs.layered_mask, freeze(target))
+            per[key] = dataclasses.replace(fs, edit=layer, status=FrameStatus.MANUAL)
+        if per:
+            self.project.set_frames({o.id: per})
+            self.sync()
+        return len(per), skipped
 
     def close_auto(self, apply: bool) -> bool:
         """Leave the auto tool; with *apply*, write what it takes in first."""
@@ -935,19 +1095,77 @@ class Session:
         return done
 
     def _sky_map(self, key: str, refined: bool) -> Optional[np.ndarray]:
-        import cv2
+        return _read_gray(self.sky_cache(key, refined))
 
-        path = self.sky_cache(key, refined)
-        if not path.is_file():
+    # the finish (By Color + tree tips + SAM2 at full resolution, as `cli sky --color-preset`): slow (seconds a
+    # frame), so it runs on Make Masks only and is kept per settings ("fingerprint"); moving a setting shows
+    # the model's mask until the frames are finished again, going back shows the kept finish at once
+    def sky_finish_print(self, sp: Special) -> str:
+        """The finish's fingerprint: every value its pixels depend on."""
+        from src.core.refine import TREE_TIPS
+        from src.core.sky_sam2 import SAM2_TILES, SKY_SAM2
+
+        fin = sp.finish_values or {}
+        d = {k: sp.get(k) for k in ("threshold", "refine", "grow", "top_only")}
+        d.update(color=fin.get("color"), tree_tips=bool(fin.get("tree_tips", True)), tips=TREE_TIPS,
+                 tiles=SAM2_TILES, sam2=SKY_SAM2.name, max_side=self.max_side)
+        return hashlib.sha1(json.dumps(d, sort_keys=True).encode()).hexdigest()[:12]
+
+    def sky_finished(self, key: str, fingerprint: str, full: bool) -> Path:
+        """Image *key*'s finished sky: at its original resolution (*full*, what Export writes) or the working size."""
+        return self.store.root / "special" / "sky_finished" / fingerprint / ("full" if full else "work") / f"{key}.png"
+
+    def sky_unfinished(self, keys: Iterable[str], sp: Special) -> List[str]:
+        """The *keys* without *sp*'s finish ([] when it has none)."""
+        if sp.kind != SKY or not sp.finish:
+            return []
+        fp = self.sky_finish_print(sp)
+        return [k for k in keys if not self.sky_finished(k, fp, False).is_file()]
+
+    def finish_sky(self, keys: Sequence[str], sp: Special, engine, progress=None, cancelled=None) -> int:
+        """Finish *sp*'s sky on *keys* (their sky maps made) with SAM2 *engine* and keep it, at the original
+        resolution and the working size (safe off the UI thread: reads images, writes cache files only). The
+        same pixels as ``cli sky --color-preset`` (src/core/sky_sam2.py ``finish_sky``). Returns how many."""
+        from src.core.sky_edges import sky_edges
+        from src.core.sky_sam2 import finish_sky
+
+        fin = sp.finish_values
+        fp = self.sky_finish_print(sp)
+        done = 0
+        for n, key in enumerate(keys):
+            if cancelled is not None and cancelled():
+                break
+            prob = self._sky_map(key, bool(sp.get("refine")))
+            if prob is not None:
+                rgb = read_rgb(self.paths[self.keys.index(key)])
+                full, _clicks = finish_sky(sky_edges(sky_mask(prob, sp), rgb), rgb, fin["color"],
+                                           bool(fin.get("tree_tips", True)), engine)
+                size = working_size(rgb.shape[0], rgb.shape[1], self.max_side)
+                _write_mask(self.sky_finished(key, fp, True), full)
+                _write_mask(self.sky_finished(key, fp, False), resize_mask(full, size))  # last: it marks "done"
+                done += 1
+            if progress:
+                progress(n + 1, len(keys))
+        return done
+
+    def finished_sky_full(self, key: str, o: MaskObject) -> Optional[np.ndarray]:
+        """A Sky Object's finished mask of *key* at the original resolution (Export), None = not finished."""
+        sp = o.special
+        if sp is None or sp.kind != SKY or not sp.finish or key not in sp.keys:
             return None
-        data = np.fromfile(str(path), dtype=np.uint8)
-        return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE) if data.size else None
+        m = _read_gray(self.sky_finished(key, self.sky_finish_print(sp), True))
+        return None if m is None else m > 127
 
     def special_mask(self, key: str, sp: Special) -> Optional[np.ndarray]:
         """*sp*'s mask on image *key* at the working size (None: the sky map is not made yet)."""
         size = working_size(*self.original_size(key), self.max_side)
         if sp.kind == LENS_EDGE:
             return lens_edge_mask(size[0], size[1], sp)
+        if sp.finish:
+            done = _read_gray(self.sky_finished(key, self.sky_finish_print(sp), False))
+            if done is not None:
+                m = done > 127
+                return m if m.shape == tuple(size) else resize_mask(m, size)
         prob = self._sky_map(key, bool(sp.get("refine")))
         if prob is None:
             return None
@@ -961,7 +1179,9 @@ class Session:
         o = self.project.get(obj_id)
         if o is None or o.special is None:
             return False
-        sp = o.special.with_params(**params) if params else o.special
+        params = dict(params or {})
+        sp = o.special.with_finish(params.pop("finish")) if "finish" in params else o.special
+        sp = sp.with_params(**params) if params else sp
         if keys is not None:
             sp = sp.with_keys(set(sp.keys) | set(keys), self.keys)
         frames: Dict[str, Optional[FrameState]] = {}
@@ -1239,4 +1459,24 @@ class Session:
         """Write the masks (*keys*: only those images, e.g. the ones a new dataset keeps)."""
         assert self.image_dir is not None
         return export_final_masks(self.project, self.image_dir, self.original_size, options, keys=keys,
-                                  progress=progress)
+                                  progress=progress, finished=self.finished_sky_full)
+
+
+def _read_gray(path: Path) -> Optional[np.ndarray]:
+    import cv2
+
+    if not path.is_file():
+        return None
+    data = np.fromfile(str(path), dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE) if data.size else None
+
+
+def _write_mask(path: Path, mask: np.ndarray) -> None:
+    """A bool mask as a PNG, written whole or not at all."""
+    import cv2
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ok, buf = cv2.imencode(".png", mask.astype(np.uint8) * 255)
+    tmp = path.with_name(path.name + ".tmp")
+    buf.tofile(str(tmp))
+    tmp.replace(path)

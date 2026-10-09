@@ -187,28 +187,39 @@ class Ring:
 @dataclass(frozen=True)
 class ViewLayout:
     """A rule for where a 360 image's pinhole views look (docs/specs/08 P4): rings of views, plus single
-    views straight up / down (*poles*: +90 / -90). The field of view and the resolution are separate
+    views straight up / down (*poles*: +90 / -90), plus single (yaw, pitch) directions (*points*: a fisheye
+    lens's own layouts, which look one way, export plan 10). The field of view and the resolution are separate
     settings (``Views.fov`` / ``Views.size``), so one layout works at 90°, 110°, 120° ..."""
 
     key: str
     label: str
     purpose: str
-    rings: Tuple[Ring, ...]
+    rings: Tuple[Ring, ...] = ()
     poles: Tuple[float, ...] = ()
+    points: Tuple[Tuple[float, float], ...] = ()
 
     def pairs(self, yaw_offset: float = 0.0) -> List[Tuple[float, float]]:
         out = [((y + yaw_offset) % 360, float(ring.pitch)) for ring in self.rings for y in ring.yaws()]
+        out += [((float(y) + yaw_offset) % 360, float(p)) for y, p in self.points]
         return out + [(yaw_offset % 360, float(p)) for p in self.poles]
 
     @property
     def count(self) -> int:
-        return sum(r.count for r in self.rings) + len(self.poles)
+        return sum(r.count for r in self.rings) + len(self.points) + len(self.poles)
 
     def overlap(self, fov: float) -> Tuple[float, Optional[float]]:
-        """(sideways, between rings) overlap in degrees at *fov*: how far neighbouring views cover the same
+        """(sideways, between rows) overlap in degrees at *fov*: how far neighbouring views cover the same
         directions (<= 0: they only touch or leave a gap). Measured at the horizon, a simple guide."""
-        side = min(fov - 360.0 / r.count for r in self.rings)
-        pitches = sorted({r.pitch for r in self.rings} | set(self.poles))
+        rows: Dict[float, List[float]] = {}
+        for y, p in self.pairs():
+            rows.setdefault(p, []).append(y)
+        steps = []
+        for ys in rows.values():
+            ys = sorted(ys)
+            if len(ys) > 1:
+                steps.append(min([b - a for a, b in zip(ys, ys[1:])] + [ys[0] + 360 - ys[-1]]))
+        side = fov - min(steps) if steps else 0.0
+        pitches = sorted(rows)
         gaps = [b - a for a, b in zip(pitches, pitches[1:])]
         return side, (fov - min(gaps)) if gaps else None
 
@@ -216,21 +227,38 @@ class ViewLayout:
 # the layouts 360 tools use (docs/specs/08 §8, sources there); no more: these cover the usual needs
 VIEW_LAYOUTS = {lay.key: lay for lay in (
     ViewLayout("colmap12", "COLMAP Overlap · 12 Views",
-               "COLMAP panorama SfM 방식 기반의 overlapping perspective views (4 × pitch −35 / 0 / 35, 위 줄 45° 엇갈림). "
-               "일반적인 360 → COLMAP 변환의 기본값: 겹침으로 특징 매칭 / SfM 안정성 중심",
+               "Overlapping perspective views as in COLMAP's panorama SfM (4 × pitch −35 / 0 / 35, the upper row "
+               "turned 45°). The usual default for 360 → COLMAP: the overlap helps feature matching and SfM",
                (Ring(-35, 4), Ring(0, 4), Ring(35, 4, 45.0))),
     ViewLayout("cube6", "Cubemap · 6 Views",
-               "90° 단위 6방향(앞 · 오른쪽 · 뒤 · 왼쪽 · 위 · 아래). 구 전체를 고르게 덮는 단순하고 직관적인 변환",
+               "Six directions 90° apart (front · right · back · left · up · down): simple, covers the whole "
+               "sphere evenly",
                (Ring(0, 4),), (90.0, -90.0)),
     ViewLayout("horizon4", "Horizon · 4 Views",
-               "수평 4방향, 위 / 아래 없음(COLMAP의 non-overlapping). 실내 · 건축물 등 수평 공간 중심, 빠른 처리용. "
-               "하늘과 아래쪽 촬영자가 빠짐",
+               "Four level directions, no up / down (COLMAP's non-overlapping). For level spaces (indoors, "
+               "buildings), fast. Leaves out the sky and the operator below",
                (Ring(0, 4),)),
     ViewLayout("rings16", "Two Rings · 16 Views",
-               "±35°의 두 줄 × 8(위 줄 22.5° 엇갈림, LichtFeld 360 플러그인 Medium). 위아래 방향의 coverage와 "
-               "overlap이 늘어남: dense coverage / SfM 안정성 실험용",
+               "Two rows of 8 at ±35° (the upper row turned 22.5°, LichtFeld's 360 plugin Medium). More coverage "
+               "and overlap up and down: for dense coverage / SfM stability experiments",
                (Ring(-35, 8), Ring(35, 8, 22.5))),
 )}
+# a fisheye lens's own layouts (export plan 10, C-9): every view inside a ~190° lens, so none is half black;
+# the 360 layouts above suit a whole sphere (a 360 image, or a rig's lenses together: RigViews)
+FISHEYE_LAYOUTS = {lay.key: lay for lay in (
+    ViewLayout("fish9", "Fisheye Grid · 9 Views",
+               "Three across (−45 / 0 / 45°) at three heights (−35 / 0 / 35°): most of what the lens sees, "
+               "with overlap for matching",
+               points=tuple((y, p) for p in (-35.0, 0.0, 35.0) for y in (-45.0, 0.0, 45.0))),
+    ViewLayout("fish5", "Fisheye Cross · 5 Views",
+               "Straight ahead, and 45° left / right / up / down: fewer images, the lens's corners skipped",
+               points=((0.0, 0.0), (-45.0, 0.0), (45.0, 0.0), (0.0, 45.0), (0.0, -45.0))),
+    ViewLayout("fish3", "Fisheye Level · 3 Views",
+               "Three level views (−45 / 0 / 45°), no up / down: level spaces, fast; leaves out the sky and "
+               "the operator below",
+               points=((-45.0, 0.0), (0.0, 0.0), (45.0, 0.0))),
+)}
+ALL_LAYOUTS = {**VIEW_LAYOUTS, **FISHEYE_LAYOUTS}
 MIN_VIEW_SHARE = 0.5  # a fisheye's view with less of it seen by the lens is not made (docs/specs/08 P4)
 
 
@@ -284,9 +312,12 @@ class Erp:
 
 @dataclass(frozen=True)
 class Stitch:
-    """One 360 image per moment from a rig's cameras (dual fisheye), *width* x width / 2."""
+    """One 360 image per moment from a rig's cameras (dual fisheye), *width* x width / 2; or, with *views*,
+    pinhole views of each moment laid out over the whole sphere, each taken straight from the lenses
+    (export plan 10, V-2)."""
 
     width: int = 0  # 0 = auto: 2 pi x the first camera's focal length
+    views: Optional[Views] = None  # pinhole views per moment instead of one 360 image
 
 
 Target = Union[Views, Erp]
@@ -549,10 +580,15 @@ def _group_name(names: Sequence[str]) -> str:
 
 
 def stitch_to_erp(images_dir: Path, model_dir: Path, root: Path, groups: Sequence[Sequence[str]], width: int = 0,
-                  masks: Sequence[MaskJob] = (), progress: Optional[Callable[[int, int], None]] = None) -> ConvertReport:
+                  masks: Sequence[MaskJob] = (), progress: Optional[Callable[[int, int], None]] = None,
+                  views: Optional[Views] = None) -> ConvertReport:
     """root/images + root/sparse/0: one 360 image per group of images (a rig's cameras at one moment),
     facing the group's first camera. Where lenses overlap they blend by how far each pixel is inside its image
-    circle; masks take the stronger lens's value; what no lens saw is marked ignored."""
+    circle; masks take the stronger lens's value; what no lens saw is marked ignored.
+
+    With *views*: pinhole views of each moment instead (the whole sphere's layouts suit a rig), each sampled
+    straight from the lenses (one interpolation), the same blend where a view spans both; pose = the moment's
+    pose turned by the view; names ``<moment>_y090_p00.jpg`` (export plan 10, V-2)."""
     why = dataset_blocker(root)
     if why:
         raise FileExistsError(why)
@@ -566,14 +602,15 @@ def stitch_to_erp(images_dir: Path, model_dir: Path, root: Path, groups: Sequenc
     if not groups:
         raise ValueError("No group of two or more convertible images to stitch")
     ref_cam = cams[by_name[groups[0][0]][2]]
-    w = width or int(round(2 * np.pi * _focal(ref_cam)))
-    w = max(64, min(16384, int(w) // 2 * 2))
-    h = w // 2
+    if views is not None:
+        plan = _Plan(views, ref_cam)
+    else:
+        w = width or int(round(2 * np.pi * _focal(ref_cam)))
+        w = max(64, min(16384, int(w) // 2 * 2))
+        plan = _Plan(Erp(w), Camera(0, "EQUIRECTANGULAR", w, w // 2, (w, w // 2)))
+    w, h = plan.w, plan.h
     report.side = w
-    j, i = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
-    theta, phi = 2 * np.pi * (j / w - 0.5), np.pi * (0.5 - i / h)
-    rays = np.stack([np.cos(phi) * np.sin(theta), -np.sin(phi), np.cos(phi) * np.cos(theta)], axis=-1)
-    erp = _Plan(Erp(w), Camera(0, "EQUIRECTANGULAR", w, h, (w, h)))
+    base = plan.rays()  # the output pixels' rays in the output camera frame
     if (model_dir / "points3D.bin").is_file():
         pids, xyz, rgb, err = _read_points(model_dir / "points3D.bin")
     else:
@@ -582,7 +619,7 @@ def stitch_to_erp(images_dir: Path, model_dir: Path, root: Path, groups: Sequenc
     (root / "images").mkdir(parents=True)
     for job in masks:
         job.out_dir.mkdir(parents=True, exist_ok=True)
-    tables: Dict[tuple, tuple] = {}
+    tables: Dict[tuple, Optional[tuple]] = {}
     new_images: List[tuple] = []
     tracks: Dict[int, List[Tuple[int, int]]] = {}
 
@@ -591,66 +628,76 @@ def stitch_to_erp(images_dir: Path, model_dir: Path, root: Path, groups: Sequenc
 
     for n, names in enumerate(groups):
         r_ref, t_ref = pose(by_name[names[0]])
-        acc = np.zeros((h, w, 3), np.float64)
-        total = np.zeros((h, w), np.float64)
-        weights, samples = [], []
-        seen = set()
+        loaded, seen = [], set()
         for name in names:
             im = by_name[name]
-            cam = cams[im[2]]
-            r_j, _t = pose(im)
-            rel = r_j @ r_ref.T  # reference camera -> this camera
-            key = (im[2], np.round(rel, 6).tobytes())
-            if key not in tables:
-                x, y, ok = source_projection(cam)(cam, rays @ rel.T)
-                ok = ok & (x >= 0) & (x < cam.width) & (y >= 0) & (y < cam.height)
-                tables[key] = ((x - 0.5).astype(np.float32), (y - 0.5).astype(np.float32),
-                               _circle_weight(cam, x, y, ok))
-            mx, my, wt = tables[key]
             data = np.fromfile(str(images_dir / name), dtype=np.uint8)
             img = cv2.imdecode(data, cv2.IMREAD_COLOR) if data.size else None
             if img is None:
                 report.skipped.append(name)
                 continue
-            acc += cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT) * wt[..., None]
-            total += wt
-            weights.append(wt)
-            samples.append((name, mx, my, img.shape[:2]))
+            r_j, _t = pose(im)
+            loaded.append((name, im[2], r_j @ r_ref.T, img))  # rel: reference camera -> this camera
             seen.update(int(p) for p in im[4]["id"][im[4]["id"] >= 0])
-        out_name = f"{_group_name(names)}.jpg"
-        (root / "images" / out_name).parent.mkdir(parents=True, exist_ok=True)
-        pano = np.where(total[..., None] > 0, acc / np.maximum(total, 1e-9)[..., None], 0).astype(np.uint8)
-        _write_image(root / "images" / out_name, pano)
-        strongest = np.argmax(np.stack(weights), axis=0) if weights else None
-        for job in masks:
-            ignore = total <= 0  # no lens saw it
-            for k, (name, mx, my, shape) in enumerate(samples):
-                m = job.get(name)
-                if m is None:
-                    continue
-                src = m.astype(np.uint8) * 255
-                if src.shape != shape:
-                    src = cv2.resize(src, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
-                ignore |= (strongest == k) & (cv2.remap(src, mx, my, cv2.INTER_NEAREST) > 0)
-            out = ignore.astype(np.uint8) * 255
-            if job.invert:
-                out = 255 - out
-            mpath = job.out_dir / job.name_pattern.format(stem=key_stem(out_name), name=out_name)
-            mpath.parent.mkdir(parents=True, exist_ok=True)
-            ok, buf = cv2.imencode(".png", out)
-            buf.tofile(str(mpath))
         rows = np.array([row_of[p] for p in sorted(seen) if p in row_of], dtype=int)
-        cam_pts = (xyz[rows] @ r_ref.T + t_ref) if rows.size else np.zeros((0, 3))
-        x, y, inside = erp.project(cam_pts)
-        vid = len(new_images) + 1
-        obs = np.zeros(int(inside.sum()), dtype=POINT2D)
-        obs["x"], obs["y"] = x[inside], y[inside]
-        obs["id"] = pids[rows[inside]].astype(np.int64) if rows.size else []
-        for idx, pid in enumerate(obs["id"]):
-            tracks.setdefault(int(pid), []).append((vid, idx))
-        new_images.append((vid, struct.pack("<4d", *rotmat_to_qvec(r_ref)) + struct.pack("<3d", *t_ref), 1,
-                           out_name, obs))
-        report.views_out += 1
+        ref_pts = (xyz[rows] @ r_ref.T + t_ref) if rows.size else np.zeros((0, 3))
+        for v, (suffix, rot) in enumerate(plan.views):
+            acc = np.zeros((h, w, 3), np.float64)
+            total = np.zeros((h, w), np.float64)
+            weights, samples = [], []
+            rays = None
+            for name, cid, rel, img in loaded:
+                cam = cams[cid]
+                key = (cid, np.round(rel, 6).tobytes(), v)
+                if key not in tables:
+                    if rays is None:
+                        rays = base @ rot  # the view's rays in the reference camera frame
+                    x, y, ok = source_projection(cam)(cam, rays @ rel.T)
+                    ok = ok & (x >= 0) & (x < cam.width) & (y >= 0) & (y < cam.height)
+                    wt = _circle_weight(cam, x, y, ok).astype(np.float32)
+                    tables[key] = ((x - 0.5).astype(np.float32), (y - 0.5).astype(np.float32), wt) if wt.any() else None
+                if tables[key] is None:  # this lens does not see the view
+                    continue
+                mx, my, wt = tables[key]
+                acc += cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT) * wt[..., None]
+                total += wt
+                weights.append(wt)
+                samples.append((name, mx, my, img.shape[:2]))
+            if views is not None and (total > 0).mean() < MIN_VIEW_SHARE:  # the lenses barely saw it: no view
+                report.views_dropped += 1
+                continue
+            out_name = f"{_group_name(names)}{suffix}.jpg"
+            (root / "images" / out_name).parent.mkdir(parents=True, exist_ok=True)
+            pano = np.where(total[..., None] > 0, acc / np.maximum(total, 1e-9)[..., None], 0).astype(np.uint8)
+            _write_image(root / "images" / out_name, pano)
+            strongest = np.argmax(np.stack(weights), axis=0) if weights else None
+            for job in masks:
+                ignore = total <= 0  # no lens saw it
+                for k, (name, mx, my, shape) in enumerate(samples):
+                    m = job.get(name)
+                    if m is None:
+                        continue
+                    src = m.astype(np.uint8) * 255
+                    if src.shape != shape:
+                        src = cv2.resize(src, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+                    ignore |= (strongest == k) & (cv2.remap(src, mx, my, cv2.INTER_NEAREST) > 0)
+                out = ignore.astype(np.uint8) * 255
+                if job.invert:
+                    out = 255 - out
+                mpath = job.out_dir / job.name_pattern.format(stem=key_stem(out_name), name=out_name)
+                mpath.parent.mkdir(parents=True, exist_ok=True)
+                ok, buf = cv2.imencode(".png", out)
+                buf.tofile(str(mpath))
+            x, y, inside = plan.project(ref_pts @ rot.T)
+            vid = len(new_images) + 1
+            obs = np.zeros(int(inside.sum()), dtype=POINT2D)
+            obs["x"], obs["y"] = x[inside], y[inside]
+            obs["id"] = pids[rows[inside]].astype(np.int64) if rows.size else []
+            for idx, pid in enumerate(obs["id"]):
+                tracks.setdefault(int(pid), []).append((vid, idx))
+            new_pose = struct.pack("<4d", *rotmat_to_qvec(rot @ r_ref)) + struct.pack("<3d", *(rot @ t_ref))
+            new_images.append((vid, new_pose, 1, out_name, obs))
+            report.views_out += 1
         if progress:
             progress(n + 1, len(groups))
     kept = {pid for pid, tr in tracks.items() if len(tr) >= 2}
@@ -659,8 +706,9 @@ def stitch_to_erp(images_dir: Path, model_dir: Path, root: Path, groups: Sequenc
         im[4]["id"][~np.isin(im[4]["id"], keep_arr)] = -1
     sparse = root / "sparse" / "0"
     sparse.mkdir(parents=True)
+    mid, cw, ch, params = plan.camera
     with open(sparse / "cameras.bin", "wb") as f:
-        f.write(struct.pack("<QiiQQ2d", 1, 1, MODEL_IDS["EQUIRECTANGULAR"], w, h, float(w), float(h)))
+        f.write(struct.pack("<QiiQQ", 1, 1, mid, cw, ch) + struct.pack(f"<{len(params)}d", *params))
     _write_images_bin(sparse / "images.bin", new_images)
     head = struct.Struct("<Q3d3BdQ")
     with open(sparse / "points3D.bin", "wb") as f:

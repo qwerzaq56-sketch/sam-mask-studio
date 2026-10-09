@@ -161,6 +161,15 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
   (`refine.within`); without one they act on the whole mask. The region is UI state (`Session.region`): not saved, not undone,
   cleared when leaving Edit or changing image.
 
+- **By Color** (`core/refine.split_by_color`, v0.4-p68): pixels within N px of the mask's edge are
+  decided again. Brightness: an Otsu gray threshold there (a bright mask takes the brighter side). Color:
+  the colors there in 8 Lab k-means groups; a group the mask mostly covers is the mask's, so a draft that
+  is wrong in places still teaches the right sides. Balance shifts either line. Reads the image: computed
+  in a Task like Object Fill (`session.IMAGE_TOOLS`).
+  p70: **Range** (`refine.select_range`): picked colors (canvas `color_pick_mode`, Shift adds; Lab a*b*
+  within a tolerance, brightness left out) and / or a gray-level range, near the edge. **Changes**
+  (`refine.take`): both / add only / remove only, for every By.
+
 **P2.1 — feedback on P2** (`v0.3-p2.1`)
 - Merge names the result after the first Object selected (the panel keeps selection order).
 - Properties: Mask / Edit Layer tabs, each scrollable; the how-to shows only with nothing selected.
@@ -199,7 +208,7 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - The Apply-at-once buttons are gone (Fill mode replaces them).
 
 **P2.7 — tool exit as first proposed** (`v0.3-p2.7`; replaces P2.6's write-at-once Fill)
-- One result per auto tool (`Session._result`), shown two ways: Fill = magenta/purple preview,
+- One result per auto tool (`Session._result`), shown two ways: Fill = blue / orange preview (magenta / purple until v0.4-p83; not Show Changes' green / red),
   Brush = gray guide. Switching Brush <-> Fill keeps the same area; nothing is written by it.
 - A Fill preview is written in (one undo step) when the tool closes: clicking it again,
   another tool, Finish Editing, another Object / image, New Object. **Esc** drops the preview
@@ -211,7 +220,7 @@ The user's request list is `docs/specs/04-v0.3-requests.md`.
 - Brush group: **Paint** (was Add / Subtract; Alt+drag subtracts) and **Restore** are live
   while dragging (Restore's result comes from `Canvas.tool_target_fn` at the press).
 - Auto tools in one row. Mode **Fill** (default) takes the whole result; **Paint** picks parts:
-  a drag shows its area (yellow), release picks it (magenta / purple), Alt+drag unpicks (back to
+  a drag shows its area (yellow), release picks it (blue / orange), Alt+drag unpicks (back to
   gray). Nothing is written until the tool closes (`Session.close_auto`, one undo step); the
   picks survive mode switches and setting changes. The selected mode button is highlighted and
   a line under it says what the mode does.
@@ -322,6 +331,17 @@ audit on a real 123-image folder (tags `v0.4-p1` … `v0.4-p7.1`; details in `PR
   fixed columns; long labels never set a minimum width (dock widths stay put); no canvas banner;
   empty states hidden; side docks start within ~55 % of a small window; natural-size dock title
   buttons, compact title when the Frame List is folded.
+
+**v0.6.0 released** (2026-10-09, the stable masking): tags `v0.4-p60` … `v0.4-p148` (details in
+`docs/log/PROGRESS_v0.4.md`). splatbatch pins this version (portable `--split` parts, CLI contract 4).
+- Command line `python -m src.cli`: `lens`, `person`, `sky`, `run --preset`, `probe`, `preset`, `truth`; `--cpu`.
+- People: SAM3 on keyframes every 10 frames + SAM2 propagation, union with SAM3 on every frame (`--keyframes 10
+  --union`), `attach` labels masked where they touch a person (OSMO preset: bag; cane; handcart), `--split` for the
+  rig's own person. The "steady" touch rule (`v0.4-p145`) is not in this release (taken out in p147 / p148).
+- Sky: full-resolution edges, `--color-preset` (By Color in batch), the tree-tip cut, SAM2 finish. Lens: one circle
+  per camera folder, `masks/` (training) and `masks_sfm/` (SfM). Batch Masking window.
+- App: Edit Layer By Color, camera rigs opened whole, the Export window's mask rows and pinhole view layouts for
+  fisheye scenes, `↓` for imported masks, UX audit 2 (narrow windows, 150 % scale).
 
 **v0.5.1 hotfix** (2026-10-02): `v0.4-p59` only. Logging no longer blocks the GUI thread on a paused console
 (QuickEdit selection / Pause): a file log (`logs/sam-mask-studio.log`), the console through a dropping queue, Qt

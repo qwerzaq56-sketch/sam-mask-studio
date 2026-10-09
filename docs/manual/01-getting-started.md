@@ -43,10 +43,10 @@ Original(포인트 · 박스 · 불러온 마스크)  ∪  더하기 레이어  
 | 번호 | 이름 | 하는 일 |
 |---|---|---|
 | ① | **메뉴 바** (File · Edit · View · Go · Help) | 모든 명령이 키와 함께 있습니다. 메뉴를 열어 보면 단축키를 배울 수 있습니다 |
-| ② | **툴바** | 작업 중 자주 켜고 끄는 것만: Mask Preview · Preview: Final / Object · Brush · Outline(두께 칸) · Show Changes · Solo · Hide Masks |
-| ③ | **Frame List** | 프레임 목록(ID · 표시 · 파일 이름). 제목줄의 `1` = 선택한 Object 기준으로 표시, `Aa` = 이름을 접어 좁게 |
+| ② | **툴바** | 작업 중 자주 켜고 끄는 것만: Mask Preview · Preview: Final / Object(`X`) · Cut Out: Inside / Outside(`C`) · Checker · Paint(`D`, 브러시) · Outline(두께 칸) · Overlay 슬라이더(마스크 색 진하기, 값 더블클릭 = 100 %) · Show Changes · Solo · Hide Masks |
+| ③ | **Frame List** | 프레임 목록(ID · 표시 · 파일 이름). 제목줄의 `1` = 선택한 Object 기준으로 표시, `Aa` = 이름을 접어 좁게. 카메라 리그(`cam0/`, `cam1/`)는 카메라가 바뀌는 줄에 머리줄(`cam1 · 94`)이 붙고 이름은 파일 이름만 |
 | ④ | **Objects** | Object 목록. 한 줄: 👁 · 체크박스 · 이름 · 🔗 · 🔒 · Points · × · ···. 아래에 **+ New Object from Points**, **+ Special ▾** 와 선택한 Object용 버튼 |
-| ⑤ | **탭** | **Prompt / Detection**(SAM3로 찾기) · **Batch**(여러 프레임에 한꺼번에) · **Propagation**(전파) · **Logs**(작업 기록) |
+| ⑤ | **탭** | **Prompt**(SAM3로 찾기, 마우스를 올리면 Prompt / Detection) · **Batch**(여러 프레임에 한꺼번에) · **Propagation**(전파) · **Logs**(작업 기록) |
 | ⑥ | **작업 상태 바** | 캔버스 위 한 줄: 지금 프레임 │ 대상 Object │ 모드(View, Points, Paint, Auto · …, Select on Image, 전파 중 …) │ 파일 이름 |
 | ⑦ | **캔버스** | 이미지와 마스크. 휠 = 확대 · 축소, 가운데 드래그 또는 `Space`+드래그 = 이동 |
 | ⑧ | **Frames 줄** | 썸네일 줄. Frame List와 같은 목록이라 현재 프레임, 선택, 표시가 똑같이 보입니다. 아래에 **Go to ID** 칸과 ⌖(현재 프레임으로 스크롤) |
@@ -63,6 +63,7 @@ Frame List와 Frames 줄의 표시는 프레임의 상태를 알려 줍니다.
 |---|---|---|
 | `★` | 여기서 직접 편집함(키프레임, 전파의 출발점) | 파랑 |
 | `✓` | 전파로 마스크가 생김 | 기본 |
+| `↓` | 마스크 폴더(장면의 `masks/` 등)에서 불러온 그대로. 여기서 고치면 `★` | 기본 |
 | `⚠` | 의심: 전파 중 마스크 면적이 갑자기 바뀜 | 주황 |
 | `✕` | 전파 후 마스크가 비어 있음 | 빨강 |
 | `–` | 제목줄 `1`이 켜져 있을 때, 선택한 Object의 마스크가 없음 | 회색 |
@@ -71,7 +72,7 @@ Frame List와 Frames 줄의 표시는 프레임의 상태를 알려 줍니다.
 | `⊘` | 새 데이터셋에서 뺄 프레임 | 회색 글자 |
 
 - 지금 열린 프레임은 칸 전체가 **파랑**, Shift / Ctrl-클릭으로 고른 다른 프레임은 **옅은 파랑**입니다.
-- 목록 아래와 Frames 줄 오른쪽에 개수 요약(`★3 ✓40 ⚠2 ✕0`)이 있습니다.
+- 목록 아래와 Frames 줄 오른쪽에 개수 요약(`★3 ✓40 ⚠2 ✕0`)이 있습니다. 불러온 마스크가 있으면 `↓N`도 나옵니다.
 
 ![Frame List: 13 = ★ 키프레임, 나머지 ✓ 전파됨, 17 = ⊘ 제외(회색), 14 = 열린 프레임(파랑)](img/01-frame-marks.png)
 *Frame List: 13 = ★ 키프레임, 나머지 ✓ 전파됨, 17 = ⊘ 제외(회색), 14 = 열린 프레임(파랑)*
@@ -97,6 +98,7 @@ File → **Settings…** 에서 모델 파일 위치를 정합니다.
 | **SAM3 checkpoint** | `checkpoints/sam3/sam3.pt` | 글자로 찾기. 가중치는 Hugging Face `facebook/sam3`에서 접근 승인을 받아야 받을 수 있습니다 |
 | **Sky model (ONNX)** | `checkpoints/sky/skyseg.onnx` | Sky 특수 Object용(약 170 MB, Hugging Face `JianyuanWang/skyseg`). 없으면 Sky만 못 씁니다 |
 | **Working max side (px)** | 1024 | 편집 해상도의 상한. VRAM이 부족하면 낮추세요. **Export는 항상 원본 해상도**입니다 |
+| **Run SAM on the CPU** | 끔 | SAM2(클릭 · 전파 · Sky 마무리)와 SAM3(Detect)를 CPU로. 학습이 GPU를 쓰는 동안 브러시로 손질할 때. 클릭 · 전파는 매우 느림(SAM2 약 10배), 브러시 · 지우개는 같음. 켜면 창 제목에 `(CPU)`. 한 번만: `run.bat --cpu`, 포터블은 `SAM Mask Studio (CPU).bat` |
 
 - 설정은 앱 폴더의 `config.local.json`에 저장됩니다.
 - SAM2 tiny와 SAM3를 함께 쓰면 VRAM을 약 4 GB 씁니다(8 GB GPU에서 개발 · 시험).

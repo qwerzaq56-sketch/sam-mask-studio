@@ -7,10 +7,40 @@
 - 파일은 UTF-8로 저장해 주세요(메모장이면 "다른 이름으로 저장" → 인코딩 UTF-8).
 
 ## 열린 이슈
-
 - 21. Mask Preview 켠 상태에서 Paint 브러쉬로 칠한 것이 잠깐 안 보였다가 나중에 보임 (사용자 메모, `ideas.md`에서 옮김). 재현 조건 모름: 다시 보이면 도구 / Preview 모드(Final, Object) / 편집 중이던 Object가 체크돼 있었는지 적기.
 
 ## 완료
+
+### `v0.4-p144` · 150 % 배율 점검 (2026-10-09)
+- Batch Masking 창이 150 % 화면보다 커서(1100×760 > 693) 아래가 화면 밖, 열면 가운데로 스크롤 → 화면 안으로 맞춤, 맨 위부터, 실행 버튼 줄은 스크롤 밖 아래에
+
+### `v0.4-p140` · UX 점검 2차 묶음 D 2 (2026-10-09)
+- U10. Batch Masking 프리셋 설명의 검증 목록이 길어 아래 칸을 밀어냄 → `Checked on (7) ▸` 접기(눌러 펼침)
+- U12. 마스크가 많은 장면을 열면 창이 멈춘 듯 보임 → 마스크 불러오기 진행 창(`Loading masks from …  done / total`)
+- U13. 빈 화면이 `Open an image folder (Ctrl+O)` 한 줄뿐 → 최근 폴더 3개(누르면 열림) + 창에 폴더 · 파일 끌어 놓기
+
+### `v0.4-p139` · UX 점검 2차 묶음 D 1 (2026-10-09)
+- U7. Add 뒤에도 후보 안내와 눌린 Preview가 남음 → 안내 지움, Preview · Select on Image 회색
+- U9. Propagation Scope 기본값이 Selection → All images
+- U11. 설명서 B3 색이 마젠타 / 보라 → 파랑 / 주황, 그림 다시 찍음
+- U14. Settings에서 없는 체크포인트가 똑같이 보임 → 빨간 테두리 + file not found
+- U15. 툴바 Brush ↔ Edit Layer Paint → 툴바도 Paint
+
+### `v0.4-p135` · UX 점검 2차 묶음 A (2026-10-09)
+- U6. 리그 이름이 가운데에서 줄어 번호가 안 보임(`cam0/…3.jpg`) → 카메라 머리줄 `cam1 · 94`, 이름은 파일 이름만, 앞에서부터 줄임
+
+### `v0.4-p134` · UX 점검 2차 묶음 B (2026-10-09)
+- U2. 불러온 마스크가 ✓(전파됨)로 보임 → `↓` 불러옴, 고치면 ★
+- U8. Properties 머리에 내부 이름 `SAM3_DETECTION` → `from SAM3`
+
+### `v0.4-p133` · UX 점검 2차 묶음 C (2026-10-09)
+점검 원본은 기획서 하위 페이지 `uxaudit.html`(U1–U15).
+- U3. Properties › Edit Layer 오른쪽이 잘림(1920에서도) → 지금 도구의 설정 페이지만 폭을 정함, 오토 툴 한 줄에 둘, 잘리는 대신 도크가 넓어짐
+- U4. 1280×720에서 Prompt 탭 버튼 · 탭 이름 · Object 이름이 잘림 → 탭 `Prompt`, 버튼 2×2로 접힘, 좁은 목록은 ✎ · × 숨김
+- U5. 전파 뒤 창이 720 → 894로 커짐 → Propagation 탭이 세로 스크롤
+
+### `v0.4-p90` (2026-10-07)
+- 22. By Color Range: 고른 색 썸네일을 누르면 그 색만 지워짐(`Clear`는 전부). 썸네일마다 링크, 툴팁 안내.
 
 ### `v0.5.0` (2026-10-01)
 - F1 단축키 창의 `D` 줄이 p49 설명("Paint <-> Fill")이었음 → "in an auto tool: Paint mode (in Paint: pick all / none)". 독스트링도.
@@ -51,8 +81,10 @@
 
 ## 점검 기록
 - 1차 (2026-09-29): 실제 123장 사본 + 가짜 엔진, 1280×720 / 1500×900 / 1920×1040, 18건 발견 (버그 6 · 개선 12)
+- 2차 (2026-10-09): 0022 리그 사본 + 가짜 엔진, 1280×720 / 1920×1040, U1–U15(기획서 uxaudit). C(U3–U5) p133, B(U2 · U8) p134, A(U6) p135, D(U7 · U9 · U11 · U14 · U15) p139, D(U10 · U12 · U13) p140 — U1(하지 않음) 말고 모두 끝, 150 % 배율 점검 p144
 
 ## 사용자 메모
 <!-- 여기에 한 줄씩: - 무엇이 / 어디서 / (캡처 파일 이름) -->
-- Export 창 New dataset → Pinhole views의 배치 설명(목록 툴팁과 아래 회색 글)만 한국어(`COLMAP panorama SfM 방식 기반의 …`), 나머지 UI는 영어 / `src/core/reproject.py` `VIEW_LAYOUTS`의 purpose, `dialogs.py` Custom 툴팁 (설명서 그림 `docs/manual/img/03-convert-options.png`, 2026-10-01)
+- ~~Export 창 New dataset → Pinhole views의 배치 설명(목록 툴팁과 아래 회색 글)만 한국어, 나머지 UI는 영어~~ → 영어로 `v0.4-p115` (2026-10-01)
+- ~~Batch Masking 창: 왼쪽 설정 칸(기본 폭 440)보다 내용이 넓어 가로 스크롤이 생기고 긴 체크박스 글·회색 안내가 잘림~~ → 고침 `v0.4-p114` (p113 캡처 중 발견, 2026-10-08)
 - GPU 없이(CPU) 실행하면 SAM2는 동작하지만 **SAM3 Detect가 실패**: `RuntimeError: No CUDA GPUs are available`. `vendor/sam3/sam3/model/position_encoding.py`의 `torch.zeros(..., device="cuda")` 고정. README와 포터블 안내는 "GPU가 없으면 CPU로 동작" / 실행: `CUDA_VISIBLE_DEVICES=-1` (설명서 그림 작업 중 발견, 2026-10-01)

@@ -1,0 +1,16 @@
+{
+  "name": "people-only",
+  "title": "People only (a starting point, not checked)",
+  "description": "SAM3 \"person\" and nothing else: no lens edge, no sky. On 0022 \"person\" alone missed the selfie stick and the bag (IoU 0.657), so copy this, add what your rig carries (probe to find the words), and check it on your frames.",
+  "checked_on": [],
+  "person": {
+    "labels": ["person"],
+    "attach": [],
+    "threshold": 0.4,
+    "touch": 16,
+    "grow": 2,
+    "max_side": 1024
+  },
+  "lens": null,
+  "sky": null
+}

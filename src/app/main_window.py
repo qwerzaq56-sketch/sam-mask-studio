@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
     QDoubleSpinBox,
+    QSlider,
     QFileDialog,
     QLabel,
     QLineEdit,
@@ -48,42 +49,41 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from src.app.canvas import Canvas, Overlay
+from src.app.canvas import CUTOUT_FILLS, OVERLAP_COLOR, PREVIEW_STYLES, Canvas, Overlay
 from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
-from src.app.dialogs import ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
+from src.app.dialogs import THUMB, ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
-from src.app.objects_panel import ObjectsPanel
+from src.app.objects_panel import SOURCE_SHORT, ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
-from src.app.properties_panel import AUTO_TOOLS, PropertiesPanel
+from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
 from src.core.special import LABELS as SPECIAL_LABELS
-from src.core.special import LENS_EDGE, SKY, SkyModel, detect_lens_circle
-from src.app.session import Mode, Session
-from src.app.ui_util import DockTitleBar
+from src.core.special import LENS_EDGE, LENS_MARGINS, LENS_SFM, SKY, SkyModel, detect_lens_circle
+from src.app.session import IMAGE_TOOLS, Mode, Session
+from src.app.ui_util import DockTitleBar, StartPanel
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
-from src.core.project import FrameStatus, Source
+from src.core.project import FrameStatus
 from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
-from src.core.storage import check_export, default_export_dir, full_mask
-from src.logging_config import get_logger
+from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, mask_sets, masks_dir, rig_dataset, rig_images_dir, rig_root
+from src.core.rig import check as rig_check
+from src.core.rig import find_circles as rig_find_circles
+from src.core.storage import check_export, default_export_dir, export_one_mask, full_mask, has_sky
+from src.engine.imageio import find_images, key_stem, read_rgb
+from src.logging_config import get_logger, log_file
+from src.version import app_version
 
 logger = get_logger(__name__)
 
 
-AUTO_ADD_COLOR = (255, 40, 220)  # magenta: an auto tool adds these pixels
-AUTO_SUB_COLOR = (130, 60, 255)  # purple: ...and removes these
+# an auto tool's preview: blue = added, orange-red = removed (magenta / purple until p83: not read as in / out;
+# not green / red: Show Changes (R) tints the edit layer's own additions / removals (80, 255, 120) / (255, 60, 60))
+AUTO_ADD_COLOR = (40, 110, 255)
+AUTO_SUB_COLOR = (255, 120, 0)
 
-SOURCE_SHORT = {  # how an Object was made, in the work bar
-    Source.SAM3_DETECTION: "SAM3",
-    Source.SAM3_BATCH: "SAM3 batch",
-    Source.SAM2_POINT: "SAM2",
-    Source.SAM2_BOX: "SAM2 box",
-    Source.MERGED: "merged",
-    Source.DUPLICATE: "copy",
-}
 
 
 # Keys that move while the mouse is over a list (see MainWindow.eventFilter): -1 = back, +1 = on
@@ -93,10 +93,10 @@ HOVER_KEYS = {
 }
 
 
-def default_engine_factory(settings: Settings):
+def default_engine_factory(settings: Settings, device: str = "cuda"):
     from src.engine.inference import InferenceEngine
 
-    return InferenceEngine(settings.sam2_checkpoint, settings.sam3_checkpoint or None)
+    return InferenceEngine(settings.sam2_checkpoint, settings.sam3_checkpoint or None, device=device)
 
 
 def default_propagate():
@@ -113,9 +113,11 @@ class MainWindow(QMainWindow):
         engine_factory: Callable = default_engine_factory,
         propagate_fn: Optional[Callable] = None,
         settings_path: Path = DEFAULT_PATH,
+        cpu: bool = False,
     ):
         super().__init__()
         self.settings = settings or Settings.load(settings_path)
+        self._cpu_arg = cpu  # main.py --cpu: the CPU this time, whatever Settings says
         self.settings_path = settings_path
         self.engine_factory = engine_factory
         self.propagate_fn = propagate_fn
@@ -126,6 +128,8 @@ class MainWindow(QMainWindow):
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._reference: Optional[int] = None  # propagation reference (double-clicked image); None = current
         self.scene = None  # the COLMAP scene the open folder belongs to (src/core/colmap.py)
+        self.rig_circles: dict = {}  # a rig's image circle per camera (None: no circle there), as it opened
+        self.rig = None  # a camera rig without a model: where Export writes as into a scene (src/core/rig.py)
         self._pinned: Optional[List[int]] = None  # the pinned Frame List selection (Selection scope)
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
         self._last_prop: Optional[tuple] = None
@@ -136,9 +140,11 @@ class MainWindow(QMainWindow):
         self._goto_fields: List[QLineEdit] = []  # Frame List, frame strip
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
+        self._t_press = None  # T down while picking: Original before it, put back on release (BC-P3, p100)
+        self._pick_at: dict = {}  # ("in" / "out", rgb) -> (image key, x, y) where By Color's color was taken
         self._loading_models = False
 
-        self.setWindowTitle("SAM Mask Studio")
+        self.setWindowTitle(f"SAM Mask Studio {app_version()}{self._cpu_tag()}")
         self.resize(1500, 950)
         self._build_ui()
         self._build_actions()
@@ -158,6 +164,11 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         self.canvas = Canvas()
+        self.canvas.empty_text = ""  # the start panel says it (U13)
+        self.start_panel = StartPanel(self.canvas)
+        self.start_panel.open_requested.connect(self.open_folder)
+        self.start_panel.set_recent(self.settings.recent_dirs)
+        self.setAcceptDrops(True)  # a folder (or an image in it) dropped on the window opens it
         # the work bar over the canvas: which frame, which Object, which tool - at a glance
         self.work_bar = QLabel()
         self.work_bar.setObjectName("work_bar")
@@ -190,7 +201,9 @@ class MainWindow(QMainWindow):
         self.tabs.setUsesScrollButtons(False)  # a narrow column elides the tab names instead of hiding tabs
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.batch_panel = BatchPanel()
-        self.tabs.addTab(self.detection_panel, "Prompt / Detection")
+        # short names: the four have to fit a 1280 px window's column (U4, p133)
+        self.tabs.addTab(self.detection_panel, "Prompt")
+        self.tabs.setTabToolTip(0, "Prompt / Detection: find Objects with a SAM3 text prompt")
         self.tabs.addTab(self.batch_panel, "Batch")
         self.tabs.addTab(self.propagation_panel, "Propagation")
         self.tabs.addTab(self.log_view, "Logs")
@@ -310,6 +323,14 @@ class MainWindow(QMainWindow):
             "&Save", lambda: self.save(force=True), ["Ctrl+S"], "Save the project (also autosaved)"
         )
         self.act_export = self._action("&Export Final Masks…", self.export, ["Ctrl+E"], "Export Final Mask PNGs")
+        self.act_export_one = self._action(
+            "Export &Current Mask…", self.export_current, ["Ctrl+Shift+E"],
+            "This image's mask only, as one PNG: the Final Mask or one Object's (p104)")
+        self.act_batch_masks = self._action(
+            "&Batch Masking with Presets…", self.batch_masking,
+            tip="People, lens edge and sky for a whole folder from a preset, as the batch tool does it "
+                "(python -m src.cli run)",
+        )
         self.act_settings = self._action("Se&ttings…", self.show_settings, tip="Checkpoints, working resolution")
         self.act_quit = self._action("&Quit", self.close)  # no key: too easy to hit next to Ctrl+Z / Ctrl+A
         self.act_undo = self._action("&Undo", self.undo, ["Ctrl+Z"])
@@ -399,14 +420,28 @@ class MainWindow(QMainWindow):
             True,
         )
         # what Mask Preview shows: the Final Mask (every checked Object) or the selected Object's mask
-        self.act_preview_mode = self._action("Toggle Final / Object Mask", self.toggle_preview_mode, ["X"])
+        # the toolbar shows X / C as two buttons, the one for the look in use checked (p87)
+        self.act_preview_mode = self._action("Toggle Final / Object Mask", lambda _on=False: self.key_x(), ["X"],
+                                             checkable=True)
         self._show_preview_mode()
+        # how Mask Preview looks: the mask, or the image cut out by it (inside / outside)
+        self.act_preview_style = self._action("Mask / Cut Out Preview", self.toggle_cutout)  # X / C go there too
+        self.act_cutout_side = self._action("Cut Out: Inside / Outside", lambda _on=False: self.toggle_cutout_side(),
+                                            ["C"],
+                                            checkable=True)
+        self.act_cutout_checker = self._action(
+            "Cut Out Background: Checkerboard", self.toggle_cutout_checker,
+            tip="The cut-out previews fill the rest with a gray checkerboard (off: the mask's own color there, "
+                "black outside the mask, white inside)", checkable=True)
+        self.act_cutout_checker.setChecked(self.settings.cutout_fill == "checker")
+        self.act_cutout_checker.setIconText("Checker")
+        self._show_preview_style()
         self.act_brush = self._action(
-            "Brush",
+            "Paint",  # the Edit Layer's Paint button: one name for one tool (U15, was "Brush")
             self.brush_key,
             ["D"],
-            "Brush editing (not editing: edits the selected Object with the brush): drag = add, "
-            "Alt+drag = subtract, Alt+right-drag / Ctrl+wheel = size",
+            "Paint with the brush (not editing: edits the selected Object with it): drag = add, "
+            "Alt+drag = subtract, Ctrl+drag left / right or Ctrl+wheel = size",
             True,
         )
         self.act_outline = self._action(
@@ -421,6 +456,29 @@ class MainWindow(QMainWindow):
         self.outline_width.setValue(self.settings.outline_width)
         self.outline_width.setToolTip("Outline width in screen pixels")
         self.outline_width.valueChanged.connect(lambda _v: self.set_outline(self.act_outline.isChecked()))
+        # how strong the mask colors and tool tints are drawn (p87): a slider with its value beside it
+        self.overlay_opacity = QSlider(Qt.Orientation.Horizontal)
+        self.overlay_opacity.setRange(10, 200)
+        self.overlay_opacity.setSingleStep(5)
+        self.overlay_opacity.setPageStep(10)
+        self.overlay_opacity.setFixedWidth(110)
+        self.overlay_opacity.setValue(min(200, max(10, int(self.settings.overlay_opacity))))
+        self.overlay_label = QLabel()
+        self.overlay_label.setMinimumWidth(self.overlay_label.fontMetrics().horizontalAdvance("Overlay 200 %") + 6)
+        tip = ("Opacity of the mask colors and tool tints on the image (100 % = normal; lower shows more of the "
+               "image, higher stronger colors). Double-click the value: back to 100 %")
+        self.overlay_opacity.setToolTip(tip)
+        self.overlay_label.setToolTip(tip)
+        self.overlay_label.mouseDoubleClickEvent = lambda _e: self.overlay_opacity.setValue(100)
+        self.overlay_opacity.valueChanged.connect(self.set_overlay_opacity)
+        self.overlay_box = QWidget()
+        ob = QHBoxLayout(self.overlay_box)
+        ob.setContentsMargins(6, 0, 6, 0)
+        ob.addWidget(self.overlay_label)
+        ob.addWidget(self.overlay_opacity)
+        ob.setSpacing(4)
+        # its own width only: in the toolbar it took the spare width and pushed the slider far from its label
+        self.overlay_box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         self.act_changes = self._action(
             "Show Changes",
             self.set_show_changes,
@@ -439,7 +497,7 @@ class MainWindow(QMainWindow):
             tip="No Object colors on the canvas, the Object in Edit included: the plain image "
                 "(a tool's preview still shows)", checkable=True,
         )
-        for a in (self.act_final, self.act_preview_mode, self.act_brush, self.act_outline, self.act_changes,
+        for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side, self.act_brush, self.act_outline, self.act_changes,
                   self.act_pick_all, self.act_leave_auto, self.act_auto_fill, self.act_apply_continue,
                   self.act_edit, self.act_new, self.act_solo,
                   self.act_hide_masks,
@@ -467,11 +525,14 @@ class MainWindow(QMainWindow):
                 "The source scene is never changed",
         )
         self.act_shortcuts = self._action("&Keyboard Shortcuts", self.show_shortcuts, ["F1"])
+        self.act_about = self._action("&About SAM Mask Studio", self.show_about)
 
         # --- the menu bar: every command, with its key -----------------------------------
         mb = self.menuBar()
         m = mb.addMenu("&File")
-        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, None, self.act_settings, None,
+        for a in (self.act_open, self.act_import_masks, self.act_save, self.act_export, self.act_export_one,
+                  self.act_batch_masks, None,
+                  self.act_settings, None,
                   self.act_quit):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Edit")
@@ -495,7 +556,8 @@ class MainWindow(QMainWindow):
                   self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames):
             objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
-        for a in (self.act_final, self.act_preview_mode):
+        for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side,
+                  self.act_cutout_checker):
             m.addAction(a)
         self._hint(m, "Peek at Mask Preview", "Z (hold)")
         for a in (self.act_outline, self.act_changes, None, self.act_solo, self.act_hide_masks):
@@ -519,17 +581,22 @@ class MainWindow(QMainWindow):
         self._hint(m, "Mouse over the image: Objects", "W / S")
         m = mb.addMenu("&Help")
         m.addAction(self.act_shortcuts)
+        m.addSeparator()
+        m.addAction(self.act_about)
 
         # --- the toolbar: only what is toggled all the time while working ---------------------
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
         tb.addAction(self.act_final)
-        tb.addAction(self.act_preview_mode)
+        tb.addAction(self.act_preview_mode)  # X: black and white, Final / Object
+        tb.addAction(self.act_cutout_side)  # C: cut out, inside / outside
+        tb.addAction(self.act_cutout_checker)
         tb.addAction(self.act_brush)
         tb.addSeparator()
         tb.addAction(self.act_outline)
         tb.addWidget(self.outline_width)
+        tb.addWidget(self.overlay_box)
         tb.addSeparator()
         tb.addAction(self.act_changes)
         tb.addSeparator()
@@ -546,6 +613,8 @@ class MainWindow(QMainWindow):
             box.set_open(getattr(self.settings, name))
             box.toggled_open.connect(lambda on, n=name: self._remember(n, on))
         self.canvas.set_outline(self.settings.outline_visible, self.settings.outline_width)
+        self.canvas.set_overlay_opacity(self.overlay_opacity.value() / 100)
+        self.overlay_label.setText(f"Overlay {self.overlay_opacity.value()} %")
 
     def _connect(self) -> None:
         c = self.canvas
@@ -566,6 +635,7 @@ class MainWindow(QMainWindow):
         o.include_toggled.connect(lambda oid, on: self._do(lambda: self.session.project.set_included(oid, on)))
         o.renamed.connect(lambda oid, name: self._do(lambda: self.session.project.rename(oid, name)))
         o.edit_requested.connect(self.toggle_edit)
+        self.properties_panel.edit_requested.connect(self.toggle_edit)  # the Edit Layer tab's Edit button (p94)
         o.new_requested.connect(self.new_object)
         o.merge_requested.connect(self.merge)
         o.merge_options_requested.connect(self.merge_options)
@@ -583,6 +653,21 @@ class MainWindow(QMainWindow):
         p.variant_selected.connect(self.on_properties_variant)
         p.point_selected.connect(self.on_point_selected)
         p.layer_selected.connect(lambda n: (self.session.select_layer(n), self.refresh()))
+        p.load_color_presets(self.settings.color_presets)  # By Color presets live in the settings file (p105)
+        p.special.set_color_presets(self.settings.color_presets)  # the Sky Object's finish uses them too (p112)
+        self._shown_presets = set(self.settings.color_presets)  # the names the panel lists (p107)
+        p.color_presets_changed.connect(self._save_color_presets)
+        # By Color's settings as last left come back at the next start (p106); kept a moment after each change
+        if self.settings.color_last:
+            p.apply_color_preset(self.settings.color_last, edited=False)
+            t = p.tool_settings()
+            self.session._colors = (tuple(t["color_samples"]), tuple(t["color_samples_out"]))  # no undo step
+        self._color_last_timer = QTimer(self)
+        self._color_last_timer.setSingleShot(True)
+        self._color_last_timer.setInterval(1000)
+        self._color_last_timer.timeout.connect(self._keep_color_last)
+        p.auto_settings_changed.connect(self._color_last_timer.start)
+        p.color_samples_edited.connect(lambda _c: self._color_last_timer.start())
         p.add_layer_requested.connect(lambda: self._do(self.session.add_layer))
         p.toggle_layer_requested.connect(lambda: self._do(self.session.toggle_layer_subtract))
         p.remove_layer_requested.connect(lambda: self._do(self.session.remove_layer))
@@ -596,8 +681,18 @@ class MainWindow(QMainWindow):
         p.auto_mode_changed.connect(self.set_auto_mode)
         p.auto_apply_requested.connect(self.apply_and_leave_tool)
         p.auto_recompute_requested.connect(self.reapply_tool)
+        p.auto_apply_all_requested.connect(self.apply_tool_to_all)
         p.auto_settings_changed.connect(self._auto_refresh)
         p.region_mode_toggled.connect(self.set_region_mode)
+        p.color_pick_toggled.connect(self.canvas.set_color_pick)
+        p.original_view_toggled.connect(self.canvas.set_original_view)
+        self.canvas.color_picked.connect(p.add_sample)
+        self.canvas.color_picked_out.connect(p.add_sample_out)
+        # where each color was taken, for its mark on the image (p99)
+        self.canvas.color_picked.connect(lambda color, _add: self._remember_pick("in", color))
+        self.canvas.color_picked_out.connect(lambda color, _add: self._remember_pick("out", color))
+        p.color_samples_edited.connect(lambda colors: self.session.set_color_samples(*colors))
+        p.color_samples_edited.connect(lambda _colors: self._update_pick_marks())  # a swatch gone: its mark too
         p.clear_region_requested.connect(lambda: self.on_region(None))
         p.apply_layer_requested.connect(lambda: self._layer(self.session.apply_edit, "Edit layer applied"))
         p.delete_layer_requested.connect(lambda: self._layer(self.session.discard_edit, "Edit layer deleted"))
@@ -635,6 +730,7 @@ class MainWindow(QMainWindow):
         sp.generate_requested.connect(self.special_generate)
         sp.detect_requested.connect(self.special_detect)
         sp.apply_requested.connect(self.special_apply)
+        sp.stop_requested.connect(self.special_stop)
         self.objects_panel.special_requested.connect(self.add_special)
         self.objects_panel.visibility_changed.connect(self._update_overlays)
 
@@ -722,12 +818,15 @@ class MainWindow(QMainWindow):
             editing=shown is not None and shown is editing_obj,
             layer=s.current_layer() if shown is not None and shown is editing_obj else 0,
         )
-        note = ""
+        note, finished = "", None
         if shown is not None and shown.special is not None and shown.special.kind == SKY:
             ok = Path(self.settings.sky_checkpoint).is_file()
             note = "Model: ✓ " + Path(self.settings.sky_checkpoint).name if ok else \
                 "Model missing: skyseg.onnx (Settings)"
-        self.properties_panel.special.show_object(shown, len(s.keys), note)
+            sp = shown.special
+            if sp.finish:
+                finished = len(sp.keys) - len(s.sky_unfinished(sp.keys, sp))
+        self.properties_panel.special.show_object(shown, len(s.keys), note, finished)
         self.detection_panel.set_detections(s.detections, s.detection_checked)
         if not s.detections and self.detection_panel.select_btn.isChecked():
             self.detection_panel.select_btn.blockSignals(True)  # nothing left to pick (added / discarded)
@@ -747,6 +846,7 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(s.can_redo and not busy)
         self.act_save.setEnabled(has_folder)
         self.act_export.setEnabled(has_folder and not busy)
+        self.act_export_one.setEnabled(has_folder and not busy and self.session.key is not None)
         self.act_brush.setEnabled(s.mode != Mode.NEW_OBJECT and not busy)  # D not editing: edit with the brush
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel,
                   self.images_panel.frame_list):
@@ -760,12 +860,12 @@ class MainWindow(QMainWindow):
         mode_text = {
             Mode.IDLE: "Ready — use an Object's Points button (E), + New Object from Points (N), or a SAM3 prompt",
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
-            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: brush · Delete: point · Esc: finish",
+            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: paint · Delete: point · Esc: finish",
         }[s.mode]
         if self.picking():
             mode_text = "SELECT ON IMAGE — click / drag: add · Shift: toggle · Ctrl: remove · Edit is off meanwhile"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
-            mode_text = "BRUSH — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · D: brush off"
+            mode_text = "PAINT — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · D: paint off"
             if self.canvas.brush_tool != "paint":
                 mode_text = (
                     f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — drag over the area,"
@@ -858,13 +958,30 @@ class MainWindow(QMainWindow):
         if edit_layer is not None:
             if not self.act_hide_masks.isChecked():  # Hide: the plain image while editing too (tools still show)
                 overlays.append(edit_layer)
+            else:  # not drawn, but the canvas still needs it: a brush stroke starts from this mask (p82)
+                overlays.append(Overlay(edit_layer.mask, edit_layer.color, "edit_hidden"))
             layer = s.editing_frame().edit if s.editing_frame() is not None else None
             added, removed = s.auto_changes()
             if layer is not None and self.settings.show_edit_changes:  # what the hand edits changed
                 overlays.append(Overlay(layer.add, (80, 255, 120), "layer_add"))
                 overlays.append(Overlay(layer.sub, (255, 60, 60), "layer_sub"))
-            if added is not None:  # the auto tool (on top): taken parts magenta / purple, the rest gray
+            tool_settings = self.properties_panel.tool_settings()
+            area = s.auto_area(tool_settings)
+            legend = self._auto_legend(s, tool_settings, area is not None)
+            if area is not None:  # By Color's Near edge: where pixels are decided again (faint white)
+                overlays.insert(0, Overlay(area, (255, 255, 255), "area"))
+            if added is not None:  # the auto tool (on top): taken parts blue / orange, the rest gray
                 taken = s.auto_taken()
+                ab = s.auto_ab(tool_settings) if not self._auto_pending() else None  # with its own result only
+                if ab is not None:  # Range (p86): every pixel it decides shows as A (blue) or B (orange),
+                    changed = added | removed  # light where it stays as it is, dense (below) where it changes
+                    overlays.append(Overlay(ab[0] & ~changed, AUTO_ADD_COLOR, "auto_a"))
+                    overlays.append(Overlay(ab[1] & ~changed, AUTO_SUB_COLOR, "auto_b"))
+                    self.properties_panel.set_color_cover(s.auto_color_cover(tool_settings))
+                    overlap = s.auto_overlap(tool_settings)
+                    if overlap is not None:  # a picked and a left-out color both claim these: the nearer won
+                        overlays.append(Overlay(overlap, OVERLAP_COLOR, "overlap"))
+                        legend.append((OVERLAP_COLOR, 255, "Overlap: nearer color wins"))
                 overlays.append(Overlay((added | removed) & ~taken, (55, 55, 60), "guide"))  # dark gray
                 # own colors, so they are never confused with the edit layer's green / red
                 overlays.append(Overlay(added & taken, AUTO_ADD_COLOR, "auto_add"))
@@ -882,7 +999,25 @@ class MainWindow(QMainWindow):
             if preview:
                 overlays.append(Overlay(det.mask, candidate_color(i), "candidate" if on else "candidate_off"))
         self.canvas.candidates_pickable = preview and self.picking()
+        self.canvas.set_legend(legend if edit_layer is not None else [])
+        self._update_pick_marks()
         self.canvas.set_overlays(overlays)
+
+    @staticmethod
+    def _auto_legend(s, tool_settings: dict, area: bool) -> list:
+        """The colors an auto tool's preview uses right now and what they mean (AT-2, p91); none without a tool."""
+        if s.auto_tool is None:
+            return []
+        if s.auto_tool == "by_color":
+            items = [(AUTO_ADD_COLOR, 150, "A: adds"), (AUTO_ADD_COLOR, 60, "A: already in"),
+                     (AUTO_SUB_COLOR, 130, "B: removes"), (AUTO_SUB_COLOR, 60, "B: already out")]
+        else:
+            items = [(AUTO_ADD_COLOR, 150, "Adds"), (AUTO_SUB_COLOR, 130, "Removes")]
+        if s.auto_mode == "paint":
+            items.append(((55, 55, 60), 210, "Not picked (Paint)"))
+        if area:
+            items.append(((255, 255, 255), 70, "Decided here (Near edge)"))
+        return items
 
     # ------------------------------------------------------------------
     # Folder / navigation / saving
@@ -894,12 +1029,50 @@ class MainWindow(QMainWindow):
         if d:
             self.open_folder(Path(d))
 
+    @staticmethod
+    def _dropped_folder(event) -> Optional[Path]:
+        """The folder a drag carries: a dropped folder, or the folder of a dropped file (U13)."""
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        local = [Path(u.toLocalFile()) for u in urls if u.isLocalFile()]
+        if not local:
+            return None
+        p = local[0]
+        return p if p.is_dir() else p.parent if p.is_file() else None
+
+    def dragEnterEvent(self, event) -> None:
+        if not self._busy and self._dropped_folder(event) is not None:
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        folder = self._dropped_folder(event)
+        if folder is not None and not self._busy:
+            event.acceptProposedAction()
+            self.open_folder(folder)
+
     def open_folder(self, folder: Path) -> bool:
         if self._busy:
             return False
         folder = Path(folder)
         if scene_root(folder) == folder:
             folder = folder / "images"  # a COLMAP scene: its images/ (docs/specs/06-colmap.md)
+        rig = rig_images_dir(folder)  # a rig's root, images/ or one camera: every camera (06 2.1)
+        if rig is not None and rig != folder:
+            lone = folder.parent / f"{folder.name}.sms"
+            if rig == folder.parent and lone.is_dir():  # work saved when this camera was opened alone
+                cams = ", ".join(d.name for d in camera_dirs(rig))
+                picked = self.choose(
+                    "Open a Camera Rig",
+                    f"{folder.name} is one camera of a rig ({cams}). Its work saved when it was opened alone "
+                    f"({lone.name}) names images without the folder, so the whole rig cannot load it.",
+                    [("Open", [f"All cameras ({cams}): a new work file", f"Only {folder.name}, with its saved work"],
+                      0)],
+                    "Open")
+                if picked is None:
+                    return False
+                if picked[0] == 0:
+                    folder = rig
+            else:
+                folder = rig
         self.save()
         self.session.max_side = self.settings.max_side
         try:
@@ -908,6 +1081,8 @@ class MainWindow(QMainWindow):
             self.warn(str(e))
             return False
         self.settings.last_dir = str(folder)
+        self.settings.recent_dirs = [str(folder)] + [d for d in self.settings.recent_dirs if d != str(folder)][:9]
+        self.start_panel.hide()
         self.settings.save(self.settings_path)
         self.images_panel.set_images(
             self.session.keys, self.session.paths, self.session.store.root / "thumbs" if self.session.store else None
@@ -918,15 +1093,25 @@ class MainWindow(QMainWindow):
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.scene = find_scene(folder)
-        self.setWindowTitle(f"SAM Mask Studio — {folder}" + (" (COLMAP scene)" if self.scene else ""))
+        # a rig without a model: Export writes into its masks/camN as into a scene (06 2.1 R3)
+        self.rig = rig_dataset(folder) if self.scene is None and is_rig(folder) else None
+        self.setWindowTitle(f"SAM Mask Studio {app_version()}{self._cpu_tag()} — {folder}"
+                            + (" (COLMAP scene)" if self.scene else ""))
         loaded = len(self.session.project.objects)
         self.log(f"Opened {folder} ({n} images" + (f", {loaded} saved Objects)" if loaded else ")"))
         if self.scene is not None:
             self._report_scene(self.scene)
+        if is_rig(folder):
+            self._report_rig(folder)
         self.ensure_models()
         self.refresh()
-        if self.scene is not None and not loaded and self.scene.mask_dirs:
-            self.offer_masks(self.scene.mask_dirs, "Masks in this COLMAP scene", undoable=False)
+        dirs = list(self.scene.mask_dirs) if self.scene is not None else []
+        root = rig_root(folder) if is_rig(folder) else None
+        if root is not None:  # a rig, model or not: its mask sets too (masks/<set>/camN, 06 2.1 R2)
+            dirs += [d for d in mask_sets(root) if d not in dirs]
+        if dirs and not loaded:
+            self.offer_masks(dirs, "Masks in this COLMAP scene" if self.scene is not None
+                             else "Masks in this camera rig", undoable=False)
         return True
 
     def _report_scene(self, scene) -> None:
@@ -939,6 +1124,46 @@ class MainWindow(QMainWindow):
                 shown = ", ".join(sorted(names)[:5]) + (" …" if len(names) > 5 else "")
                 self.log(f"⚠ {len(names)} image(s) {what}: {shown}")
 
+    def _report_rig(self, images_dir: Path) -> None:
+        """A rig's cameras and masks in the log, and what is missing (docs/specs/06-colmap.md 2.1)."""
+        keys = self.session.keys
+        counts = " + ".join(f"{d.name} {sum(1 for k in keys if k.startswith(d.name + '/'))}"
+                            for d in camera_dirs(images_dir))
+        root = rig_root(images_dir)
+        md = masks_dir(root) if root is not None else None
+        masks = ""
+        if md is not None:
+            masks = ", " + md.name + " " + " + ".join(
+                f"{d.name} {len(find_images(d))}" for d in sorted(md.iterdir(), key=lambda p: p.name.lower())
+                if d.is_dir() and CAMERA_DIR.match(d.name))
+        self.log(f"Camera rig {root or images_dir}: {counts} images{masks}")
+        for line in rig_check(images_dir, keys):
+            self.log(line)
+        self.log(self._fisheye_line(images_dir, keys))
+
+    def _fisheye_line(self, images_dir: Path, keys) -> str:
+        """Whether the rig is a fisheye (06 2.1 R4): the model's camera models when there is one, else the
+        image circle seen in each camera's frames. Kept in ``self.rig_circles`` (camera -> circle or None)."""
+        from src.core.reproject import FISHEYES
+
+        self.rig_circles = {}
+        models = list(self.scene.camera_models) if self.scene is not None else []
+        if models:
+            fish = [m for m in models if m in FISHEYES]
+            return (f"Fisheye rig: the model's cameras are {', '.join(fish)}" if fish
+                    else f"Not a fisheye: the model's cameras are {', '.join(models)}")
+        self.rig_circles = circles = rig_find_circles(images_dir, list(keys))
+        seen = {c: v for c, v in circles.items() if v is not None}
+        if not seen:
+            return (f"No image circle in {', '.join(circles)}: opened as a camera folder dataset, not a fisheye "
+                    "(Fisheye Lens Edge is not needed)")
+        line = "Fisheye rig: image circle " + ", ".join(
+            f"{c} radius {v['radius']:g} %" for c, v in seen.items())
+        missing = [c for c, v in circles.items() if v is None]
+        if missing:
+            line += f"; none in {', '.join(missing)}"
+        return line + " — Objects ▸ + Special ▸ Fisheye Lens Edge masks the black rim"
+
     def offer_masks(self, folders, title: str, undoable: bool = True) -> List[int]:
         """Ask which mask folders to load as Objects and which color is the object in each.
         *undoable* False (a scene's masks, as it opens): they are where Ctrl+Z starts, not a step of it."""
@@ -950,7 +1175,8 @@ class MainWindow(QMainWindow):
                 continue
             share = white_share(d, keys)
             black = share is not None and share > 0.5  # mostly white: the object is probably black
-            groups.append((f"{d.name}/ — masks for {n} of {len(keys)} images",
+            shown = f"{d.parent.name}/{d.name}" if d.parent.name.lower() in ("masks", "mask") else d.name  # a set
+            groups.append((f"{shown}/ — masks for {n} of {len(keys)} images",
                            ["Skip", "White = the object", "Black = the object"], 2 if black else 1))
             found.append(d)
         if not found:
@@ -965,12 +1191,31 @@ class MainWindow(QMainWindow):
         if not chosen:
             return []
 
+        # a window with a bar, as Export's: 188 4K masks take ~17 s (U12, was a status bar line only)
+        bar = QProgressDialog("Loading masks…", "", 0, 0, self)
+        bar.setWindowTitle(title)
+        bar.setCancelButton(None)  # one undo step for all: no half-loaded Objects
+        bar.setWindowModality(Qt.WindowModality.WindowModal)
+        bar.setMinimumDuration(0)
+        bar.setMinimumWidth(420)
+        bar.setAutoClose(False)
+        bar.setAutoReset(False)
+        bar.show()
+        self._mask_bar = bar  # (tests read it)
+        names = ", ".join(f"{d.name}/" for d, _ in chosen)
+
         def progress(done, total):
-            if done % 50 == 0 or done == total:
+            if done % 10 == 0 or done == total:
+                bar.setMaximum(total)
+                bar.setValue(done)
+                bar.setLabelText(f"Loading masks from {names}  {done} / {total}")
                 self.statusBar().showMessage(f"Loading masks {done} / {total}…")
                 QApplication.processEvents()
 
-        ids = self.session.import_masks(chosen, progress)
+        try:
+            ids = self.session.import_masks(chosen, progress)
+        finally:
+            bar.close()
         if not undoable:
             self.session.project.forget_history()
         self._select_new(ids)
@@ -1138,6 +1383,16 @@ class MainWindow(QMainWindow):
             return True
         if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and event.key() == Qt.Key.Key_T
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and not self._typing_text()  # a number field cannot take a T: works there too (p99)
+            and self.isActiveWindow()
+        ):
+            if not event.isAutoRepeat():
+                self._original_key(t == QEvent.Type.KeyPress)
+            return True
+        if (
+            t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() == Qt.Key.Key_Z
             and event.modifiers() == Qt.KeyboardModifier.NoModifier
         ):
@@ -1159,6 +1414,30 @@ class MainWindow(QMainWindow):
                 QApplication.sendEvent(area.verticalScrollBar(), event)  # the panel scrolls instead
             return True
         return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _typing_text(w=None) -> bool:
+        """The keyboard (or *w*) is in a field that takes letters (a text box), not a number field or its editor."""
+        w = QApplication.focusWidget() if w is None else w
+        if isinstance(w, QAbstractSpinBox) or (w is not None and isinstance(w.parentWidget(), QAbstractSpinBox)):
+            return False
+        return isinstance(w, (QLineEdit, QPlainTextEdit))
+
+    def _original_key(self, pressed: bool) -> None:
+        """T while picking colors (BC-P3): Original turned around only while T is held, back on release (p100:
+        no tap toggle any more; the button toggles)."""
+        btn = self.properties_panel.original_btn
+        if pressed:
+            if not btn.isEnabled():
+                self._t_press = None
+                self.log("T: Original (the photo alone) works while picking colors (Pick Color)")
+                return
+            self._t_press = btn.isChecked()
+            btn.setChecked(not btn.isChecked())
+            return
+        press, self._t_press = self._t_press, None
+        if press is not None and btn.isEnabled():
+            btn.setChecked(press)
 
     def _hover_zone(self) -> Optional[str]:
         """The list under the mouse: ``frames`` (Frame List, Frames strip), ``objects`` or None."""
@@ -1209,6 +1488,16 @@ class MainWindow(QMainWindow):
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
 
+    def show_about(self) -> None:
+        """Help > About: the version (a dev build shows the commits after the release tag) and the log file."""
+        QMessageBox.about(
+            self, "About SAM Mask Studio",
+            f"<b>SAM Mask Studio {html.escape(app_version())}</b><br><br>"
+            "SAM3 finds, SAM2 cuts and refines, SAM2 video propagates.<br>"
+            "<a href='https://github.com/qwerzaq56-sketch/sam-mask-studio'>github.com/qwerzaq56-sketch/sam-mask-studio</a>"
+            f"<br><br>Log: {html.escape(str(log_file()))}",
+        )
+
     def closeEvent(self, event):
         if self._prop_worker is not None and self._prop_worker.isRunning():
             if not self.ask("Propagation running", "Cancel the running propagation and quit?", "Quit"):
@@ -1219,6 +1508,7 @@ class MainWindow(QMainWindow):
         for t in self._tasks:
             t.wait(10000)
         self.save()
+        self._keep_color_last()
         self.images_panel.shutdown()
         QApplication.instance().removeEventFilter(self)
         super().closeEvent(event)
@@ -1240,6 +1530,35 @@ class MainWindow(QMainWindow):
         task.start()
         return task
 
+    def batch_masking(self) -> None:
+        """File > Batch Masking with Presets (src/app/batch_mask_dialog.py): runs in its own process."""
+        from src.app.batch_mask_dialog import BatchMaskDialog
+
+        s = self.session
+        scene = self.scene.root if self.scene else (s.image_dir.parent if s.image_dir else None)
+        freed = []
+
+        def free_models() -> bool:
+            eng = s.engine
+            if eng is None or self._busy or self._loading_models or not hasattr(eng, "release"):
+                return False
+            eng.release()
+            s.engine = None
+            freed.append(True)
+            return True
+
+        BatchMaskDialog(s.image_dir, scene, free_models, self, self.settings.color_presets,
+                        cpu=self.device() == "cpu").exec()
+        if freed and s.image_dir is not None:
+            self.ensure_models()
+
+    def device(self) -> str:
+        """Where SAM2 / SAM3 run: cpu with Settings' "Run SAM on the CPU" or main.py --cpu (p120), else cuda."""
+        return "cpu" if self._cpu_arg or self.settings.use_cpu else "cuda"
+
+    def _cpu_tag(self) -> str:
+        return " (CPU)" if self.device() == "cpu" else ""
+
     def ensure_models(self) -> None:
         """Create the engine and load SAM2 in the background (SAM3 loads on first Detect)."""
         s = self.session
@@ -1253,8 +1572,10 @@ class MainWindow(QMainWindow):
         s.defer_prompts = True  # points / boxes made meanwhile are kept and run when SAM2 is ready
         engine = s.engine
 
+        device = self.device()
+
         def load():
-            e = engine or self.engine_factory(self.settings)
+            e = engine or self.engine_factory(self.settings, device)
             e.load_sam2()
             return e
 
@@ -1264,7 +1585,8 @@ class MainWindow(QMainWindow):
             s.engine = e
             if s.image is not None:
                 e.set_image(s.image)
-            self.log(f"SAM2 loaded on {getattr(e, 'device', '?')}")
+            self.log(f"SAM2 loaded on {getattr(e, 'device', '?')}"
+                     + (" (Run SAM on the CPU: the GPU is left free, clicks are slower)" if device == "cpu" else ""))
             n = s.run_pending()
             if n:
                 self.log(f"Applied the points made while SAM2 was loading ({n} mask(s))")
@@ -1329,6 +1651,12 @@ class MainWindow(QMainWindow):
             self.canvas.setFocus()
         if redraw:
             self.refresh()
+
+    def set_overlay_opacity(self, percent: int) -> None:
+        self.settings.overlay_opacity = int(percent)
+        self.overlay_label.setText(f"Overlay {int(percent)} %")
+        self.canvas.set_overlay_opacity(percent / 100)
+        self.settings.save(self.settings_path)
 
     def set_outline(self, on: bool) -> None:
         self.settings.outline_visible = bool(on)
@@ -1496,6 +1824,67 @@ class MainWindow(QMainWindow):
         self.properties_panel.set_brush_tool(self._tool)  # the button stays on
         self._auto_refresh()  # recompute from the new mask
 
+    def apply_tool_to_all(self) -> None:
+        """Fill mode's Apply to Frames: the auto tool with these settings on every frame where the edited Object
+        has a mask, or only on those picked in the Frame List (p103), inside the region if any; off the UI
+        thread, then one undo step."""
+        s = self.session
+        tool = s.auto_tool
+        if tool is None or s.auto_mode != "fill" or self._busy or s.editing is None:
+            return
+        keys = s.auto_all_keys()
+        o = s.project.get(s.editing)
+        if not keys or o is None:
+            return
+        name = TOOL_TEXT[tool][0]
+        where = " inside the region" if s.region is not None else ""
+        picked = set(self.images_panel.selected_rows())
+        chosen = [k for k in keys if s.keys.index(k) in picked]  # picked in the Frame List, with a mask
+        answer = self.choose(
+            "Apply to Frames",
+            f"{name} with these settings on frames of “{o.name}”{where}. Frames where it has no mask stay "
+            "empty. One undo step (Ctrl+Z undoes it).",
+            [("Frames", [f"All: {len(keys)} frame(s) with a mask",
+                         f"Picked in the Frame List: {len(chosen)} frame(s) with a mask "
+                         f"(of {len(picked)} picked; Shift-click a range, Ctrl-click more)"],
+              1 if len(chosen) > 1 else 0)],
+            "Apply",
+        )
+        if answer is None:
+            return
+        if answer[0] == 1:
+            if not chosen:
+                self.log("No picked frame has a mask: pick frames in the Frame List (Shift / Ctrl-click) first")
+                return
+            keys = chosen
+        settings = self.properties_panel.tool_settings()
+        settings.pop("restore", None)
+        state, total = {"n": 0}, len(keys)
+        self._busy = f"{name}: 0 / {total}…"
+        timer = QTimer(self)
+        timer.setInterval(200)
+        timer.timeout.connect(lambda: self.mode_label.setText(f"{name}: {state['n']} / {total}…"))
+        timer.start()
+
+        def done(results):
+            timer.stop()
+            self._busy = None
+            changed, skipped = s.apply_auto_all(results)
+            note = f", {skipped} skipped (changed meanwhile or another image size)" if skipped else ""
+            self.log(f"{name} applied to {changed} of {total} frame(s){note} (Ctrl+Z undoes it)")
+            self.properties_panel.set_brush_tool(self._tool)  # the tool stays on
+            self._auto_refresh()
+
+        def failed(msg):
+            timer.stop()
+            self._busy = None
+            self.refresh()
+            self.warn(f"{name} on the frames failed: {msg}")
+
+        self._start(Task(lambda: s.auto_targets(tool, settings, keys,
+                                                progress=lambda n, t: state.update(n=n))), done, failed)
+        self.refresh()
+
     def brush_key(self, _on: bool = True) -> None:
         """D, Edit's brush tool (E is its points): not editing, edit the selected Object with the brush;
         points -> brush; with an auto tool, its Paint mode (in Paint: pick all / none); the brush again -> out of Edit."""
@@ -1559,7 +1948,10 @@ class MainWindow(QMainWindow):
         self.set_brush_tool("")
 
     def escape(self) -> None:
-        """Esc: first leave the tool (dropping a Fill preview), then finish editing."""
+        """Esc: first stop picking colors, then leave the tool (dropping a Fill preview), then finish editing."""
+        if self.canvas.color_pick_mode:
+            self.properties_panel.pick_btn.setChecked(False)
+            return
         if self._tool:
             self.close_tool(apply=False)
             self.set_brush_tool("")
@@ -1580,7 +1972,7 @@ class MainWindow(QMainWindow):
         self._auto_gen += 1
         gen = self._auto_gen
         target = s.auto_cached(tool, base, settings)
-        if target is None and tool != "object_fill":
+        if target is None and tool not in IMAGE_TOOLS:
             target = s.auto_compute(tool, base, **settings)  # fast enough to stay on the UI thread
         if target is not None:
             self._auto_done(gen, base, target, redraw)
@@ -1878,50 +2270,124 @@ class MainWindow(QMainWindow):
             self.log("No frames: pick them in the Frame List (Shift/Ctrl-click) first")
             return
         keys = [s.keys[i] for i in rows]
-        todo = s.sky_missing(keys) if o.special.kind == SKY else []
-        if not todo:
+        sky = o.special.kind == SKY
+        self.properties_panel.special.flush()  # a setting moved just before: the finish is for it
+        o = self._special_obj()
+        todo = s.sky_missing(keys) if sky else []
+        unfinished = s.sky_unfinished(keys, o.special) if sky else []
+        if not todo and not unfinished:
             s.update_special(o.id, keys=keys)
             self.log(f"{o.name}: masks made on {len(keys)} frame(s) (Ctrl+Z undoes it)")
             self.refresh()
             return
         path = Path(self.settings.sky_checkpoint)
-        if not path.is_file():
+        if todo and not path.is_file():
             self.warn(f"The sky model is not there:\n{path}\n\nDownload skyseg.onnx (about 170 MB) from "
                       "https://huggingface.co/JianyuanWang/skyseg into checkpoints/sky/, or set its path in Settings.")
             return
-        oid, total = o.id, len(todo)
-        state = {"n": 0}
-        self._busy = f"Sky: 0 / {total}…"
+        device = self._sky_finish_device() if unfinished else None
+        if unfinished and device is None:
+            return
+        oid, sp = o.id, o.special
+        state = {"what": "Sky", "n": 0, "total": len(todo)}
+        self._busy = f"Sky: 0 / {len(todo)}…"
+        self._sky_stop = False
+        stopped = lambda: self._sky_stop  # noqa: E731
 
         def work():
-            if getattr(self, "_sky_model", None) is None or self._sky_model_path != path:
-                self._sky_model, self._sky_model_path = SkyModel(path), path
-            return s.compute_sky(todo, self._sky_model, progress=lambda n, t: state.update(n=n))
+            made = finished = 0
+            if todo:
+                if getattr(self, "_sky_model", None) is None or self._sky_model_path != path:
+                    self._sky_model, self._sky_model_path = SkyModel(path), path
+                made = s.compute_sky(todo, self._sky_model, progress=lambda n, t: state.update(n=n),
+                                     cancelled=stopped)
+            if unfinished and not stopped():
+                state.update(what="Loading SAM2 for the sky finish", n=0, total=0)
+                from src import cli  # (the same SAM2 the command line loads)
+
+                eng = cli._sam2_engine(device)
+                try:
+                    state.update(what="Sky finish", total=len(unfinished))
+                    finished = s.finish_sky(unfinished, sp, eng, progress=lambda n, t: state.update(n=n),
+                                            cancelled=stopped)
+                finally:
+                    if hasattr(eng, "release"):
+                        eng.release()
+            return made, finished
+
+        def show():
+            t = state["total"]
+            self.mode_label.setText(f"{state['what']}: {state['n']} / {t}…" if t else f"{state['what']}…")
 
         timer = QTimer(self)
         timer.setInterval(300)
-        timer.timeout.connect(lambda: self.mode_label.setText(f"Sky: {state['n']} / {total}…"))
+        timer.timeout.connect(show)
         timer.start()
+        self.properties_panel.special.set_running(bool(unfinished))
 
-        def done(n):
+        def end():
             timer.stop()
             self._busy = None
+            self.properties_panel.special.set_running(False)
+
+        def done(result):
+            end()
+            made, finished = result
             s.update_special(oid, keys=keys)
-            self.log(f"Sky model run on {n} frame(s); masks on {len(keys)} frame(s) (Ctrl+Z undoes them)")
+            parts = ([f"sky model run on {made} frame(s)"] if todo else []) + \
+                ([f"finished (By Color + SAM2 on {device}) on {finished} of {len(unfinished)}"] if unfinished else [])
+            self.log(f"{'Stopped: ' if self._sky_stop else ''}Sky: {'; '.join(parts)}; masks on {len(keys)} "
+                     f"frame(s) (Ctrl+Z undoes them)")
             self.refresh()
 
         def failed(msg):
-            timer.stop()
-            self._busy = None
+            end()
             self.refresh()
             self.warn(f"Sky masks failed: {msg}")
 
         self._start(Task(work), done, failed)
         self.refresh()
 
+    def special_stop(self) -> None:
+        """Stop the sky's Make Masks after the frame it is on (the frames done stay)."""
+        if self._busy and not getattr(self, "_sky_stop", True):
+            self._sky_stop = True
+            self.properties_panel.special.stop_btn.setEnabled(False)
+            self.log("Stopping the sky after this frame — the frames done stay")
+
+    def gpu_free_gb(self) -> Optional[float]:
+        """Free GPU memory in GB, None without CUDA; tests replace this."""
+        from src.cli import gpu_free_gb
+
+        return gpu_free_gb()
+
+    def _sky_finish_device(self) -> Optional[str]:
+        """Where SAM2 finishes the sky: cuda when 1 GB is free, else the CPU if the user says so (None: not)."""
+        from src.core.sky_sam2 import SKY_GPU_NEEDED, SKY_SAM2
+
+        if not SKY_SAM2.is_file():
+            self.warn(f"The sky finish needs SAM2 tiny, which is not there:\n{SKY_SAM2}")
+            return None
+        if self.device() == "cpu":  # not even asking the GPU (that alone takes some of its memory)
+            return "cpu"
+        free = self.gpu_free_gb()
+        if free is None:
+            self.log("No CUDA GPU: SAM2 finishes the sky on the CPU (about 10x slower)")
+            return "cpu"
+        if free >= SKY_GPU_NEEDED:
+            return "cuda"
+        if self.ask("Sky Finish", f"Only {free:.1f} GB of GPU memory is free ({SKY_GPU_NEEDED:.0f} GB needed): "
+                    "another job (a training? a viewer?) is using the GPU.\n\nFree the GPU and try again, or run "
+                    "SAM2 on the CPU (about 10x slower).", "Run on the CPU"):
+            return "cpu"
+        self.log("Sky finish not started: the GPU is busy")
+        return None
+
     def special_detect(self) -> None:
-        """Lens edge: the image circle found in (up to 8 of) the covered frames, else the open one."""
+        """Lens edge: the image circle found in (up to 8 of) the covered frames, else the open one, pulled in
+        by its use's margin (LENS_MARGINS: training 5 % as the ``lens`` command does, SfM 10 %)."""
         s = self.session
+        self.properties_panel.special.flush()  # a use just picked counts
         o = self._special_obj()
         if o is None or self._busy or o.special.kind != LENS_EDGE:
             return
@@ -1931,9 +2397,14 @@ class MainWindow(QMainWindow):
         if found is None:
             self.log("No image circle found: the images have no black edge to see")
             return
+        sfm = o.special.get("use") == LENS_SFM
+        margin = LENS_MARGINS[LENS_SFM if sfm else 0]
+        circle = found["radius"]
+        found["radius"] = round(circle * (1 - margin / 100.0), 1)
         s.update_special(o.id, params=found)
-        self.log(f"Image circle: radius {found['radius']} %, center {found['cx']:+} / {found['cy']:+} % "
-                 f"(from {len(pick)} frame(s))")
+        self.log(f"Image circle: radius {circle} %, center {found['cx']:+} / {found['cy']:+} % "
+                 f"(from {len(pick)} frame(s)); masked from {found['radius']} %, {margin:g} % in "
+                 + ("for SfM (the distorted rim out)" if sfm else "for training (the soft rim out)"))
         self.refresh()
 
     def special_apply(self) -> None:
@@ -2015,29 +2486,119 @@ class MainWindow(QMainWindow):
     def undo(self) -> None:
         if not self._busy:
             self._do(self.session.undo)
+            self._sync_color_samples()
 
     def redo(self) -> None:
         if not self._busy:
             self._do(self.session.redo)
+            self._sync_color_samples()
+
+    def _remember_pick(self, kind: str, color) -> None:
+        """A color was picked on the image: remember where, for its mark (the latest place for that color)."""
+        if self.canvas.last_pick is not None and self.session.key is not None:
+            x, y = self.canvas.last_pick
+            self._pick_at[(kind, tuple(int(v) for v in color))] = (self.session.key, x, y)
+        self._update_pick_marks()
+
+    def _update_pick_marks(self) -> None:
+        """Mark the picked (1, 2 ...) and left-out (−1 ...) colors taken on this image, while By Color is on."""
+        s, t = self.session, self.properties_panel.tool_settings()
+        marks = []
+        if s.auto_tool == "by_color":
+            for kind, colors, sign in (("in", t["color_samples"], ""), ("out", t["color_samples_out"], "−")):
+                for i, c in enumerate(colors):
+                    at = self._pick_at.get((kind, tuple(c)))
+                    if at is not None and at[0] == s.key:
+                        marks.append((at[1], at[2], tuple(c), f"{sign}{i + 1}"))
+        self.canvas.set_pick_marks(marks)
+
+    def _sync_color_samples(self) -> None:
+        """Undo / redo may have put By Color's picked colors back: show them (p92)."""
+        p, s = self.properties_panel, self.session
+        t = p.tool_settings()
+        if (t["color_samples"], t["color_samples_out"]) != (s.color_samples, s.color_samples_out):
+            p.set_samples(s.color_samples, edited=False, out=s.color_samples_out)
+            self._update_pick_marks()
+            self.log(f"Picked colors: {len(s.color_samples)}, left out: {len(s.color_samples_out)}")
 
     def toggle_final(self, on: bool) -> None:
         self.canvas.set_final_preview(on)
 
+    def key_x(self) -> None:
+        """X (p84): in black and white, the Final Mask <-> the selected Object's mask; in a cut-out, back to
+        black and white as it was (Final or Object kept)."""
+        if self.settings.preview_style != "mask":
+            self.settings.preview_style = "mask"
+            self._set_preview_style()
+        else:
+            self.toggle_preview_mode()
+
     def toggle_preview_mode(self) -> None:
-        """X: Mask Preview shows the Final Mask <-> the selected Object's mask."""
+        """Mask Preview shows the Final Mask <-> the selected Object's mask (kept for the cut-outs too)."""
         self.settings.preview_object = not self.settings.preview_object
         self.settings.save(self.settings_path)
         self._show_preview_mode()
         self._update_preview_mask()
         self.canvas.update()
 
+    def toggle_cutout(self) -> None:
+        """The View menu's Mask / Cut Out: black and white <-> the image cut out by the mask (the rest the mask's
+        black / white, or a checkerboard), on the side kept. Only the style: V toggles the preview itself, Z peeks."""
+        cur = self.settings.preview_style
+        self.settings.preview_style = self.settings.cutout_side if cur == "mask" else "mask"
+        self._set_preview_style()
+
+    def toggle_cutout_side(self) -> None:
+        """C (p84): in a cut-out, inside the mask <-> outside it; in black and white, to the cut-out on the side
+        kept (inside or outside)."""
+        if self.settings.preview_style == "mask":
+            self.settings.preview_style = self.settings.cutout_side
+        else:
+            side = "outside" if self.settings.cutout_side == "cutout" else "cutout"
+            self.settings.cutout_side = self.settings.preview_style = side
+        self._set_preview_style()
+
+    def toggle_cutout_checker(self, on: bool) -> None:
+        """The cut-out previews' rest: a gray checkerboard, or (off) the mask's black / white there."""
+        self.settings.cutout_fill = "checker" if on else "mask"
+        self.settings.save(self.settings_path)
+        self._show_preview_style()
+
+    def _set_preview_style(self) -> None:
+        self.settings.save(self.settings_path)
+        self._show_preview_style()
+        if not self.canvas.showing_final:
+            self.log(f"Mask Preview style: {self.act_preview_style.iconText().split(': ')[1]} (V / hold Z to see it)")
+
+    def _show_preview_style(self) -> None:
+        style = self.settings.preview_style if self.settings.preview_style in PREVIEW_STYLES else "mask"
+        self.canvas.set_preview_style(style)
+        self.canvas.set_cutout_fill(self.settings.cutout_fill if self.settings.cutout_fill in CUTOUT_FILLS else "mask")
+        self.act_preview_style.setIconText(
+            {"mask": "Style: Mask", "cutout": "Style: Cut Out", "outside": "Style: Outside"}[style])
+        side = self.settings.cutout_side if self.settings.cutout_side in ("cutout", "outside") else "cutout"
+        self.act_cutout_side.setIconText("Cut Out: Inside" if side == "cutout" else "Cut Out: Outside")
+        self.act_cutout_side.setToolTip(
+            "C: the image cut out by the mask; again: inside <-> outside (what it holds / what it left). "
+            "Checked while Mask Preview (V, hold Z) looks like this")
+        self.act_cutout_side.setChecked(style != "mask")
+        self.act_preview_mode.setChecked(style == "mask")
+        self.act_preview_style.setToolTip(
+            "How Mask Preview (V, hold Z) looks. X: black and white (Final <-> Object mask; from a cut-out: back "
+            "to it). C: the image cut out by the mask (inside <-> outside: what it holds / what it left; from black "
+            "and white: to the cut-out). Each remembers its state. The rest: the mask's black / white, or a "
+            "checkerboard (View menu)")
+
     def _show_preview_mode(self) -> None:
         """The toolbar button names the mode in use; the menu entry keeps its command name."""
         one = self.settings.preview_object
         self.act_preview_mode.setIconText("Preview: Object" if one else "Preview: Final")
+        self.act_preview_mode.setChecked(self.settings.preview_style == "mask")  # a click toggled it: set it back
         self.act_preview_mode.setToolTip(
-            "Mask Preview shows the selected Object's mask (X: switch to the Final Mask)" if one
-            else "Mask Preview shows the Final Mask, every checked Object (X: switch to the selected Object)"
+            "X: Mask Preview in black and white, the selected Object's mask (again: the Final Mask). "
+            "Checked while Mask Preview (V, hold Z) looks like this" if one
+            else "X: Mask Preview in black and white, the Final Mask, every checked Object (again: the "
+                 "selected Object). Checked while Mask Preview (V, hold Z) looks like this"
         )
 
     def _update_preview_mask(self) -> None:
@@ -2308,7 +2869,7 @@ class MainWindow(QMainWindow):
     def _run_propagation(self, plan: PropagationPlan, seeds) -> None:
         s = self.session
         propagate = self.propagate_fn or default_propagate()
-        ckpt, paths, max_side = self.settings.sam2_checkpoint, list(s.paths), s.max_side
+        ckpt, paths, max_side, device = self.settings.sam2_checkpoint, list(s.paths), s.max_side, self.device()
 
         self.close_tool()
         s.finish_editing()
@@ -2324,7 +2885,7 @@ class MainWindow(QMainWindow):
         self.propagation_panel.set_resumable(False)
 
         def run(cancel, progress):
-            return propagate(ckpt, paths, plan, seeds, max_side, cancel=cancel, progress=progress)
+            return propagate(ckpt, paths, plan, seeds, max_side, device=device, cancel=cancel, progress=progress)
 
         w = PropagationWorker(run, self)
         w.progress.connect(self.propagation_panel.on_progress)
@@ -2469,23 +3030,41 @@ class MainWindow(QMainWindow):
             self.warn("Nothing to export: no checked Object has a mask yet.")
             return
         project = s.project
+        # p123: each bar's mask previewed on the open frame (or the first with a mask), small
+        marked = project.keys_with_masks(included_only=False)
+        pkey = s.key if s.key in marked else (marked[0] if marked else None)
+        psize = (THUMB // 2, THUMB)
+        if pkey is not None:
+            h0, w0 = s.original_size(pkey)
+            k = THUMB / max(h0, w0)
+            psize = (max(1, round(h0 * k)), max(1, round(w0 * k)))
         dlg = ExportDialog(
             default_export_dir(s.image_dir), self,
-            check=lambda pattern, ids=None: check_export(project, pattern, ids),
-            scene=self.scene, target=self.settings.export_target if self.scene else "custom",
-            sets=project.mask_sets,
-            save_set=lambda name: project.set_mask_set(name, [o.id for o in project.objects if o.included]),
-            delete_set=lambda name: project.set_mask_set(name, None),
+            check=lambda pattern, ids=None, flipped=(): check_export(project, pattern, ids, flipped),
+            scene=self.scene or self.rig,
+            target=self.settings.export_target if self.scene else "rig" if self.rig else "custom",
+            bars=project.bars_or_default(),
+            objects=[(o.id, o.name, o.included) for o in project.objects],
             excluded=len(project.excluded),
+            sky=has_sky(project) or any(has_sky(project, list(b.ids)) for b in project.bars_or_default() if b.ids),
+            sky_edges=self.settings.export_sky_edges,
+            preview=None if pkey is None else (lambda ids, flipped: full_mask(
+                project, pkey, lambda _k: psize, None if ids is None else list(ids), flipped=flipped)),
+            preview_frame=pkey or "", preview_size=psize,
         )
-        if dlg.exec() != ExportDialog.DialogCode.Accepted:
+        accepted = dlg.exec() == ExportDialog.DialogCode.Accepted
+        if project.set_mask_bars(dlg.bars()):  # the bars stay with the scene, Export or not (C-4)
+            self.refresh()
+        if not accepted:
             if dlg.goto is not None and dlg.goto in s.keys:  # picked in the check list: open it
                 self.go_to(s.keys.index(dlg.goto))
                 self.focus_frame()
             return
         if self.scene is not None:
             self.settings.export_target = dlg.target.currentData()
-            self.settings.save(self.settings_path)
+        if not dlg.sky_edges.isHidden():
+            self.settings.export_sky_edges = dlg.sky_edges.isChecked()
+        self.settings.save(self.settings_path)
         p = dlg.preset()
         if p is not None:
             self.log(f"Export for {p.label}: {p.note}")
@@ -2496,6 +3075,78 @@ class MainWindow(QMainWindow):
                 self.warn(why)
                 return
         self.run_export(dlg.jobs(), dataset=root, views=dlg.views())
+
+    def _keep_color_last(self) -> None:
+        """Remember By Color's settings (the picked colors too) for the next start (p106)."""
+        values = self.properties_panel.color_preset_values()
+        if values != self.settings.color_last:
+            self.settings.color_last = values
+            self.settings.save(self.settings_path)
+
+    def _save_color_presets(self, presets: dict) -> None:
+        s = self.settings
+        removed = self._shown_presets - set(presets)  # deleted in the panel: not merged back from the file
+        s.removed_presets = (s.removed_presets | removed) - set(presets)
+        s.color_presets = {k: v for k, v in s.color_presets.items() if k not in removed}
+        s.color_presets.update(presets)
+        s.save(self.settings_path)  # keeps presets the file got meanwhile (p107)
+        presets = s.color_presets
+        self.properties_panel.load_color_presets(presets, self.properties_panel.color_preset.currentData())
+        self.properties_panel.special.set_color_presets(presets)
+        self._shown_presets = set(presets)
+        self.log(f"By Color presets: {', '.join(sorted(presets, key=str.lower)) or 'none'}")
+
+    def save_path(self, title: str, start: str) -> Optional[str]:
+        """Save-as dialog; tests replace this."""
+        path, _ = QFileDialog.getSaveFileName(self, title, start, "PNG (*.png)")
+        return path or None
+
+    def export_current(self) -> None:
+        """This image's mask only, as one PNG at the original resolution (p104): the Final Mask (the checked
+        Objects) or one Object's (the one being edited, else the one selected)."""
+        s = self.session
+        if s.image_dir is None or s.key is None or self._busy:
+            return
+        key = s.key
+        oid = s.editing
+        if oid is None:
+            ids = self.objects_panel.selected_ids()
+            oid = ids[0] if len(ids) == 1 else None
+        o = s.project.get(oid) if oid is not None else None
+        one = f"Object “{o.name}” only" if o is not None else "One Object only (select one Object first)"
+        picked = self.choose(
+            "Export Current Mask",
+            f"The mask of {key} only, as one PNG at the image's original size.",
+            [("Mask", ["Final Mask (all checked Objects)", one], 1 if s.editing is not None and o is not None else 0),
+             ("Colors", ["Mask white, background black", "Inverted: mask black, background white"], 0)],
+            "Choose File…",
+        )
+        if picked is None:
+            return
+        if picked[0] == 1 and o is None:
+            self.log("Export Current Mask: select one Object first (or edit it)")
+            return
+        ids = [o.id] if picked[0] == 1 else None
+        stem = key_stem(key) + (f"_{o.name}" if ids else "")
+        start = default_export_dir(s.image_dir) / f"{stem}.png"
+        path = self.save_path("Export Current Mask", str(start))
+        if path is None:
+            return
+        out = Path(path)
+        if out.suffix.lower() != ".png":
+            out = out.with_suffix(".png")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sky = self.settings.export_sky_edges and has_sky(s.project, ids)
+        try:
+            self.save()
+            filled = export_one_mask(s.project, key, s.original_size, out, ids, invert=picked[1] == 1,
+                                     image=(lambda k: read_rgb(s.image_dir / k)) if sky else None,
+                                     finished=s.finished_sky_full)
+        except Exception as e:  # noqa: BLE001 - a disk or format error: tell, keep working
+            self.warn(f"Export failed: {e}")
+            return
+        what = f"“{o.name}”" if ids else "Final Mask"
+        self.log(f"Exported {what} of {key} to {out}" + ("" if filled else " (empty: nothing masked there)"))
 
     def run_export(self, jobs, dataset: Optional[Path] = None, views=None) -> None:
         """Write one export or several (a list: the Final Mask and mask sets, each to its folder).
@@ -2547,19 +3198,22 @@ class MainWindow(QMainWindow):
         def work():
             if views is not None:  # converted cameras: images, masks and model together (docs/specs/08)
                 masks = [MaskJob(o.out_dir, o.name_pattern, o.invert, o.include_empty,
-                                 lambda k, ids=o.object_ids: full_mask(s.project, k, s.original_size, ids))
+                                 lambda k, ids=o.object_ids, sky=o.sky_edges, flip=o.flipped: full_mask(
+                                     s.project, k, s.original_size, ids,
+                                     (lambda key: read_rgb(s.image_dir / key)) if sky else None,
+                                     s.finished_sky_full, flip))
                          for o in jobs]
                 if isinstance(views, Stitch):  # a moment with a ⊘ image is left out whole
                     groups = [g for g in self.scene.rig_groups() if not any(k in s.project.excluded for k in g)]
                     report.append(stitch_to_erp(s.image_dir, self.scene.model_dir, dataset, groups, views.width, masks,
-                                                progress=step("Stitching images and masks")))
+                                                progress=step("Stitching images and masks"), views=views.views))
                 else:
                     report.append(convert(s.image_dir, self.scene.model_dir, dataset, keep, views, masks,
                                           progress=step("Converting images and masks")))
                 return [sorted(o.out_dir.iterdir()) for o in jobs]
             if dataset is not None:
                 step("Linking images, filtering the model")
-                report.append(build_dataset(s.image_dir, self.scene.model_dir, dataset, keep))
+                report.append(build_dataset(s.image_dir, (self.scene or self.rig).model_dir, dataset, keep))
             out = []
             for n, o in enumerate(jobs, 1):
                 name = o.out_dir.name + (f" ({n} of {len(jobs)})" if len(jobs) > 1 else "")
@@ -2572,7 +3226,7 @@ class MainWindow(QMainWindow):
             if report and views is not None:
                 r = report[0]
                 self.log(f"Converted dataset {dataset}: {r.images_in} image(s) → {r.views_out} "
-                         f"{'pinhole view(s)' if isinstance(views, Views) else '360 image(s)'} {r.side} px wide, "
+                         f"{'pinhole view(s)' if isinstance(views, Views) or getattr(views, 'views', None) else '360 image(s)'} {r.side} px wide, "
                          f"3D points {r.points_kept} kept / {r.points_dropped} removed"
                          + (f"; {r.views_dropped} view(s) the fisheye could not fill were left out"
                             if getattr(r, "views_dropped", 0) else "")
@@ -2580,8 +3234,9 @@ class MainWindow(QMainWindow):
             elif report:
                 r = report[0]
                 self.log(f"New dataset {dataset}: {r.model.images_kept} image(s) ({r.linked} linked, {r.copied} copied), "
-                         f"{r.model.images_dropped} left out, 3D points {r.model.points_kept} kept / "
-                         f"{r.model.points_dropped} removed"
+                         + (f"{r.model.images_dropped} left out, 3D points {r.model.points_kept} kept / "
+                            f"{r.model.points_dropped} removed" if self.scene is not None
+                            else f"{len(s.keys) - len(keep)} ⊘ left out, no model")
                          + (f"; not carried over: {', '.join(r.model.skipped_files)}" if r.model.skipped_files else ""))
             for opts, written in zip(jobs, paths):
                 self.log(f"Exported {len(written)} mask(s) to {opts.out_dir}")
@@ -2600,11 +3255,15 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec() != SettingsDialog.DialogCode.Accepted:
             return
-        old = (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint)
+        old = (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint, self.device())
         dlg.apply(self.settings)
         self.settings.save(self.settings_path)
+        if self.device() != old[2]:
+            self.log(f"SAM2 / SAM3 now run on the {'CPU' if self.device() == 'cpu' else 'GPU'}")
+            self.setWindowTitle(self.windowTitle().replace(" (CPU)", "").replace(
+                f"SAM Mask Studio {app_version()}", f"SAM Mask Studio {app_version()}{self._cpu_tag()}", 1))
         if (
-            old != (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint)
+            old != (self.settings.sam2_checkpoint, self.settings.sam3_checkpoint, self.device())
             and not self._busy
             and not self._loading_models
         ):

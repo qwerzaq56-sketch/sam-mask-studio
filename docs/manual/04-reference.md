@@ -23,7 +23,7 @@
 |---|---|
 | 클릭 | 그 프레임 열기 |
 | `Shift` / `Ctrl`+클릭 | 여러 프레임 고르기(전파 Selection 범위, Copy / Clear on Picked Frames, Exclude의 대상) |
-| **가운데 클릭** | 그 프레임을 열고 고른 프레임은 그대로 |
+| **가운데 클릭** (더블클릭도) | 그 프레임을 열고 고른 프레임은 그대로 |
 | **우클릭** | 고른 프레임은 그대로 두고 메뉴: Copy Mask to Picked Frames · Copy Mask to Picked Frames (Options)… · Clear Masks on Picked Frames · Exclude from Dataset / Include |
 | **더블클릭** / `Enter` / 목록 위 `Space` | 그 프레임을 전파 기준 ◎로. 기준에서 다시 하면 해제 |
 | 목록 위 `W A ↑ ←` / `S D ↓ →` | 이전 / 다음 프레임(마우스가 목록 위일 때) |
@@ -164,7 +164,8 @@
 
 - **장면으로 인식하는 폴더**: `images/`와 `sparse/0/`(또는 `sparse/`)가 있는 폴더, 또는 그 `images/`. bin / txt 모델 모두 읽습니다.
 - `images/` 아래 하위 폴더(`cam0/`, `cam1/` …)의 이미지도 열고, 이름은 `cam0/0001.jpg`처럼 폴더를 포함합니다. `images/` 안의 `masks*` 폴더는 이미지로 치지 않습니다.
-  장면이 아닌 폴더는 바로 아래 이미지만 엽니다.
+- **카메라 리그**(모델 없어도): `images/` 바로 아래에 `cam0`, `cam1`처럼 카메라 이름(`cam`/`camera` + 숫자) 폴더가 둘 이상이면, 데이터셋 맨 위 · `images/` · 카메라 폴더 하나 중 무엇을 골라도 모든 카메라를 엽니다. Logs에 카메라별 이미지 · 마스크 수와 빠진 것(⚠)이 남습니다. 카메라 하나만 열어 저장한 작업(`cam0.sms`)이 있으면 어떻게 열지 묻습니다.
+  그 밖의 폴더는 바로 아래 이미지만 엽니다.
 - 처음 열 때 `masks/`, `masks_*/`를 Object로 불러올지 묻습니다([C4](03-recipes.md#c4-이미-있는-마스크-고치기)).
 - 변환(Export → New dataset)이 받는 카메라 모델:
   - 360: `EQUIRECTANGULAR`
@@ -184,26 +185,25 @@
 | 종류 | 설정 |
 |---|---|
 | **Sky Mask** | **Threshold** %(기본 50) · **Grow / shrink** px · **Refine edges**(기본 켬) · **Only sky touching the top edge**. 거의 검은 픽셀은 하늘로 치지 않음 |
-| **Fisheye Lens Edge** | **Radius**(짧은 변 절반 대비 %, 100 = 내접원) · **Center X** / **Center Y** · **Detect from Images**. 원 바깥이 마스크 |
+| **Fisheye Lens Edge** | **Use**(Training / stitching = 찾은 원 7 % 안, SfM / alignment = 10 % 안: 정합 마스크 전용) · **Radius**(짧은 변 절반 대비 %, 100 = 내접원) · **Center X** / **Center Y** · **Detect from Images**. 원 바깥이 마스크 |
 
 ## D6. Export 창
 
-File → **Export Final Masks…** (`Ctrl+E`). 장면이 아니면 **For**, **Output**이 없습니다.
+File → **Export Final Masks…** (`Ctrl+E`). 장면이 아니면 **For**, **Output**이 없습니다. 모델 없는 카메라 리그(`images/cam0`, `images/cam1`)는 For = **Camera rig dataset**(`masks/camN/a.jpg.png`, 검정 = 무시), Output = **Into the dataset** · **New dataset**(모델 없이 images/ 링크 + 마스크).
 
 | 칸 | 내용 |
 |---|---|
 | **For** | 학습기 프리셋: Brush · LichtFeld Studio · Spirula Studio · Postshot · COLMAP (feature extraction) · **Custom (choose below)**. 고른 학습기를 기억합니다. 아래에 학습기 안내 문구 |
 | **Output** | **Into the scene**(장면에 마스크만 씀, 덮어쓸 파일은 `masks_backup_<시각>/`으로) · **New dataset:** + 빈 폴더([C6](03-recipes.md#c6-흐린-프레임-빼고-학습)) |
-| 변환 목록 (New dataset일 때) | **Keep the cameras** · **Pinhole views**(360이면 배치 목록 COLMAP Overlap · 12 Views / Cubemap · 6 Views / Horizon · 4 Views / Two Rings · 16 Views / Custom, 아니면 yaw · pitch 목록) · **360 (ERP)** · **360 from camera pairs (N moments)**. **FOV**, 크기(**auto px**). Pinhole views는 설명 · 뷰 개수 · 겹침과 미리보기 지도를 보여 줌. [C8~C10](03-recipes.md#c8-360erp--pinhole) |
+| 변환 목록 (New dataset일 때) | **Keep the cameras** · **Pinhole views**(360이면 배치 목록 COLMAP Overlap · 12 Views / Cubemap · 6 Views / Horizon · 4 Views / Two Rings · 16 Views / Custom, 피시아이면 Fisheye Grid · 9 Views / Fisheye Cross · 5 Views / Fisheye Level · 3 Views / Custom, 아니면 yaw · pitch 목록) · **360 (ERP)** · **360 from camera pairs (N moments)** · **Pinhole views from camera pairs (N moments)**(360 배치 목록). **FOV**, 크기(**auto px**). Pinhole views는 설명 · 뷰 개수 · 겹침과 미리보기 지도, 옆에 같은 뷰를 번호 붙은 가상 카메라로 그린 3D 그림(앞쪽 왼편 위에서, 빨간 원 = 렌즈 끝 / 두 렌즈가 만나는 곳)을 보여 줌. [C8~C10](03-recipes.md#c8-360erp--pinhole) |
 | 검사 | 저장될 파일 수, 마스크 없는 이미지, 빈 마스크, `⚠` `✕` 프레임, 파일 이름 충돌, 카메라 모델(학습기가 못 읽을 수 있으면 경고), 백업될 파일 수, 새 데이터셋이면 폴더가 비었는지와 뺄 장수 |
 | 문제 이미지 목록 | 더블클릭하면 창을 닫고 그 이미지로. 문제가 없으면 숨김 |
-| **Mask** | **Final Mask (the checked Objects)** · 이름 붙인 세트 · **Every set, one folder each (and the Final Mask)**. **Save Checked as Set…**(지금 체크한 Object를 이름으로) · **Delete Set** |
+| **What** (마스크 줄) | 한 줄 = 한 폴더. ☑ 이번에 쓸지 · 이름(1줄이면 흐림: 폴더 그대로, 2줄 이상이면 `<폴더>_<이름>/`, 비우면 폴더 그대로) · **Objects** 버튼(**Checked Objects** = Objects 패널에서 체크한 것, 아니면 고르기, Object마다 **⇆ Invert** = 그 Object의 바깥, 마스크가 없는 이미지는 전체) · **Invert**(Objects 검정, 처음 값은 학습기 프리셋) · ✕ 지우기(오른쪽 클릭: Duplicate) · 오른쪽 끝 **미리보기**(지금 프레임, 거기 마스크가 없으면 마스크가 있는 첫 프레임에 이 줄이 쓸 흑백 마스크: Objects · ⇆ · Invert를 바꾸면 바로 바뀜, 마우스를 올리면 프레임 이름). **+ Add mask**. 줄은 장면에 저장(창을 닫을 때, Undo 가능) |
 | **Folder** | 내보낼 폴더(학습기를 고르면 정해짐). Custom의 기본은 `<폴더>_masks/` |
 | **File names** | `{stem}.png  (frame_001.png)` · `{name}.png  (COLMAP: frame_001.jpg.png)` |
-| **Invert (object black, background white)** | 흑백 뒤집기 |
 | **Also write empty masks for images without Objects** | Object가 없는 이미지도 파일을 씀 |
 
-- 학습기를 고르면 Folder · File names · Invert · 빈 마스크 칸은 프리셋 값으로 회색 고정됩니다. Custom이면 자유롭게 고릅니다.
+- 학습기를 고르면 Folder · File names · 빈 마스크 칸은 프리셋 값(글 + `preset`)으로 정해집니다. Custom이면 자유롭게 고릅니다. 흑백은 마스크 줄마다의 Invert로, 프리셋과 다르면 검사에 ⚠ 한 줄이 뜹니다.
 - 마스크 세트는 `<폴더>_<이름>/`(장면이면 `masks_people/`)로 따로 쓰입니다. 학습기는 `masks/`만 읽습니다.
 - 마스크는 8bit PNG(0 / 255), **원본 해상도**입니다.
 - 진행 창: 지금 단계(마스크 쓰기 / 새 데이터셋 만들기 / 변환 / 이어 붙이기), `n / 전체`, 막대. 중간 취소는 없습니다(반쯤 쓰인 결과가 남지 않게).
@@ -277,7 +277,7 @@ Object = 학습에서 **무시할 것**입니다. 프리셋은 이것을 학습�
 | `Enter` | 지금 프레임을 기준 ◎로(다시 = 해제). 오토 툴이 켜져 있으면 오토 툴의 `Enter`가 먼저 |
 | 더블클릭 (프레임) | 기준 ◎로, 다시 = 해제 |
 | `Shift` / `Ctrl`+클릭 (프레임) | 여러 프레임 고르기(📌 Pin으로 고정) |
-| 가운데 클릭 (프레임) | 열기, 고른 프레임은 그대로 · 우클릭: 고른 프레임에 할 일 |
+| 가운데 클릭 · 더블클릭 (프레임) | 열기, 고른 프레임은 그대로 · 우클릭: 고른 프레임에 할 일 |
 
 ### View
 

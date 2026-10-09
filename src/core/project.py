@@ -56,6 +56,7 @@ class FrameStatus(str, Enum):
     PROPAGATED = "propagated"
     WARNING = "warning"  # propagated, but looks suspicious
     FAILED = "failed"  # propagation produced an empty mask
+    IMPORTED = "imported"  # read from a mask folder as it was: not edited here, not propagated (U2, p134)
 
 
 def freeze(mask: np.ndarray) -> np.ndarray:
@@ -224,6 +225,21 @@ class MaskObject:
 
 
 @dataclass(frozen=True)
+class MaskBar:
+    """One mask the Export window writes (one folder): its Objects and its colours (plan Export 9).
+
+    ``ids`` None = the checked Objects (the Final Mask). ``invert`` True = Objects black; None = not set yet,
+    the trainer preset decides. ``flipped``: Objects taken the other way round before the union (what is
+    outside them; an image where one has no mask is all outside). ``on``: written by the next Export."""
+
+    name: str = ""
+    ids: Optional[Tuple[int, ...]] = None
+    invert: Optional[bool] = None
+    flipped: Tuple[int, ...] = ()
+    on: bool = True
+
+
+@dataclass(frozen=True)
 class Detection:
     """A SAM3 text-prompt candidate on one image (not yet an Object)."""
 
@@ -267,6 +283,8 @@ class Project:
         self.label_counts: Dict[str, int] = {}
         # named mask sets for export (docs/specs/06-colmap.md 4): name -> Object ids; the Final Mask is the unnamed one
         self.mask_sets: Dict[str, Tuple[int, ...]] = {}
+        # the Export window's masks (plan Export 9); empty = not set up yet (bars_or_default)
+        self.mask_bars: Tuple[MaskBar, ...] = ()
         # images left out of a dataset export (docs/specs/07 6); the source scene is never changed
         self.excluded: frozenset = frozenset()
         self.revision: int = 0
@@ -282,10 +300,11 @@ class Project:
     def _state(self) -> tuple:
         # MaskObject is frozen and its frames dict is never mutated in place,
         # so a shallow tuple is a complete snapshot.
-        return (tuple(self.objects), self.next_id, dict(self.label_counts), dict(self.mask_sets), self.excluded)
+        return (tuple(self.objects), self.next_id, dict(self.label_counts), dict(self.mask_sets), self.excluded,
+                self.mask_bars)
 
     def _restore(self, state: tuple) -> None:
-        objects, self.next_id, labels, sets, self.excluded = state
+        objects, self.next_id, labels, sets, self.excluded, self.mask_bars = state
         self.objects = list(objects)
         self.label_counts = dict(labels)
         self.mask_sets = dict(sets)
@@ -353,21 +372,40 @@ class Project:
     def _replace(self, obj: MaskObject) -> None:
         self.objects[self._index(obj.id)] = obj
 
-    def final_mask(self, key: str, ids: Optional[Iterable[int]] = None) -> Optional[np.ndarray]:
-        """Union of the included Objects' masks on image *key* (*ids*: those Objects instead, a mask set)."""
-        use = self._members(ids)
-        return union(o.mask(key) for o in self.objects if use(o))
+    def final_mask(self, key: str, ids: Optional[Iterable[int]] = None,
+                   flipped: Iterable[int] = ()) -> Optional[np.ndarray]:
+        """Union of the included Objects' masks on image *key* (*ids*: those Objects instead, a mask set).
 
-    def _members(self, ids: Optional[Iterable[int]]):
+        *flipped*: those of them count the other way round (what is outside them); one with no mask on *key*
+        covers the whole image (its size from another mask there, else 1 x 1: only "has pixels" is known)."""
+        use, flip = self.members(ids), set(flipped)
+        m = union(o.mask(key) for o in self.objects if use(o) and o.id not in flip)
+        for o in self.objects:
+            if not (use(o) and o.id in flip):
+                continue
+            om = o.mask(key)
+            if om is None:
+                shape = m.shape if m is not None else next(
+                    (x.shape for x in (p.mask(key) for p in self.objects) if x is not None), (1, 1))
+                return freeze(np.ones(shape, bool))
+            m = ~om if m is None else (m | ~om if m.shape == om.shape else m)
+        return freeze(m) if m is not None else None
+
+    def members(self, ids: Optional[Iterable[int]]):
         if ids is None:
             return lambda o: o.included
         wanted = set(ids)
         return lambda o: o.id in wanted
 
-    def keys_with_masks(self, included_only: bool = True, ids: Optional[Iterable[int]] = None) -> List[str]:
-        """Image keys (in sequence order) where at least one Object has a mask (*ids*: of those Objects)."""
+    def keys_with_masks(self, included_only: bool = True, ids: Optional[Iterable[int]] = None,
+                        flipped: Iterable[int] = ()) -> List[str]:
+        """Image keys (in sequence order) where at least one Object has a mask (*ids*: of those Objects).
+        A *flipped* one among them gives every image a mask (where it has none, all of the image is outside it)."""
         present = set()
-        use = self._members(ids) if included_only or ids is not None else (lambda o: True)
+        use = self.members(ids) if included_only or ids is not None else (lambda o: True)
+        flip = set(flipped)
+        if flip and any(use(o) and o.id in flip for o in self.objects):
+            return list(self.image_keys)
         for o in self.objects:
             if not use(o):
                 continue
@@ -455,6 +493,21 @@ class Project:
             self.mask_sets[name] = new
         return True
 
+    def bars_or_default(self) -> Tuple[MaskBar, ...]:
+        """The Export window's masks; not set up yet: the Final Mask, then the old named sets (off)."""
+        if self.mask_bars:
+            return self.mask_bars
+        return (MaskBar(),) + tuple(MaskBar(name, ids, on=False) for name, ids in sorted(self.mask_sets.items()))
+
+    def set_mask_bars(self, bars: Iterable[MaskBar]) -> bool:
+        """The Export window's masks, as one undo step (False: nothing changed)."""
+        new = tuple(bars)
+        if new == self.bars_or_default():
+            return False
+        self._checkpoint()
+        self.mask_bars = new
+        return True
+
     def set_excluded(self, keys: Iterable[str], excluded: bool) -> List[str]:
         """Leave images out of (or take them back into) a new dataset — one undo step; returns the keys changed."""
         keys = [k for k in keys if (k in self.excluded) != excluded]
@@ -502,12 +555,18 @@ class Project:
 
     @staticmethod
     def _added(frames: Sequence[FrameState]) -> Optional[FrameState]:
-        """One frame holding the union of *frames*' masks (★ if any of them was edited by hand)."""
+        """One frame holding the union of *frames*' masks (★ if any of them was edited by hand, ↓ if all were imported)."""
         m = union(fs.mask for fs in frames)
         if m is None:
             return None
-        manual = any(fs.status == FrameStatus.MANUAL for fs in frames)
-        return FrameState.from_mask(m, status=FrameStatus.MANUAL if manual else FrameStatus.PROPAGATED)
+        statuses = {fs.status for fs in frames if fs.mask is not None}
+        if FrameStatus.MANUAL in statuses:
+            status = FrameStatus.MANUAL
+        elif statuses == {FrameStatus.IMPORTED}:
+            status = FrameStatus.IMPORTED
+        else:
+            status = FrameStatus.PROPAGATED
+        return FrameState.from_mask(m, status=status)
 
     def copy_into(self, src_id: int, dst_id: int, replace: bool, keys: Optional[Iterable[str]] = None,
                   move: bool = False) -> List[str]:

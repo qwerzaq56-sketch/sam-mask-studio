@@ -29,7 +29,7 @@ bedroom/
 
 **조작**
 
-1. File → **Open Folder…** (`Ctrl+O`).
+1. File → **Open Folder…** (`Ctrl+O`). 폴더를 열기 전 빈 화면에는 **Recent folders**(최근 3개, 누르면 열림)가 나오고, 폴더나 이미지 파일을 창에 끌어다 놓아도 엽니다(파일이면 그 폴더).
 2. **장면 루트**(`bedroom/`)를 고릅니다. 그 안의 `images/`를 골라도 됩니다.
 
 **확인할 것**
@@ -54,7 +54,7 @@ bedroom/
 **조작**
 
 1. Frame List에서 사람이 잘 보이는 프레임을 엽니다(클릭, 또는 `←` `→`).
-2. **Prompt / Detection** 탭의 입력칸에 `person`을 쓰고 **Detect**(또는 `Enter`).
+2. **Prompt** 탭의 입력칸에 `person`을 쓰고 **Detect**(또는 `Enter`).
    쉼표로 여러 개를 한 번에 찾을 수 있습니다: `person, tripod`.
 3. 후보가 라벨별로 묶여 목록에 나오고, **Select on Image**가 켜집니다. 캔버스에서 고릅니다:
    - 클릭 / 드래그 = 후보 추가(드래그 박스에 조금이라도 걸리면 대상)
@@ -114,10 +114,10 @@ bedroom/
 
 ### 브러쉬와 오토 툴: Edit Layer
 
-- **Brush** (`D`): 드래그 = 칠하기(추가), `Alt`+드래그 = 빼기. 크기는 `Alt`+우클릭 드래그(오른쪽 = 크게), `Ctrl`+휠 또는 `Shift`+휠.
+- **Paint** (`D`, 툴바와 Edit Layer의 Brush › Paint가 같은 것): 드래그 = 칠하기(추가), `Alt`+드래그 = 빼기. 크기는 `Alt`+우클릭 드래그(오른쪽 = 크게), `Ctrl`+휠 또는 `Shift`+휠.
   **Restore**: 칠한 곳의 손질을 되돌립니다(**Add** / **Subtract** / **Both**).
 - **Auto tools** (Edit Layer 탭): **Object Fill**(물체 경계까지 넓히기) · **Fill Holes** · **Remove Specks** · **Grow** · **Shrink** · **Close Gaps**.
-  1. 도구 버튼을 누르면 **Fill** 모드로 시작해, 결과 전체를 미리 보여 줍니다(마젠타 = 더해질 곳, 보라 = 빠질 곳).
+  1. 도구 버튼을 누르면 **Fill** 모드로 시작해, 결과 전체를 미리 보여 줍니다(파랑 = 더해질 곳, 주황 = 빠질 곳, 캔버스 왼쪽 아래 범례 **Adds / Removes**).
   2. 일부만 쓰려면 **Paint** 모드로 바꿔 쓸 부분을 칠해서 고릅니다(`Alt`+드래그 = 해제).
   3. **Apply & Continue** (`Enter`) = 반영하고 다음 결과 계산, **Apply & Close** (`Shift+Enter`) = 반영하고 도구 끝.
      `Esc`, 다른 도구, 같은 도구 버튼을 다시 누르면 반영하지 않고 나갑니다.
@@ -125,8 +125,8 @@ bedroom/
   - 설정값(Max size, Amount, Max gap …)은 **Settings** 칸에 있습니다.
 - **Apply Layer**: 손질을 굳혀 기본 마스크로 만듭니다. **Delete Layer**: 손질을 전부 버립니다.
 
-![Grow의 Fill 모드 미리보기: 마젠타 = 더해질 곳, 아래 Will apply에 바뀔 픽셀 수](img/02-auto-tool-fill.png)
-*Grow의 Fill 모드 미리보기: 마젠타 = 더해질 곳, 아래 Will apply에 바뀔 픽셀 수*
+![Grow의 Fill 모드 미리보기: 파랑 = 더해질 곳(캔버스 범례 Adds). 0022 사본, 불러온 마스크(↓)](img/02-auto-tool-fill.png)
+*Grow의 Fill 모드 미리보기: 파랑 = 더해질 곳(캔버스 범례 Adds). 0022 사본, 불러온 마스크(↓)*
 
 **확인할 것**
 

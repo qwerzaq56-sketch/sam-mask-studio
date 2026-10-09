@@ -25,6 +25,7 @@ class Preset:
     verified: str = ""
     unconfirmed_cameras: Tuple[str, ...] = ()  # camera models this trainer is not known to read
     either_name: bool = True  # reads a.png as well as a.jpg.png: into a scene, follow the masks already there
+    confirmed: bool = True  # False: a rule is not confirmed yet; the Export window shows the whole note from the start
 
 
 PRESETS: Tuple[Preset, ...] = (
@@ -55,6 +56,7 @@ PRESETS: Tuple[Preset, ...] = (
         verified="Postshot User Guide (Image Set > Mask Mode); how files pair with images is not documented — "
                  "named like the images (a.png), check that they pair",
         either_name=False,
+        confirmed=False,
     ),
     Preset(
         "colmap", "COLMAP (feature extraction)",
@@ -63,8 +65,15 @@ PRESETS: Tuple[Preset, ...] = (
         either_name=False,  # COLMAP reads a.jpg.png only
     ),
 )
+# A camera rig without a model (docs/specs/06-colmap.md 2.1 R3): no trainer to name yet, the layout they all read
+RIG = Preset(
+    "rig", "Camera rig dataset",
+    note="Masks go to masks/cam0, masks/cam1 … beside images/, named as COLMAP names them (a.jpg.png): "
+         "black is ignored, white is trained, as Brush, LichtFeld Studio and Spirula read them.",
+    verified="docs/specs/06-colmap.md 2.1 (the COLMAP layout of the presets above)",
+)
 CUSTOM = "custom"  # the dialog's own choices (the export as before v0.4-p24)
 
 
 def preset(key: Optional[str]) -> Optional[Preset]:
-    return next((p for p in PRESETS if p.key == key), None)
+    return next((p for p in PRESETS + (RIG,) if p.key == key), None)

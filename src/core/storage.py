@@ -26,9 +26,11 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from src.engine.imageio import key_stem
-from src.core.special import Special
-from src.core.project import EditLayer, FrameState, FrameStatus, MaskObject, Point, Project, PromptLayer, Source, Variant, freeze
+from src.engine.imageio import key_stem, read_rgb
+from src.core.sky_edges import sky_edges
+from src.core.special import LABELS, SKY, Special
+from src.core.project import (EditLayer, FrameState, FrameStatus, MaskBar, MaskObject, Point, Project, PromptLayer,
+                              Source, Variant, freeze, union)
 
 FORMAT_VERSION = 1
 
@@ -37,8 +39,10 @@ def sidecar_dir(image_dir: Path) -> Path:
     """``<folder>.sms`` beside the image folder; for a COLMAP scene's ``images/``, beside the
     scene (``<scene>.sms``) so trainers reading the scene never see it. A project already
     saved at the old place (inside the scene) keeps being used."""
+    from src.core.rig import rig_root
+
     old = image_dir.parent / f"{image_dir.name}.sms"
-    root = scene_root(image_dir)
+    root = scene_root(image_dir) or rig_root(image_dir)  # a rig's images/ without a model too (06 2.1)
     if root is None or root == image_dir:
         return old
     new = root.parent / f"{root.name}.sms"
@@ -224,6 +228,8 @@ class ProjectStore:
             "next_id": project.next_id,
             "label_counts": project.label_counts,
             "mask_sets": {k: list(v) for k, v in project.mask_sets.items()},
+            "mask_bars": [{"name": b.name, "ids": None if b.ids is None else list(b.ids), "invert": b.invert,
+                           "flipped": list(b.flipped), "on": b.on} for b in project.mask_bars],
             "excluded": sorted(project.excluded),
             "objects": objects_json,
         }
@@ -246,6 +252,11 @@ class ProjectStore:
         project.next_id = int(doc.get("next_id", 1))
         project.label_counts = {k: int(v) for k, v in doc.get("label_counts", {}).items()}
         project.mask_sets = {k: tuple(int(i) for i in v) for k, v in doc.get("mask_sets", {}).items()}
+        project.mask_bars = tuple(
+            MaskBar(str(b.get("name", "")), None if b.get("ids") is None else tuple(int(i) for i in b["ids"]),
+                    None if b.get("invert") is None else bool(b["invert"]),
+                    tuple(int(i) for i in b.get("flipped", ())), bool(b.get("on", True)))
+            for b in doc.get("mask_bars", []))
         project.excluded = frozenset(k for k in doc.get("excluded", []) if k in set(project.image_keys))
         known = set(image_keys)
         for oj in doc.get("objects", []):
@@ -323,6 +334,8 @@ class ExportOptions:
     include_empty: bool = False  # also write masks for images with no object
     backup: bool = False  # files about to be overwritten are moved to <folder>_backup_<time>/ first (a scene)
     object_ids: Optional[List[int]] = None  # a mask set's Objects; None = the Final Mask (the checked ones)
+    flipped: List[int] = field(default_factory=list)  # of those, the ones taken the other way round (MaskBar)
+    sky_edges: bool = False  # Sky Objects' edges decided again on the full-resolution image (src/core/sky_edges.py)
 
 
 NAME_STYLES = ("{stem}.png", "{name}.png")  # a.png, a.jpg.png: the two ways a mask pairs with a.jpg
@@ -375,7 +388,8 @@ def backup_existing(out_dir: Path, names: List[str], keys: Sequence[str] = ()) -
 def export_names(project: Project, options: "ExportOptions", keys: Optional[List[str]] = None) -> List[str]:
     """The file names an export writes, in order."""
     if keys is None:
-        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
+        keys = (list(project.image_keys) if options.include_empty
+                else project.keys_with_masks(ids=options.object_ids, flipped=options.flipped))
     return [options.name_pattern.format(stem=key_stem(k), name=k) for k in keys]
 
 
@@ -399,26 +413,95 @@ class ExportCheck:
     keys: List[str] = field(default_factory=list, repr=False)  # every image, in sequence order
 
 
+def is_sky(o: MaskObject) -> bool:
+    """A Sky special Object, or one applied from it (still named "Sky …")."""
+    if o.special is not None:
+        return o.special.kind == SKY
+    return o.source == Source.SPECIAL and o.name.startswith(LABELS[SKY])
+
+
+def has_sky(project: Project, ids: Optional[List[int]] = None) -> bool:
+    use = project.members(ids)
+    return any(use(o) and is_sky(o) for o in project.objects)
+
+
 def full_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]],
-              ids: Optional[List[int]] = None) -> Optional[np.ndarray]:
-    """The Final Mask (*ids*: a mask set's) of *key* at the image's original resolution (bool); None = no mask."""
-    m = project.final_mask(key, ids)
-    if m is None:
-        return None
+              ids: Optional[List[int]] = None,
+              image: Optional[Callable[[str], np.ndarray]] = None,
+              finished: Optional[Callable[[str, MaskObject], Optional[np.ndarray]]] = None,
+              flipped: Sequence[int] = ()) -> Optional[np.ndarray]:
+    """The Final Mask (*ids*: a mask set's) of *key* at the image's original resolution (bool); None = no mask.
+
+    *image*: key -> the full-resolution RGB image; given, the Sky Objects' edges are decided again on it
+    (:func:`sky_edges`) instead of being scaled up, the other Objects are scaled up as always.
+    *finished*: (key, Object) -> a Sky Object's finished mask, already at the original resolution
+    (``Session.finished_sky_full``), used as it is; None for the others.
+    *flipped*: those Objects count the other way round, each made at full size first (Sky edges too), then
+    inverted (no mask on *key*: all of the image)."""
     h0, w0 = original_size(key)
-    if m.shape != (h0, w0):
-        m = cv2.resize(m.astype(np.uint8), (w0, h0), interpolation=cv2.INTER_NEAREST) > 0
-    return m
+    use = project.members(ids)
+    flip = [o.id for o in project.objects if o.id in set(flipped) and use(o)]
+    if flip:
+        rest = [o.id for o in project.objects if use(o) and o.id not in flip]
+        out = full_mask(project, key, original_size, rest, image, finished) if rest else None
+        for oid in flip:
+            m = full_mask(project, key, original_size, [oid], image, finished)
+            outside = ~m if m is not None else np.ones((h0, w0), bool)
+            out = outside if out is None else out | outside
+        return out
+
+    def up(m: np.ndarray) -> np.ndarray:
+        if m.shape != (h0, w0):
+            m = cv2.resize(m.astype(np.uint8), (w0, h0), interpolation=cv2.INTER_NEAREST) > 0
+        return m
+
+    use = project.members(ids)
+    done = {}
+    if finished is not None:
+        for o in project.objects:
+            if use(o) and is_sky(o) and (f := finished(key, o)) is not None:
+                done[o.id] = up(f)
+    objects = [o for o in project.objects if use(o) and o.id not in done]
+    sky = union(o.mask(key) for o in objects if is_sky(o)) if image is not None else None
+    if sky is None or not sky.any():
+        m = union(o.mask(key) for o in objects)
+        out = None if m is None else up(m)
+    else:
+        rgb = image(key)
+        out = sky_edges(sky, rgb) if rgb.shape[:2] == (h0, w0) else up(sky)
+        rest = union(o.mask(key) for o in objects if not is_sky(o))
+        if rest is not None:
+            out = out | up(rest)
+    for f in done.values():
+        out = f if out is None else out | f
+    return out
 
 
-def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Optional[List[int]] = None) -> ExportCheck:
-    """Count the images with / without a Final Mask (*ids*: a mask set's), empty masks, ⚠ / ✕ frames
-    and file name clashes."""
+def export_one_mask(project: Project, key: str, original_size: Callable[[str], Tuple[int, int]], out: Path,
+                    ids: Optional[List[int]] = None, invert: bool = False,
+                    image: Optional[Callable[[str], np.ndarray]] = None,
+                    finished: Optional[Callable[[str, MaskObject], Optional[np.ndarray]]] = None) -> bool:
+    """One image's mask to *out* at its original resolution (p104): the Final Mask, or (*ids*) just those
+    Objects'. White = the mask (*invert*: black). Returns False when it is empty (an all-background PNG is
+    still written, so the file always matches the image)."""
+    m = full_mask(project, key, original_size, ids, image, finished)
+    if m is None:
+        h0, w0 = original_size(key)
+        m = np.zeros((h0, w0), bool)
+    full = m.astype(np.uint8) * 255
+    _write_png(out, 255 - full if invert else full)
+    return bool(m.any())
+
+
+def check_export(project: Project, name_pattern: str = "{stem}.png", ids: Optional[List[int]] = None,
+                 flipped: Sequence[int] = ()) -> ExportCheck:
+    """Count the images with / without a Final Mask (*ids*: a mask set's, *flipped*: see MaskBar), empty
+    masks, ⚠ / ✕ frames and file name clashes."""
     keys = list(project.image_keys)
     c = ExportCheck(images=len(keys), keys=keys)
     bad_status = (FrameStatus.WARNING, FrameStatus.FAILED)
     for key in keys:
-        m = project.final_mask(key, ids)
+        m = project.final_mask(key, ids, flipped)
         if m is None:
             c.without_mask.append(key)
         elif not m.any():
@@ -444,24 +527,26 @@ def export_final_masks(
     options: ExportOptions,
     keys: Optional[List[str]] = None,
     progress: Optional[Callable[[int, int], None]] = None,
+    finished: Optional[Callable[[str, MaskObject], Optional[np.ndarray]]] = None,
 ) -> List[Path]:
-    """Write each image's Final Mask at its original resolution. Returns written paths."""
+    """Write each image's Final Mask at its original resolution (*finished*: see :func:`full_mask`). Returns
+    written paths."""
     if keys is None:
-        keys = list(project.image_keys) if options.include_empty else project.keys_with_masks(ids=options.object_ids)
+        keys = (list(project.image_keys) if options.include_empty
+                else project.keys_with_masks(ids=options.object_ids, flipped=options.flipped))
     if options.backup:
         backup_existing(options.out_dir, export_names(project, options, keys), keys)
     written = []
+    image = (lambda k: read_rgb(image_dir / k)) if options.sky_edges else None
     for i, key in enumerate(keys):
         h0, w0 = original_size(key)
-        m = project.final_mask(key, options.object_ids)
+        m = full_mask(project, key, original_size, options.object_ids, image, finished, options.flipped)
         if m is None:
             if not options.include_empty:
                 continue
             full = np.zeros((h0, w0), dtype=np.uint8)
         else:
             full = m.astype(np.uint8) * 255
-            if full.shape != (h0, w0):
-                full = cv2.resize(full, (w0, h0), interpolation=cv2.INTER_NEAREST)
         if options.invert:
             full = 255 - full
         stem = key_stem(key)

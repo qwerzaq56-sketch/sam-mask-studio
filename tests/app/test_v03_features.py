@@ -919,6 +919,8 @@ def gated_propagate(release, entered, after: int):
 def test_reference_selection_pin_and_all(qapp, win):
     s = win.session
     pp = win.propagation_panel
+    assert pp.scope_value() == "all"  # the default (U9, p139)
+    pp.scope.setCurrentIndex(pp.scope.findData("selection"))
     win.go_to(1)
     win.new_object()
     s.click(30, 30)

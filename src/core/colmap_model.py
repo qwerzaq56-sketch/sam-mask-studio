@@ -14,7 +14,7 @@ import shutil
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Set, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -190,15 +190,17 @@ def dataset_blocker(root: Path) -> str:
     return ""
 
 
-def build_dataset(images_dir: Path, model_dir: Path, root: Path, keep: List[str]) -> DatasetReport:
+def build_dataset(images_dir: Path, model_dir: Optional[Path], root: Path, keep: List[str]) -> DatasetReport:
     """``root/images/`` (the kept images, hard-linked where the drive allows, else copied) and
-    ``root/sparse/0/`` (the model without the other images). The source is only read."""
+    ``root/sparse/0/`` (the model without the other images; none for a rig without a model, *model_dir* None).
+    The source is only read."""
     why = dataset_blocker(root)
     if why:
         raise FileExistsError(why)
     out = root / "images"
     out.mkdir(parents=True)
-    report = DatasetReport(model=filter_model(model_dir, root / "sparse" / "0", keep))
+    report = DatasetReport(model=filter_model(model_dir, root / "sparse" / "0", keep) if model_dir is not None
+                           else FilterReport(images_kept=len(keep)))
     for name in keep:
         src, dst = images_dir / name, out / name
         dst.parent.mkdir(parents=True, exist_ok=True)

@@ -320,6 +320,48 @@ def test_dual_fisheye_stitched_into_360(tmp_path):
     assert np.isclose(behind["x"][0] % 256, 0) or np.isclose(behind["x"][0], 256)  # straight behind: the seam
 
 
+def test_camera_pairs_to_pinhole_views(tmp_path):
+    """Export plan 10, V-2: a rig's moment as pinhole views over the whole sphere, straight from the lenses."""
+    from src.core.colmap import frame_groups
+    from src.core.reproject import VIEW_LAYOUTS, Views, convert, stitch_to_erp, view_rotation
+
+    src = tmp_path / "rig"
+    make_dual_fisheye_scene(src)
+    model = src / "sparse" / "0"
+    groups = frame_groups(model, _group_input(model))
+    out = tmp_path / "pin"
+    person = np.zeros((160, 160), bool)
+    person[60:100, 60:100] = True  # straight behind
+    job = MaskJob(out / "masks", "{name}.png", invert=True, include_empty=True,
+                  get=lambda k: person if k.startswith("cam1/") else None)
+    views = Views(layout=VIEW_LAYOUTS["horizon4"], fov=90, size=64)
+    r = stitch_to_erp(src / "images", model, out, groups, masks=[job], views=views)
+    assert (r.images_in, r.views_out, r.side, r.views_dropped) == (4, 8, 64, 0)  # 2 moments x 4 views
+    [cam] = read_cameras_full(out / "sparse" / "0").values()
+    assert cam.model == "PINHOLE" and (cam.width, cam.height) == (64, 64) and np.isclose(cam.params[0], 32)
+    names = sorted(p.name for p in (out / "images").iterdir())
+    assert names[:4] == ["000_y000_p00.jpg", "000_y090_p00.jpg", "000_y180_p00.jpg", "000_y270_p00.jpg"]
+    ahead = cv2.imread(str(out / "images" / "000_y000_p00.jpg"))
+    behind = cv2.imread(str(out / "images" / "000_y180_p00.jpg"))
+    side = cv2.imread(str(out / "images" / "000_y090_p00.jpg"))
+    assert ahead[32, 32][2] > 150 and behind[32, 32][0] > 150  # cam0's red ahead, cam1's blue behind
+    assert side[32, 4][2] > 150 and side[32, 60][0] > 150  # to the right: spans both lenses, joined
+    # a view inside one lens = that lens reprojected on its own (one interpolation, nothing blended in)
+    alone = tmp_path / "alone"
+    convert(src / "images", model, alone, ["cam0/000.png"], views)
+    assert np.array_equal(ahead, cv2.imread(str(alone / "images" / "cam0" / "000_y000_p00.jpg")))
+    m = cv2.imread(str(out / "masks" / "000_y180_p00.jpg.png"), cv2.IMREAD_GRAYSCALE)
+    assert m[32, 32] == 0 and cv2.imread(str(out / "masks" / "000_y000_p00.jpg.png"), 0)[32, 32] == 255
+    imgs = {n: (pose, pts) for _, pose, _, n, pts in _read_images_bin(out / "sparse" / "0" / "images.bin")}
+    pose, pts = imgs["001_y090_p00.jpg"]  # moment 1: the rig 0.5 m along +X
+    q, t = np.array(struct.unpack("<4d", pose[:32])), np.array(struct.unpack("<3d", pose[32:]))
+    rot = view_rotation(90, 0)
+    assert np.allclose(qvec_to_rotmat(q), rot) and np.allclose(t, rot @ [-0.5, 0, 0])  # the rig's pose, turned
+    p3 = pts[pts["id"] == 3]  # (3, 0.5, 0): 2.5 m to the right, 0.5 m down
+    assert np.allclose([p3["x"][0], p3["y"][0]], [32, 32 + 32 * 0.5 / 2.5])
+    assert r.points_kept == 3
+
+
 def test_stitching_gives_the_panorama_back(tmp_path):
     """A panorama (hue by azimuth, brightness by elevation) cut into a back-to-back fisheye pair and stitched."""
     from src.core.colmap import frame_groups
@@ -401,6 +443,45 @@ def test_view_layouts():
     for lay in VIEW_LAYOUTS.values():
         names = [view_name("f", y, p) for y, p in lay.pairs()]
         assert len(set(names)) == len(names) and len(names) == lay.count  # every view its own file
+
+
+def test_fisheye_layouts():
+    """A fisheye lens's own layouts (export plan 10, C-9): single directions (points), looking one way."""
+    from src.core.reproject import ALL_LAYOUTS, FISHEYE_LAYOUTS, VIEW_LAYOUTS, view_name
+
+    assert {k: lay.count for k, lay in FISHEYE_LAYOUTS.items()} == {"fish9": 9, "fish5": 5, "fish3": 3}
+    assert [lay.label for lay in FISHEYE_LAYOUTS.values()] == [
+        "Fisheye Grid · 9 Views", "Fisheye Cross · 5 Views", "Fisheye Level · 3 Views"]
+    assert sorted(FISHEYE_LAYOUTS["fish9"].pairs()) == sorted(
+        (y % 360, p) for p in (-35.0, 0.0, 35.0) for y in (-45.0, 0.0, 45.0))  # the old default grid
+    assert (0.0, 45.0) in FISHEYE_LAYOUTS["fish5"].pairs() and (315.0, 0.0) in FISHEYE_LAYOUTS["fish5"].pairs()
+    assert {p for _, p in FISHEYE_LAYOUTS["fish3"].pairs()} == {0.0}
+    assert FISHEYE_LAYOUTS["fish9"].overlap(90) == (45.0, 55.0)  # 45° apart across, 35° between rows
+    assert FISHEYE_LAYOUTS["fish3"].overlap(90) == (45.0, None)
+    assert VIEW_LAYOUTS["horizon4"].overlap(90) == (0.0, None)  # the general overlap, same as before
+    assert ALL_LAYOUTS.keys() == VIEW_LAYOUTS.keys() | FISHEYE_LAYOUTS.keys()
+    for lay in FISHEYE_LAYOUTS.values():
+        names = [view_name("f", y, p) for y, p in lay.pairs()]
+        assert len(set(names)) == len(names) == lay.count
+
+
+def test_layout_picture_geometry(tmp_path):
+    """p124: the 3D picture's tiles sit where the views look (drawing frame: x right, y up, z forward), and the
+    reference pictures are written for every layout."""
+    from src.app.view_preview import frustum, row_color, tile, UP, LEVEL, DOWN, OFF
+
+    for (yaw, pitch), way in (((0, 0), (0, 0, 1)), ((90, 0), (1, 0, 0)), ((180, 0), (0, 0, -1)), ((0, 90), (0, 1, 0)),
+                              ((0, -35), (0, -np.sin(np.radians(35)), np.cos(np.radians(35))))):
+        c = tile(yaw, pitch, 90).mean(0)
+        assert np.allclose(c / np.linalg.norm(c), way, atol=1e-9)
+    f = frustum(0, 0, 90)
+    assert np.allclose(np.abs(f[:, :2]), 1) and np.allclose(f[:, 2], 1)  # 90°: the far square reaches 45°
+    assert row_color(35) == UP and row_color(0) == LEVEL and row_color(-35) == DOWN and row_color(0, False) == OFF
+    from tools.layout_pictures import main
+
+    assert main([str(tmp_path)]) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        f"layout_{k}.png" for k in ("colmap12", "cube6", "horizon4", "rings16", "fish9", "fish5", "fish3"))
 
 
 def test_fisheye_views_it_cannot_fill_are_left_out(tmp_path):

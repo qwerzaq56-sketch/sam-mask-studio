@@ -13,6 +13,7 @@ settings go), which can then be edited by hand like any other.
 from __future__ import annotations
 
 import dataclasses
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple
@@ -26,11 +27,27 @@ SKY = "sky"
 LENS_EDGE = "lens_edge"
 KINDS = (SKY, LENS_EDGE)
 LABELS = {SKY: "Sky", LENS_EDGE: "Lens edge"}
+# % of the found circle's radius left out with the black, for training and stitching: the lens's rim is
+# soft and the most distorted. 7 % = Spirula's own auto mask (0022, OSMO 360: radius 98.0 % of the inscribed
+# circle against a found 105.3 %, 0.93; its SfM registered 186/188). p127 had 5 % (detail and SIFT points
+# fall past 0.95 of the circle), p131 took Spirula's: centred, 7 % keeps about 194 degrees a lens, the two
+# lenses overlapping about 14 (lowest 12).
+LENS_MARGIN = 7.0
+# What the circle is for (the Lens edge Object's "use"; p130). The two lenses of a dual fisheye overlap only
+# near the rim, so a tighter circle aligns better but leaves less to stitch and train on. 0022 (OSMO 360,
+# THIN_PRISM_FISHEYE): the 5 % circle keeps about 201 degrees a lens, the lenses overlapping about 22 (lowest
+# 19), the 7 % one (LENS_MARGIN since p131) about 194, overlapping about 14 (lowest 12); SplatBatch's rim95 (radius 95 % of the inscribed circle, 0.90 of the found one) keeps about 185,
+# overlapping about 5.6 (lowest 4.4), and its SfM registered 188/188 twice where the 2 % margin gave 106-184.
+# So: train and stitch with the wide circle, align (SfM) with the tight one.
+LENS_TRAIN, LENS_SFM = 0, 1
+LENS_MARGIN_SFM = 10.0  # % in from the found circle for SfM: 105.2 % * 0.90 = 94.7 %, about rim95
+LENS_MARGINS = {LENS_TRAIN: LENS_MARGIN, LENS_SFM: LENS_MARGIN_SFM}
 
 # settings (all numbers, so they save and compare simply); see sky_mask / lens_edge_mask
 DEFAULTS: Dict[str, Tuple[Tuple[str, float], ...]] = {
     SKY: (("threshold", 50.0), ("refine", 1.0), ("grow", 0.0), ("top_only", 0.0)),
-    LENS_EDGE: (("radius", 100.0), ("cx", 0.0), ("cy", 0.0)),
+    # use: LENS_TRAIN or LENS_SFM, what Detect pulls the found circle in for (LENS_MARGINS)
+    LENS_EDGE: (("radius", 100.0), ("cx", 0.0), ("cy", 0.0), ("use", 0.0)),
 }
 
 SKY_INPUT = 320  # the model's input side
@@ -45,6 +62,10 @@ class Special:
     kind: str
     params: Tuple[Tuple[str, float], ...] = ()
     keys: Tuple[str, ...] = ()
+    # sky: the finish after the model (By Color + tree tips + SAM2, src/core/sky_sam2.py) as JSON
+    # {"name", "color": a By Color preset's values, "tree_tips"}; "" = none. Values, not a preset's name: a preset
+    # changed or deleted later does not change the masks made with it
+    finish: str = ""
 
     @classmethod
     def new(cls, kind: str) -> "Special":
@@ -65,15 +86,26 @@ class Special:
         wanted = set(keys)
         return dataclasses.replace(self, keys=tuple(k for k in order if k in wanted))
 
+    def with_finish(self, finish: Optional[dict]) -> "Special":
+        return dataclasses.replace(self, finish=json.dumps(finish, sort_keys=True) if finish else "")
+
+    @property
+    def finish_values(self) -> Optional[dict]:
+        """The finish (name, color, tree_tips), None = none."""
+        return json.loads(self.finish) if self.finish else None
+
     def to_json(self) -> dict:
-        return {"kind": self.kind, "params": dict(self.params), "keys": list(self.keys)}
+        d = {"kind": self.kind, "params": dict(self.params), "keys": list(self.keys)}
+        if self.finish:
+            d["finish"] = self.finish_values
+        return d
 
     @classmethod
     def from_json(cls, d: Optional[dict]) -> Optional["Special"]:
         if not d or d.get("kind") not in KINDS:
             return None
         base = cls.new(d["kind"]).with_params(**{k: v for k, v in (d.get("params") or {}).items()})
-        return dataclasses.replace(base, keys=tuple(d.get("keys") or ()))
+        return dataclasses.replace(base, keys=tuple(d.get("keys") or ())).with_finish(d.get("finish"))
 
 
 # ----------------------------------------------------------------------

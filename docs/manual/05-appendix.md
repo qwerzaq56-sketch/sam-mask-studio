@@ -21,6 +21,7 @@
 |---|---|
 | 상태 표시줄에 `SAM2 loading… (N waiting)` | 모델을 불러오는 중입니다. 그동안 찍은 포인트 / 박스는 기다렸다가 계산됩니다(지금 이미지는 바로, 다른 이미지는 그 이미지를 열 때). 포인트 **레이어**에 찍는 클릭은 로딩 중에는 안내만 나옵니다 |
 | 느리거나 GPU 메모리가 부족함 | File → Settings… → **Working max side (px)**를 낮춥니다(편집 해상도만 바뀌고 Export는 원본 해상도) |
+| 학습이 GPU를 쓰는 중에 마스크를 손질하고 싶음 | `SAM Mask Studio (CPU).bat`(개발 폴더는 `run.bat --cpu`) 또는 File → Settings… → **Run SAM on the CPU**. SAM을 GPU에 올리지 않음(클릭 · 전파는 느림) |
 | Sky Mask를 만들 수 없음 | Settings → **Sky model (ONNX)**에 `skyseg.onnx`가 있어야 합니다. 아주 어두운 밤하늘은 하늘로 잡히지 않을 수 있습니다 |
 | 변환할 때 "No image here uses a camera this can convert" | 장면의 카메라 모델이 변환 목록에 없습니다. 받는 모델은 [D5](04-reference.md#d5-colmap-장면--특수-object) |
 | Export 검사에 카메라 모델 경고 | 고른 학습기가 그 카메라를 읽는지 확인되지 않았습니다(예: Brush와 360 카메라). 필요하면 New dataset으로 Pinhole 변환([C8](03-recipes.md#c8-360erp--pinhole)) |

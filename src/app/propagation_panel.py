@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.app.ui_util import allow_narrow
+from src.app.ui_util import allow_narrow, scroll_column
 from src.core.project import FrameStatus
 from src.core.propagation import Direction, PropagationPlan, format_ids, parse_id, parse_id_list
 
@@ -41,6 +41,7 @@ MARK = {
     REFERENCE: "★",
     FrameStatus.MANUAL: "★",
     FrameStatus.PROPAGATED: "✓",
+    FrameStatus.IMPORTED: "↓",
     FrameStatus.WARNING: "⚠",
     FrameStatus.FAILED: "✕",
 }
@@ -85,6 +86,7 @@ class PropagationPanel(QWidget):
         self.scope = QComboBox()
         for value, text in SCOPES:
             self.scope.addItem(text, value)
+        self.scope.setCurrentIndex(self.scope.findData("all"))  # the whole folder, as the manual says (U9)
         self.scope.setToolTip(
             "Selection: the images picked in the Frame List (Shift/Ctrl-click), or the pinned ones\n"
             "Range: Start ~ End · Custom: IDs and ID ranges, e.g. 1-4, 35, 23 · All images: the whole folder"
@@ -162,11 +164,13 @@ class PropagationPanel(QWidget):
         brow.addWidget(self.cancel_btn)
 
         self.phase = QLabel("")
+        self.phase.setWordWrap(True)  # file names and frame chains wrap in the narrow column (U4, p133)
         self.bars: Dict[str, Tuple[QLabel, QProgressBar]] = {}
         prog = QVBoxLayout()
         prog.addWidget(self.phase)
         for name in ("Backward", "Forward"):
             label, bar = QLabel(name), QProgressBar()
+            label.setWordWrap(True)
             bar.setFormat("%v / %m")
             prog.addWidget(label)
             prog.addWidget(bar)
@@ -182,8 +186,9 @@ class PropagationPanel(QWidget):
         lists.addWidget(obox)
         lists.addWidget(fbox)
 
-        # one column: settings, buttons, progress, then the Object / frame lists
-        lay = QVBoxLayout(self)
+        # one column: settings, buttons, progress, then the Object / frame lists; it scrolls rather than
+        # making the window taller once the run view shows (p133: 720 -> 894 px at 1280x720)
+        lay = self._column = scroll_column(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(form)
         lay.addWidget(self.run_btn)
@@ -199,12 +204,13 @@ class PropagationPanel(QWidget):
         self._reset_bars()
         self._scope_changed()
         allow_narrow(self)  # it shares the left column with the Objects
+        self.pin_btn.setMinimumWidth(0)  # "📌 Pin" is short: whole, not cut to "Pi"
 
     # ------------------------------------------------------------------
 
     def _show_run(self, on: bool) -> None:
         self.run_view.setVisible(on)
-        self.layout().setStretch(self.layout().count() - 1, 0 if on else 1)  # keep the controls on top
+        self._column.setStretch(self._column.count() - 1, 0 if on else 1)  # keep the controls on top
 
     def set_images(self, keys: Sequence[str]) -> None:
         self._keys = list(keys)

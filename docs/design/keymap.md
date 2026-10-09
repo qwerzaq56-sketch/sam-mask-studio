@@ -6,23 +6,23 @@
   ([`manual/04-reference.md`](../manual/04-reference.md) D8)를 같이 고칩니다.
 - 새 단축키 아이디어는 맨 아래 "제안"에 적습니다. 결정되면 "현재 키맵"으로 옮깁니다.
 - 모든 키는 메뉴 바(File / Edit / View / Go / Help)에도 항목 오른쪽에 표시됩니다: [`menu-design.md`](menu-design.md).
-- 기준: `v0.5.0` (2026-10-01).
+- 기준: `v0.5.0` (2026-10-01), 이후 변경은 표에 단계 번호로. 보기 좋은 전체 목록: 기획서 아티팩트의 `keymap.html`(SAM Mask Studio 아래).
 
 ## 한눈에 보기 (글자 키)
 
 ```text
  Q  W  E  R  T  Y  U  I  O  P  [  ]
- Q  ·  E  R  ·  ·  ·  ·  O  ·  [  ]        Q Solo   E 포인트 편집   R Show Changes   O Outline   [ ] 문제 프레임
+ Q  ·  E  R  T  ·  ·  ·  O  ·  [  ]        Q Solo   E 포인트 편집   R Show Changes   T Original(누르고 있기)   O Outline   [ ] 문제 프레임
 
   A  S  D  F  G  H  J  K  L  ;  '
   A  S  D  F  G  H  ·  ·  ·  ·  ·          오토 툴: A 취소  S Fill  D Paint  F Apply & Close  G Apply & Continue
-                                            그 밖: D 브러쉬   F 기준(◎)으로   H Hide Masks
+                                            그 밖: D Paint     F 기준(◎)으로   H Hide Masks
 
    Z  X  C  V  B  N  M  ,  .  /
-   Z  X  ·  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X Final↔Object   V Mask Preview   N New Object   , . 키프레임
+   Z  X  C  V  ·  N  ·  ,  .  ·            Z 잠깐 보기   X 흑백(Final↔Object)   C 잘라보기(안↔밖)   V Mask Preview   N New Object   , . 키프레임
 ```
 
-`·` = 비어 있음. 비어 있는 글자: **W T Y U I P J K L C B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
+`·` = 비어 있음. 비어 있는 글자: **W Y U I P J K L B M** 과 **/ ; '**, 숫자, Home / End, Tab. (`` ` ``는 Q와 같은 Solo.)
 (`S` `G`는 오토 툴이 켜져 있을 때만. `W` `S`는 마우스가 목록이나 캔버스 위에 있을 때 이동 키: 아래 "이동". 목록 위에서는 `A` `D`도 이동으로 바뀝니다.
 Shift+A = 오토 툴 전체 선택 / 해제.)
 
@@ -33,6 +33,7 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | 키 | 동작 | 언제 |
 |---|---|---|
 | Ctrl+O / Ctrl+S / Ctrl+E | 폴더 열기 / 저장 / Export | 항상 |
+| Ctrl+Shift+E | Export Current Mask: 지금 이미지 마스크 한 장(Final 또는 Object 하나, 반전 선택), 원본 크기 PNG (`p104`) | 폴더가 열려 있을 때 |
 | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | Undo / Redo | 항상 |
 | N | New Object (포인트로) | 항상 |
 | E | Edit의 **포인트** 도구: 편집 시작(선택한 Object) · 브러쉬 / 오토 툴에서 → 포인트 · 포인트에서 다시 → 편집 끝 | 항상 |
@@ -59,8 +60,20 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | F | 전파 기준(◎, 더블클릭한 프레임)으로 이동 | 항상 |
 | Enter | 현재 프레임을 전파 기준(◎)으로 지정, 기준에서 다시 누르면 해제 (더블클릭과 같음) | 오토 툴이 꺼져 있을 때 |
 | Space | Enter와 같음(현재 프레임을 기준 ◎으로) | 마우스가 Frame List / Frames 줄 위 (캔버스에서는 Space+드래그 = 이동) |
-| 더블클릭 (프레임) | 전파 기준(◎)으로 지정, 다시 하면 해제 | 목록 |
-| Shift / Ctrl+클릭 (프레임) | 여러 프레임 선택(전파 Selection 범위) | 목록 |
+| 마우스 (프레임) | 아래 **프레임 목록 마우스** | Frame List |
+
+### 프레임 목록 마우스 (Frame List)
+
+| 마우스 | 동작 |
+|---|---|
+| 클릭 | 그 프레임 열기, 고른 프레임은 이것 하나로 |
+| Shift / Ctrl+클릭 | 여러 프레임 고르기(전파 Selection 범위, Apply to Frames의 “고른 프레임”, 📌 Pin으로 유지) |
+| 더블클릭 | 전파 기준 ◎ 지정, 다시 하면 해제 |
+| 가운데 클릭 | 그 프레임 열기, **고른 프레임은 그대로**(여러 장 고른 채로 다른 프레임 보기) |
+| 가운데 더블클릭 | 가운데 클릭과 같음: 열기, 고른 프레임 그대로. ◎ 지정은 안 함 (`p125`) |
+| 우클릭 | 고른 프레임으로 할 일 메뉴, 고른 것은 그대로 |
+
+가운데 버튼은 클릭이든 더블클릭이든 **고른 프레임을 지우지 않고** 그 프레임으로만 이동한다. 고른 프레임을 지우며 열려면 왼쪽 클릭.
 
 ### Objects
 
@@ -76,10 +89,13 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 |---|---|
 | Z (누르고 있기) | Mask Preview 잠깐 보기 |
 | V | Mask Preview(흑백) 켜기 / 끄기 (누르고 있어도 한 번만) |
-| X | Mask Preview 대상 전환: Final Mask ↔ 선택한 Object (메뉴 `Toggle Final / Object Mask`, 툴바 `Preview: Final / Object` 버튼) |
+| X | Mask Preview **흑백**: Final Mask ↔ 선택한 Object 전환. 잘라보기 중이면 흑백으로(Final / Object는 저장된 그대로) |
+| C | Mask Preview **잘라보기**: 안쪽(마스크가 담은 것) ↔ 바깥(남긴 것) 전환. 흑백 중이면 잘라보기로(안 / 밖은 저장된 그대로) |
 | O | Outline 켜기 / 끄기 |
 | Q / ` | Solo 켜기 / 끄기 (선택한 Object만 색칠) |
 | H | Hide Masks 켜기 / 끄기 (맨 이미지) |
+| T (누르고 있기) | 색 고르는 중(Pick Color): 누르는 동안만 **Original** 뒤집기(사진만, 오토 툴 표시·범례도 숨김), 떼면 원래대로. 켜 두기 / 끄기는 패널 `Original (hold T)` 버튼(`p100`, 전에는 짧게 = 토글). 픽커가 꺼지면 같이 꺼짐 (`p96`). 숫자 칸에 커서가 있어도 작동(글자 입력 칸에서만 안 됨, `p99`) |
+| 우클릭 | 색 고르는 중: **빼는 색(−)**. Shift = 하나 더, Alt = 5×5 평균. 넣는 색과 둘 다 가까우면 더 가까운 쪽 (`p98`) |
 | R | Show Changes(에딧 레이어 초록 / 빨강) 켜기 / 끄기 |
 | 휠 / 가운데 드래그 · Space+드래그 | 확대·축소 / 이동 |
 | F1 | 단축키 전체 목록 |
@@ -98,7 +114,7 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | Shift+Enter | 오토 툴 Apply & Close (Enter는 Apply & Continue) |
 | Alt+드래그 | Paint 빼기 · 오토 툴 선택 해제 · Region Box 빼기 |
 | Shift+드래그 | 브러쉬를 켜지 않고 칠하기 |
-| Alt+우클릭 드래그 좌우 | 브러쉬 크기 (Photoshop과 같음, 원은 누른 자리에 고정) |
+| Ctrl+좌클릭 드래그 좌우 | 브러쉬 크기 (오른쪽 = 크게, 원은 누른 자리에 고정. 움직이지 않고 떼면 Ctrl+클릭 = 이미지 조각 더하기). 가장 작게 = 이미지 1 px. Ctrl+우클릭은 크기 조절 없음: 조금 움직여도 누른 자리 조각 빼기(`p108`) |
 | Ctrl+휠 / Shift+휠 | 브러쉬 크기 |
 
 ### Select on Image (디텍션 후보 고르기)
@@ -117,7 +133,8 @@ Shift+A = 오토 툴 전체 선택 / 해제.)
 | (장기) | 단축키 직접 바꾸기(커스텀 매핑) | 사용자 메모 2026-09-30 |
 
 ## 변경 기록
-
+- `v0.4-p125`: 프레임 목록 가운데 더블클릭 = 가운데 클릭(열기, 고른 프레임 그대로). 프레임 목록 마우스 조작을 한 표로.
+- `v0.4-p84`: `X` = 흑백(Final ↔ Object), `C` = 잘라보기(안 ↔ 밖), 서로 오가면 각자 상태를 기억. 브러쉬 크기 = Ctrl+드래그 좌우(p83, Alt+우클릭 드래그 대신).
 - `v0.4-p55`: 오토 툴 **F = Apply & Close**(전엔 Continue), **G = Apply & Continue**, **S = Fill / D = Paint**(Paint에서 D 다시 = 전체 선택 / 해제),
   Fill ↔ Paint를 오가도 Paint의 선택 유지. A = 취소는 그대로(A 취소 · S D 모드 · F 확인 · G 계속).
 - `v0.4-p49`: Edit 안에서 **E = 포인트, D = 브러쉬** 도구, 같은 키를 다시 누르면 편집 끝. 오토 툴에서 **D = Paint / Fill**,
