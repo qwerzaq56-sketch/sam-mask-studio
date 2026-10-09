@@ -3767,3 +3767,38 @@ def test_propagate_to_the_next_fixed_frames_each_object_to_its_own(qapp, win):
     assert ob.frame(k[1]).status == FrameStatus.IMPORTED
     assert {oa.frame(k[0]).origin.run, ob.frame(k[3]).origin.run} == {1}  # one run
     assert ob.frame(k[4]).origin.forward and ob.frame(k[4]).origin.step == 2
+
+
+def test_a_click_on_another_objects_row_while_editing_edits_that_one(qapp, win):
+    """p161: editing one Object, a plain click on another's row in the Objects list moves editing there;
+    Ctrl+click only adds to the selection, and with nothing being edited a click just selects."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from src.app.objects_panel import ID_ROLE
+    from tests.app.test_gui import click
+
+    s = win.session
+    ids = []
+    for x in (30, 60):
+        win.new_object()
+        click(win, x, 30)
+        win.finish_editing()
+        ids.append(s.project.objects[-1].id)
+    a, b = ids
+    tree = win.objects_panel.tree
+
+    def click_row(oid, mods=Qt.KeyboardModifier.NoModifier):
+        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                    if tree.topLevelItem(i).data(0, ID_ROLE) == oid)
+        QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, mods, tree.visualItemRect(item).center())
+        qapp.processEvents()
+        qapp.processEvents()
+
+    click_row(b)
+    assert s.editing is None  # not editing: a click only selects
+    win.toggle_edit(a)
+    click_row(a, Qt.KeyboardModifier.ControlModifier)
+    click_row(b, Qt.KeyboardModifier.ControlModifier)
+    assert s.editing == a  # Ctrl+click: selection only
+    click_row(b)
+    assert s.editing == b and win.objects_panel.selected_ids() == [b]
