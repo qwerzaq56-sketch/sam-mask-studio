@@ -68,8 +68,10 @@ from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
+from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, masks_dir, rig_images_dir, rig_root
+from src.core.rig import check as rig_check
 from src.core.storage import check_export, default_export_dir, export_one_mask, full_mask, has_sky
-from src.engine.imageio import key_stem, read_rgb
+from src.engine.imageio import find_images, key_stem, read_rgb
 from src.logging_config import get_logger, log_file
 from src.version import app_version
 
@@ -1031,6 +1033,24 @@ class MainWindow(QMainWindow):
         folder = Path(folder)
         if scene_root(folder) == folder:
             folder = folder / "images"  # a COLMAP scene: its images/ (docs/specs/06-colmap.md)
+        rig = rig_images_dir(folder)  # a rig's root, images/ or one camera: every camera (06 2.1)
+        if rig is not None and rig != folder:
+            lone = folder.parent / f"{folder.name}.sms"
+            if rig == folder.parent and lone.is_dir():  # work saved when this camera was opened alone
+                cams = ", ".join(d.name for d in camera_dirs(rig))
+                picked = self.choose(
+                    "Open a Camera Rig",
+                    f"{folder.name} is one camera of a rig ({cams}). Its work saved when it was opened alone "
+                    f"({lone.name}) names images without the folder, so the whole rig cannot load it.",
+                    [("Open", [f"All cameras ({cams}): a new work file", f"Only {folder.name}, with its saved work"],
+                      0)],
+                    "Open")
+                if picked is None:
+                    return False
+                if picked[0] == 0:
+                    folder = rig
+            else:
+                folder = rig
         self.save()
         self.session.max_side = self.settings.max_side
         try:
@@ -1055,6 +1075,8 @@ class MainWindow(QMainWindow):
         self.log(f"Opened {folder} ({n} images" + (f", {loaded} saved Objects)" if loaded else ")"))
         if self.scene is not None:
             self._report_scene(self.scene)
+        if is_rig(folder):
+            self._report_rig(folder)
         self.ensure_models()
         self.refresh()
         if self.scene is not None and not loaded and self.scene.mask_dirs:
@@ -1070,6 +1092,22 @@ class MainWindow(QMainWindow):
             if names and model:
                 shown = ", ".join(sorted(names)[:5]) + (" …" if len(names) > 5 else "")
                 self.log(f"⚠ {len(names)} image(s) {what}: {shown}")
+
+    def _report_rig(self, images_dir: Path) -> None:
+        """A rig's cameras and masks in the log, and what is missing (docs/specs/06-colmap.md 2.1)."""
+        keys = self.session.keys
+        counts = " + ".join(f"{d.name} {sum(1 for k in keys if k.startswith(d.name + '/'))}"
+                            for d in camera_dirs(images_dir))
+        root = rig_root(images_dir)
+        md = masks_dir(root) if root is not None else None
+        masks = ""
+        if md is not None:
+            masks = ", " + md.name + " " + " + ".join(
+                f"{d.name} {len(find_images(d))}" for d in sorted(md.iterdir(), key=lambda p: p.name.lower())
+                if d.is_dir() and CAMERA_DIR.match(d.name))
+        self.log(f"Camera rig {root or images_dir}: {counts} images{masks}")
+        for line in rig_check(images_dir, keys):
+            self.log(line)
 
     def offer_masks(self, folders, title: str, undoable: bool = True) -> List[int]:
         """Ask which mask folders to load as Objects and which color is the object in each.
