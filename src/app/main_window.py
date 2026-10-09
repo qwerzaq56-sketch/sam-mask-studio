@@ -70,6 +70,7 @@ from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
 from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, mask_sets, masks_dir, rig_dataset, rig_images_dir, rig_root
 from src.core.rig import check as rig_check
+from src.core.rig import find_circles as rig_find_circles
 from src.core.storage import check_export, default_export_dir, export_one_mask, full_mask, has_sky
 from src.engine.imageio import find_images, key_stem, read_rgb
 from src.logging_config import get_logger, log_file
@@ -127,6 +128,7 @@ class MainWindow(QMainWindow):
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._reference: Optional[int] = None  # propagation reference (double-clicked image); None = current
         self.scene = None  # the COLMAP scene the open folder belongs to (src/core/colmap.py)
+        self.rig_circles: dict = {}  # a rig's image circle per camera (None: no circle there), as it opened
         self.rig = None  # a camera rig without a model: where Export writes as into a scene (src/core/rig.py)
         self._pinned: Optional[List[int]] = None  # the pinned Frame List selection (Selection scope)
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
@@ -1110,6 +1112,30 @@ class MainWindow(QMainWindow):
         self.log(f"Camera rig {root or images_dir}: {counts} images{masks}")
         for line in rig_check(images_dir, keys):
             self.log(line)
+        self.log(self._fisheye_line(images_dir, keys))
+
+    def _fisheye_line(self, images_dir: Path, keys) -> str:
+        """Whether the rig is a fisheye (06 2.1 R4): the model's camera models when there is one, else the
+        image circle seen in each camera's frames. Kept in ``self.rig_circles`` (camera -> circle or None)."""
+        from src.core.reproject import FISHEYES
+
+        self.rig_circles = {}
+        models = list(self.scene.camera_models) if self.scene is not None else []
+        if models:
+            fish = [m for m in models if m in FISHEYES]
+            return (f"Fisheye rig: the model's cameras are {', '.join(fish)}" if fish
+                    else f"Not a fisheye: the model's cameras are {', '.join(models)}")
+        self.rig_circles = circles = rig_find_circles(images_dir, list(keys))
+        seen = {c: v for c, v in circles.items() if v is not None}
+        if not seen:
+            return (f"No image circle in {', '.join(circles)}: opened as a camera folder dataset, not a fisheye "
+                    "(Fisheye Lens Edge is not needed)")
+        line = "Fisheye rig: image circle " + ", ".join(
+            f"{c} radius {v['radius']:g} %" for c, v in seen.items())
+        missing = [c for c, v in circles.items() if v is None]
+        if missing:
+            line += f"; none in {', '.join(missing)}"
+        return line + " — Objects ▸ + Special ▸ Fisheye Lens Edge masks the black rim"
 
     def offer_masks(self, folders, title: str, undoable: bool = True) -> List[int]:
         """Ask which mask folders to load as Objects and which color is the object in each.
