@@ -3475,3 +3475,21 @@ def test_batch_masking_shows_the_people_keyframes_and_union(qapp, tmp_path):
     assert not dlg.union.isEnabled() and dlg.keyframes.text() == "off: SAM3 on every frame"
     assert (dlg.current().person.keyframes, dlg.current().person.union) == (0, False)
     dlg.deleteLater()
+
+
+def test_batch_masking_fits_the_screen_with_its_buttons_in_view(qapp, tmp_path):
+    """p144: at 150 % (a 1920 x 1080 screen is 1280 x 693) the window fits the screen, opens at the top of its
+    settings, and Try Prompts / Run stay below the scrolling column."""
+    from src.app.batch_mask_dialog import BatchMaskDialog
+
+    dlg = BatchMaskDialog(tmp_path, tmp_path / "scene")
+    dlg._left_scroll.verticalScrollBar().setValue(200)
+    dlg.show()
+    qapp.processEvents()
+    a = dlg.screen().availableGeometry()
+    assert dlg.height() <= a.height() - 60  # the test screen's font is about twice as wide: its least width may not
+    assert dlg.width() <= max(a.width() - 20, dlg.minimumSizeHint().width())
+    assert dlg._left_scroll.verticalScrollBar().value() == 0
+    for b in (dlg.try_btn, dlg.run_btn, dlg.stop_btn, dlg.cmd_btn):
+        assert not dlg._left_scroll.isAncestorOf(b)
+    dlg.close()

@@ -1014,6 +1014,11 @@
 - People 칸 아래 **Keyframes**(`SAM3 on 1 frame in 10, SAM2 between`, 0 = `off: SAM3 on every frame`)와 **union** 체크(`SAM3 on every frame too, the propagation added on top`). union은 Keyframes가 2 이상일 때만 켜지고, 아니면 저장할 때 꺼짐. Save as Preset · Run이 이 값을 씀(전에는 `_person_rest`로 보존만).
 - 1280×720 캡처로 확인. 테스트 331개 통과(새 1개).
 
+## v0.4-p144 — 150 % 배율 점검: Batch Masking 창이 화면 안에 (2026-10-09)
+- 사용자 요청: 150 % 배율 캡처(UX 점검 2차의 남은 것). `QT_SCALE_FACTOR=1.5`, 창 1280×693(1920×1040 화면의 150 %)으로 0022 리그 사본을 따라감: 본창 · 오토 툴 · Paint · Batch / Propagation / Logs 탭 · Export 창(540×633) · Settings 창은 잘림 없음, 창도 커지지 않음.
+- 고침: **Batch Masking 창**이 1100×760으로 열려 화면(논리 높이 693)을 넘고, 열 때 가운데(Sky Threshold)로 스크롤돼 있었음 → 열 때 화면 안으로 크기 · 위치를 맞춤(150 %에서 1100×633), 설정 칸은 맨 위부터, 포커스는 Preset. **Try Prompts · Run on the Folder · Stop · Copy Command** 줄을 스크롤 밖 창 맨 아래로(작은 화면에서도 늘 보임).
+- 테스트 332개 통과(새 1개).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

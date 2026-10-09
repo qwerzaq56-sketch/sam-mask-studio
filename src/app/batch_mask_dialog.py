@@ -257,7 +257,7 @@ class BatchMaskDialog(QDialog):
         self.cmd_btn.clicked.connect(self.copy_command)
         for b in (self.try_btn, self.run_btn, self.stop_btn, self.cmd_btn):
             buttons.addWidget(b)
-        form.addLayout(buttons)
+        buttons.addStretch(1)
         form.addStretch(1)
 
         right = QSplitter(Qt.Orientation.Vertical)
@@ -295,12 +295,26 @@ class BatchMaskDialog(QDialog):
         self._split = split_
         outer = QVBoxLayout(self)
         outer.addWidget(split_)
+        outer.addLayout(buttons)  # below the scrolling column: in view on a small (150 %) screen too
 
         self.preset.currentIndexChanged.connect(self._load)
         self._fill_presets()
         self._busy(False)
         self._fit_left()
         self._split.setSizes([max(440, self._left_scroll.minimumWidth()), 660])
+
+    def showEvent(self, e) -> None:
+        """Opened inside the screen (1100 x 760 is taller than a 1920 x 1080 screen at 150 %), the settings from
+        the top."""
+        super().showEvent(e)
+        screen = self.screen()
+        if screen is not None:
+            a = screen.availableGeometry()
+            self.resize(min(self.width(), a.width() - 20), min(self.height(), a.height() - 60))  # the title bar
+            g = self.frameGeometry()
+            self.move(max(a.left(), min(g.left(), a.right() - g.width())), max(a.top(), min(g.top(), a.bottom() - g.height())))
+        self._left_scroll.verticalScrollBar().setValue(0)
+        self.preset.setFocus()
 
     def _fit_left(self) -> None:
         """The settings column never narrower than what it holds (no sideways scrolling, nothing cut off)."""
