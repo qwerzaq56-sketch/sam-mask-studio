@@ -35,6 +35,7 @@ class Settings:
     show_edit_changes: bool = False  # tint what the edit layer added (green) / removed (red)
     frame_list_names: bool = True  # the Frame List shows file names (else only IDs and marks)
     marks_one_object: bool = False  # frame marks for the shown Object only (else every Object)
+    timeline_by_camera: bool = False  # the Timeline's rows per camera folder of a rig (p154)
     tool_settings_open: bool = True  # Properties > Edit Layer: the Settings section unfolded
     layer_section_open: bool = True  # Properties > Edit Layer: the Layer section unfolded
     preview_object: bool = False  # Mask Preview shows the selected Object's mask (else the Final Mask)
