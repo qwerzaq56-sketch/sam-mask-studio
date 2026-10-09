@@ -326,14 +326,16 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
     """The people of each frame of one camera folder (*keys*, in order) at the working size, in order: the
     keyframes' own masks (*marks*: index -> mask), a frame between two keyframes the union of what SAM2
     carries forward from the one before and back from the one after. Yields (index, mask, the keyframes it
-    came from as ``(keyframe index, "fwd" | "back")``; empty for a keyframe). A keyframe's SAM2 run is left out
-    when no frame it reaches is *wanted*."""
+    came from as ``(keyframe index, "fwd" | "back")``; empty for a keyframe; the lowest SAM2 object score of
+    the pieces carried into it, or None: p157). A keyframe's SAM2 run is left out when no frame it reaches is
+    *wanted*."""
     from src.core.propagation import Direction, PropagationPlan
 
     paths = [images / k for k in keys]
     picks = sorted(marks)
     got: Dict[int, np.ndarray] = {}
     hits: Dict[int, List[Tuple[int, str]]] = {}
+    low: Dict[int, float] = {}  # the lowest object score carried into a frame
     nxt = 0  # the next index to hand out
     for j, k in enumerate(picks):
         lo = picks[j - 1] if j else k
@@ -347,9 +349,12 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
                 layer_of[len(seeds)] = n
         if seeds and any(wanted(i) for i in range(lo + 1, hi) if i not in marks):
             plan = PropagationPlan(lo, hi, k, Direction.BOTH)
-            for idx, objs in propagate(str(SAM2_MODEL), paths, plan, seeds, max_side, device=device):
+            scores: Dict[int, Dict[int, float]] = {}
+            for idx, objs in propagate(str(SAM2_MODEL), paths, plan, seeds, max_side, device=device, scores=scores):
                 if idx in marks:
                     continue
+                if scores.get(idx):
+                    low[idx] = min(low.get(idx, 1.0), min(scores[idx].values()))
                 m = got.get(idx)
                 if m is None:
                     m = np.zeros_like(layers)
@@ -360,12 +365,12 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
                 hits.setdefault(idx, []).append((k, "fwd" if k < idx else "back"))
         while nxt <= k:  # every frame up to this keyframe has had both its keyframes now
             if nxt in marks:
-                yield nxt, marks[nxt], []
+                yield nxt, marks[nxt], [], None
             else:
                 m = got.pop(nxt, None)
                 if m is None:
                     m = np.zeros_like(layers)
-                yield nxt, (m if marks[k].ndim == 3 else m[0]), hits.pop(nxt, [])
+                yield nxt, (m if marks[k].ndim == 3 else m[0]), hits.pop(nxt, []), low.pop(nxt, None)
             nxt += 1
 
 
@@ -427,14 +432,15 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
             return rgb.shape[:2], np.stack(parts), counts
         return rgb.shape[:2], people_mask(dets, work.shape[:2], labels, attach, threshold, touch, 0), counts
 
-    from src.core.propagation import WARN_AREA_RATIO
+    from src.core.propagation import LOW_SCORE, WARN_AREA_RATIO
 
     last: Dict[str, float] = {}  # the people share of the frame before, a camera folder each
 
     def warnings(key, area, note):
         """Why a frame is worth a look (p149): the people's area jumped from the frame before in its folder
-        (more than WARN_AREA_RATIO either way, as the app's propagation), went empty, or union propagation
-        added more than ADDED_WARN of the frame."""
+        (more than WARN_AREA_RATIO either way, as the app's propagation), went empty, union propagation
+        added more than ADDED_WARN of the frame, or SAM2 was unsure of a piece it carried in (score below the
+        app's LOW_SCORE, measured in p156: p157)."""
         f = _folder(key)
         before, last[f] = last.get(f), area
         warn = []
@@ -445,6 +451,8 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
                 warn.append("area_jump")
         if note.get("added", 0) > ADDED_WARN:
             warn.append("added_big")
+        if note.get("score", 1.0) < LOW_SCORE:
+            warn.append("low_score")
         return warn
 
     def finish(key, people, size, note):
@@ -544,13 +552,15 @@ def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_si
 
     def make(key):
         folder, i = where[key]
-        for j, people, srcs in streams[folder]:
+        for j, people, srcs, score in streams[folder]:
             if j == i:
                 break
         else:
             raise RuntimeError("propagation ended before this frame")
         hits = len(srcs)
         came = {"from": [{"key": folders[folder][k], "dir": d} for k, d in srcs]} if srcs else {}
+        if score is not None:
+            came["score"] = round(score, 3)
         if key in own:
             mine = own.pop(key)
             if people.shape != mine.shape:  # the propagated mask at another working size
