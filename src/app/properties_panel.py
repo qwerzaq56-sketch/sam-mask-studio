@@ -73,6 +73,7 @@ RESTORE_MODES = (
 )
 POINT_ROLE = Qt.ItemDataRole.UserRole
 LAYER_ROLE = Qt.ItemDataRole.UserRole + 1  # Points tree: the point layer a row belongs to (0 = Original)
+NAME_ROLE = Qt.ItemDataRole.UserRole + 2  # Points tree: a made layer's own name ('' = none yet)
 
 
 def mask_thumbnail(image: Optional[np.ndarray], mask: np.ndarray, color, size: int = THUMB) -> QIcon:
@@ -156,6 +157,7 @@ class PropertiesPanel(QWidget):
     add_layer_requested = pyqtSignal()
     toggle_layer_requested = pyqtSignal()  # the current layer: add <-> subtract
     remove_layer_requested = pyqtSignal()
+    layer_renamed = pyqtSignal(int, str)  # double-click a layer's row: its index (1..), the new name (p165)
     delete_prompt_requested = pyqtSignal(int, int)  # × on a row: layer, point index (-1: the box)
     clear_points_requested = pyqtSignal()
     clear_box_requested = pyqtSignal()
@@ -208,6 +210,7 @@ class PropertiesPanel(QWidget):
         self.points.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.points.currentItemChanged.connect(self._on_point)
         self.points.itemClicked.connect(self._on_prompt_row)
+        self.points.itemDoubleClicked.connect(self._rename_layer_row)
         self.add_layer_btn = QPushButton("+ Layer")
         self.add_layer_btn.setToolTip("A point layer: its own points make a piece added to the mask "
                                       "(the mask under it is kept)")
@@ -616,15 +619,17 @@ class PropertiesPanel(QWidget):
     def _prompt_rows(self, frame: FrameState, layer: int, selected_point: Optional[int], editing: bool) -> None:
         """The Points tree: Original, Layer 1 (+), ... each with its points and box; the current layer bold."""
         sets = [("Original", frame.points, frame.box, None)]
-        sets += [(f"Layer {n} ({'−' if ly.subtract else '+'})", ly.points, ly.box, ly)
+        sets += [(f"{ly.name or f'Layer {n}'} ({'−' if ly.subtract else '+'})", ly.points, ly.box, ly)
                  for n, ly in enumerate(frame.layers, 1)]
         if layer > len(frame.layers):  # the next click makes it
             sets.append((f"Layer {layer} (+) · next click", (), None, None))
         for n, (title, pts, box, ly) in enumerate(sets):
             head = QTreeWidgetItem([title])
             head.setData(0, LAYER_ROLE, n)
-            if ly is not None and ly.mask is None and ly.has_prompts:
-                head.setToolTip(0, "No piece yet")
+            if ly is not None:
+                head.setData(0, NAME_ROLE, ly.name)
+                head.setToolTip(0, ("No piece yet. " if ly.mask is None and ly.has_prompts else "")
+                                + "Double-click to rename")
             f = QFont()
             f.setBold(n == layer and editing)
             head.setFont(0, f)
@@ -653,6 +658,15 @@ class PropertiesPanel(QWidget):
         b.setToolTip("Delete this point" if index >= 0 else "Delete the box")
         b.clicked.connect(lambda _=False: self.delete_prompt_requested.emit(layer, index))
         return b
+
+    def _rename_layer_row(self, item, _column: int = 0) -> None:
+        n = item.data(0, LAYER_ROLE) if item is not None and item.parent() is None else None
+        if not n or item.data(0, NAME_ROLE) is None:  # the Original, or a layer not made yet
+            return
+        name, ok = QInputDialog.getText(self, "Rename Layer", f"Name of Layer {n} (empty: Layer {n}):",
+                                        text=item.data(0, NAME_ROLE))
+        if ok:
+            self.layer_renamed.emit(n, name)
 
     def _on_prompt_row(self, item, _column: int = 0) -> None:
         if not self._updating and item is not None and item.parent() is None:

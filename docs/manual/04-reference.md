@@ -81,6 +81,7 @@
 | **Variants (pick one)** | SAM2 후보 마스크. 하나를 고릅니다(Original의 후보만) |
 | **Points** 트리 | `Original`, `Layer 1 (+)`, `Layer 2 (−)` … 아래에 포인트 / 박스, 줄마다 **×**. 줄을 누르면 그 레이어로(굵게) |
 | **+ Layer** · **+ / −** · **Remove Layer** | 레이어 추가 · 더하기 ↔ 빼기 · 지우기 |
+| 레이어 줄 더블클릭 | 레이어 이름 바꾸기(비우면 Layer n, 작업 파일에 저장, Undo 됨) |
 | **Delete Point** · **Clear Points** · **Clear Box** | 고른 포인트 · 모든 포인트 · 박스 지우기 |
 
 포인트 레이어 규칙:

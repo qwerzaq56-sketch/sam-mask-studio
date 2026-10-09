@@ -131,6 +131,7 @@ class PromptLayer:
     box: Optional[Box] = None
     subtract: bool = False
     mask: Optional[np.ndarray] = None
+    name: str = ""  # the user's name for it; empty: "Layer n" (p165)
 
     @property
     def has_prompts(self) -> bool:

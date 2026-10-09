@@ -504,6 +504,17 @@ class Session:
         self._set_layers(layers)
         return True
 
+    def rename_layer(self, index: int, name: str) -> bool:
+        """Name point layer *index* (1..); an empty name goes back to "Layer n" (p165)."""
+        fs = self.editing_frame()
+        name = name.strip()
+        if fs is None or not (1 <= index <= len(fs.layers)) or fs.layers[index - 1].name == name:
+            return False
+        layers = list(fs.layers)
+        layers[index - 1] = dataclasses.replace(layers[index - 1], name=name)
+        self._set_layers(layers)
+        return True
+
     def remove_layer(self, index: Optional[int] = None) -> bool:
         """Remove point layer *index* (default: the current one); the one before becomes current."""
         fs = self.editing_frame()
