@@ -1157,6 +1157,10 @@
 - `Session.other_prompts`: 클릭이 가지 않는 레이어(Original 포함)의 (포인트, 박스). `Canvas.set_prompts(…, others)` → `_draw_other_prompts`: 작은 회색 점(밝은 = +, 어두운 = −), 회색 점선 박스, 지금 레이어 아래에. 클릭 대상(`_point_at`)은 지금 레이어만 그대로.
 - 매뉴얼 02 · 04. 테스트 1(새로).
 
+## v0.4-p164 — "+ New Object from Points" → "+ New Object" (2026-10-10)
+- ideas.md 사용자 메모("뉴 오브젝트 프롬 포인트가 아니라 그냥 뉴 오브젝트로"). 동작은 그대로(`N`, 클릭 또는 박스 드래그로 SAM2 Object 하나).
+- 버튼 · Edit 메뉴 · 상태 줄 · Properties 안내 · F1 표, 매뉴얼 01 · 02 · 04, README, DEVELOPMENT, menu-design, 포터블 안내 글. 기획 명세(specs/01 · 03)는 그때 기록이라 그대로. 매뉴얼 그림의 옛 글자는 다음 캡처 때.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

@@ -43,7 +43,7 @@ SAM3 text prompts find, SAM2 clicks cut and refine, SAM2 video propagation carri
 | [D. 기능 참고](docs/manual/04-reference.md) | 패널과 창의 모든 칸, 학습기별 규칙, [단축키 전체표](docs/manual/04-reference.md#d8-단축키-전체표) |
 | [E. 부록](docs/manual/05-appendix.md) | 파일 위치, 문제 해결, 용어집 |
 
-짧게: File → **Open Folder…** (`Ctrl+O`)로 이미지 폴더나 COLMAP 장면을 열고 → **Prompt / Detection**(SAM3 글자) 또는 **+ New Object from Points** (`N`, SAM2 클릭)로
+짧게: File → **Open Folder…** (`Ctrl+O`)로 이미지 폴더나 COLMAP 장면을 열고 → **Prompt / Detection**(SAM3 글자) 또는 **+ New Object** (`N`, SAM2 클릭)로
 Object를 만들고 → **Points** (`E`) · **Brush** (`D`) · 오토 툴로 다듬고 → **Propagation** 탭에서 전파하고 → File → **Export Final Masks…** (`Ctrl+E`)에서
 학습기(**For**)를 골라 내보냅니다. 모든 명령은 메뉴 바에 키와 함께 있고, 앱에서 `F1`을 누르면 단축키 전체가 나옵니다.
 

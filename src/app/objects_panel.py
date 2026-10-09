@@ -211,8 +211,8 @@ class ObjectsPanel(QWidget):
         self.tree.viewport().installEventFilter(self)  # a click on empty space clears the selection
         self._compact = False  # a narrow list: ✎ for Points / Editing and no × column, so names show (U4)
 
-        self.new_btn = QPushButton("+ New Object from Points")
-        self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
+        self.new_btn = QPushButton("+ New Object")
+        self.new_btn.setToolTip("A new Object from SAM2 points: then click (or drag a box) on the image — N")
         self.new_btn.clicked.connect(lambda: later(self, self.new_requested))
         self.special_btn = QToolButton()
         self.special_btn.setText("+ Special ▾")
