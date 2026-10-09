@@ -9,6 +9,7 @@ Picking ``<root>``, its ``images/`` or one camera's folder opens the whole rig: 
 folder, by name (``cam0``, ``cam_1``, ``Camera2`` ...), one level down and no deeper, so a big
 folder picked by mistake still finds nothing. Opening checks that nothing is missing: an image
 one camera has and another lacks, an image without its mask, a mask without its image.
+Its mask folders (``masks/``, ``masks_*/``, ``masks/<set>/``) are offered as Objects, model or not.
 """
 
 from __future__ import annotations
@@ -67,6 +68,29 @@ def masks_dir(root: Path) -> Optional[Path]:
         if d.is_dir() and any(c.is_dir() and CAMERA_DIR.match(c.name) for c in d.iterdir()):
             return d
     return None
+
+
+def _has_cameras(folder: Path) -> bool:
+    return any(c.is_dir() and CAMERA_DIR.match(c.name) for c in folder.iterdir())
+
+
+def mask_sets(root: Path) -> List[Path]:
+    """The rig's mask folders, each one Object: ``masks/`` (``mask/``) and ``masks_*/`` that hold camera
+    folders, and the sets inside ``masks/`` (``masks/<set>/cam0`` ...); by name."""
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    out = []
+    for d in sorted((d for d in root.iterdir() if d.is_dir()), key=lambda p: p.name.lower()):
+        low = d.name.lower()
+        if low not in MASKS_NAMES and not low.startswith("masks_"):
+            continue
+        if _has_cameras(d):
+            out.append(d)
+        if low in MASKS_NAMES:
+            out += sorted((s for s in d.iterdir() if s.is_dir() and not CAMERA_DIR.match(s.name) and _has_cameras(s)),
+                          key=lambda p: p.name.lower())
+    return out
 
 
 def _listed(names) -> str:

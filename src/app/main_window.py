@@ -68,7 +68,7 @@ from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
-from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, masks_dir, rig_images_dir, rig_root
+from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, mask_sets, masks_dir, rig_images_dir, rig_root
 from src.core.rig import check as rig_check
 from src.core.storage import check_export, default_export_dir, export_one_mask, full_mask, has_sky
 from src.engine.imageio import find_images, key_stem, read_rgb
@@ -1073,8 +1073,13 @@ class MainWindow(QMainWindow):
             self._report_rig(folder)
         self.ensure_models()
         self.refresh()
-        if self.scene is not None and not loaded and self.scene.mask_dirs:
-            self.offer_masks(self.scene.mask_dirs, "Masks in this COLMAP scene", undoable=False)
+        dirs = list(self.scene.mask_dirs) if self.scene is not None else []
+        root = rig_root(folder) if is_rig(folder) else None
+        if root is not None:  # a rig, model or not: its mask sets too (masks/<set>/camN, 06 2.1 R2)
+            dirs += [d for d in mask_sets(root) if d not in dirs]
+        if dirs and not loaded:
+            self.offer_masks(dirs, "Masks in this COLMAP scene" if self.scene is not None
+                             else "Masks in this camera rig", undoable=False)
         return True
 
     def _report_scene(self, scene) -> None:
@@ -1114,7 +1119,8 @@ class MainWindow(QMainWindow):
                 continue
             share = white_share(d, keys)
             black = share is not None and share > 0.5  # mostly white: the object is probably black
-            groups.append((f"{d.name}/ — masks for {n} of {len(keys)} images",
+            shown = f"{d.parent.name}/{d.name}" if d.parent.name.lower() in ("masks", "mask") else d.name  # a set
+            groups.append((f"{shown}/ — masks for {n} of {len(keys)} images",
                            ["Skip", "White = the object", "Black = the object"], 2 if black else 1))
             found.append(d)
         if not found:

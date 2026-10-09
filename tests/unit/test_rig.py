@@ -69,3 +69,12 @@ def test_same_name_masks_count_too(tmp_path):
         cv2.imwrite(str(root / "mask" / cam / "frame_000.png"), np.zeros((4, 4), np.uint8))
     images = root / "images"
     assert check(images, ["cam0/frame_000.png", "cam1/frame_000.png"]) == []
+
+
+def test_mask_sets_of_a_rig(tmp_path):
+    from src.core.rig import mask_sets
+
+    root = make_rig(tmp_path / "rig", n=1)
+    for d in ("masks_sky/cam0", "masks/people/cam1", "masks/notes", "other/cam0"):
+        (root / d).mkdir(parents=True)
+    assert [d.relative_to(root).as_posix() for d in mask_sets(root)] == ["masks", "masks/people", "masks_sky"]

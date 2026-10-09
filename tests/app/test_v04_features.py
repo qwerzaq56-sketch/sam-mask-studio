@@ -3302,3 +3302,30 @@ def test_rig_frame_list_heads_each_camera(qapp):
     qapp.processEvents()
     assert not fl.grab().isNull()  # paints (head band, name without cam0/)
     ip.close()
+
+
+def test_a_rig_without_a_model_offers_its_mask_sets(qapp, win, tmp_path):
+    """p136 (06 2.1 R2): masks/camN, masks_*/camN and masks/<set>/camN become Objects, without a model too."""
+    import cv2
+    import numpy as np
+
+    from tests.unit.test_rig import make_rig
+
+    root = make_rig(tmp_path / "rig", n=2, masks=False)
+    m = np.zeros((48, 64), np.uint8)
+    m[10:20, 10:30] = 255
+    for d in ("masks", "masks/people"):
+        for cam in ("cam0", "cam1"):
+            (root / d / cam).mkdir(parents=True)
+            for i in range(2):
+                cv2.imwrite(str(root / d / cam / f"frame_{i:03d}.png.png"), m)
+    asked = []
+    win.choose = lambda title, text, groups, ok="OK": asked.append((title, [g[0] for g in groups])) or [1] * len(groups)
+    assert win.open_folder(root)
+    title, labels = asked[0]
+    assert title == "Masks in this camera rig"
+    assert labels == ["masks/ — masks for 4 of 4 images", "masks/people/ — masks for 4 of 4 images"]
+    objs = win.session.project.objects
+    assert [o.name for o in objs] == ["masks #1", "people #1"] and all(len(o.frames) == 4 for o in objs)
+    asked.clear()
+    assert win.open_folder(root) and not asked  # its work is saved now: not offered again
