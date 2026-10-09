@@ -3850,3 +3850,36 @@ def test_the_other_point_layers_points_show_gray(qapp, win):
     win.canvas.grab()  # paints with the gray layer
     win.finish_editing()
     assert s.other_prompts() == []
+
+
+def test_a_point_layer_can_be_renamed_saved_and_undone(qapp, win, monkeypatch):
+    """p165: double-click a point layer's row to name it; the name is saved, Undo takes it back,
+    an empty name is "Layer n" again. The Original and a layer not made yet have no rename."""
+    from PyQt6.QtWidgets import QInputDialog
+    from src.core.storage import ProjectStore
+
+    s = win.session
+    oid, _m = _imported(win)
+    win.toggle_edit(oid)
+    s.click(60, 40)
+    s.add_layer(subtract=True)
+    s.click(10, 10)
+    win.refresh()
+    tree = win.properties_panel.points
+    answers = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (answers.append(k.get("text")) or "  hand  ", True))
+    tree.itemDoubleClicked.emit(tree.topLevelItem(1), 0)
+    qapp.processEvents()
+    assert answers == [""] and s.editing_frame().layers[0].name == "hand"
+    assert tree.topLevelItem(1).text(0) == "hand (+)" and tree.topLevelItem(2).text(0) == "Layer 2 (−)"
+    tree.itemDoubleClicked.emit(tree.topLevelItem(0), 0)  # the Original: no rename
+    qapp.processEvents()
+    assert answers == [""]
+    win.save(force=True)
+    back = ProjectStore(s.image_dir, s.max_side).load(list(s.keys)).get(oid).frame(s.keys[0])
+    assert [ly.name for ly in back.layers] == ["hand", ""]
+    s.undo()
+    win.refresh()
+    assert s.editing_frame().layers[0].name == ""
+    assert s.rename_layer(1, "x") and s.rename_layer(1, " ") and s.editing_frame().layers[0].name == ""
+    assert not s.rename_layer(3, "none")

@@ -204,7 +204,7 @@ class ProjectStore:
                     "layers": [
                         {"points": [[p.x, p.y, 1 if p.positive else 0] for p in ly.points],
                          "box": list(ly.box) if ly.box else None, "subtract": ly.subtract,
-                         "has_mask": ly.mask is not None}
+                         "has_mask": ly.mask is not None, **({"name": ly.name} if ly.name else {})}
                         for ly in fs.layers
                     ],
                 }
@@ -308,7 +308,7 @@ class ProjectStore:
                     layers.append(PromptLayer(
                         points=tuple(Point(float(x), float(y), bool(pos)) for x, y, pos in lj.get("points", [])),
                         box=tuple(lj["box"]) if lj.get("box") else None,
-                        subtract=bool(lj.get("subtract", False)), mask=lm))
+                        subtract=bool(lj.get("subtract", False)), mask=lm, name=str(lj.get("name", ""))))
                 frames[key] = FrameState(
                     points=points,
                     box=box,

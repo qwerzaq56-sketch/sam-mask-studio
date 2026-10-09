@@ -707,6 +707,7 @@ class MainWindow(QMainWindow):
         p.add_layer_requested.connect(lambda: self._do(self.session.add_layer))
         p.toggle_layer_requested.connect(lambda: self._do(self.session.toggle_layer_subtract))
         p.remove_layer_requested.connect(lambda: self._do(self.session.remove_layer))
+        p.layer_renamed.connect(lambda n, name: self._do(lambda: self.session.rename_layer(n, name)))
         p.delete_prompt_requested.connect(
             lambda n, i: self._prompt(lambda: self.session.delete_prompt(n, None if i < 0 else i)))
         p.delete_point_requested.connect(lambda: self._prompt(self.session.delete_point))
