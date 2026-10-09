@@ -1,6 +1,8 @@
 # SAM Mask Studio v0.4 진행 현황
 
-**v0.6.0 안정판 (2026-10-09):** 60~148단계(`v0.4-p60` ~ `v0.4-p148`)가 `main`에 병합되고 `v0.6.0` 태그가 붙었습니다. 명령줄 · 배치 마스킹(사람 = SAM3 + 키프레임 10 전파 + union, 닿으면 가리는 물건 bag · cane · handcart)이 중심이고, splatbatch가 이 버전을 고정해 부릅니다. 포터블은 배치 배포용 세 조각(`H:\Dev\Masking\dist0.6.0`, `--split`, 명령줄 약속 4). 연속 닿음(steady, p145)은 빼고 실험은 `dev`에서. 공개 포터블 zip은 v0.5.1 그대로.
+**v0.6.1 (2026-10-10):** 149~155단계(`v0.4-p149` ~ `v0.4-p155`)를 `main`에 병합하고 `v0.6.1` 태그를 붙였습니다. 마스크 결과는 v0.6.0과 같습니다(명령줄은 보고서에 출처 · 경고 키만 더함, p149). 앱: 배치 보고서 출처 · 경고 표시(p150), Timeline 탭(p151 · p154), 전파 회차 기록 · 지우기(p152), SAM2 점수(p153), SplatBatch가 띄운 창에서 전파가 실패하던 것 수정(p155). 실험 스터디(연속 닿음 steady, P5 적응형 키프레임, P6 움직이는 물건)는 들어가지 않습니다. 포터블 세 조각 `H:\Dev\Masking\dist\v0.6.1`(`--split`, 명령줄 약속 4 그대로).
+
+**v0.6.0 안정판 (2026-10-09):** 60~148단계(`v0.4-p60` ~ `v0.4-p148`)가 `main`에 병합되고 `v0.6.0` 태그가 붙었습니다. 명령줄 · 배치 마스킹(사람 = SAM3 + 키프레임 10 전파 + union, 닿으면 가리는 물건 bag · cane · handcart)이 중심이고, splatbatch가 이 버전을 고정해 부릅니다. 포터블은 배치 배포용 세 조각(`H:\Dev\Masking\dist\v0.6.0`, `--split`, 명령줄 약속 4). 연속 닿음(steady, p145)은 빼고 실험은 `dev`에서. 공개 포터블 zip은 v0.5.1 그대로.
 
 **v0.5.1 핫픽스 (2026-10-02):** 59단계(`v0.4-p59`, "응답 없음" 멈춤)만 더한 수정판입니다. 콘솔 창이 일시정지(빠른 편집 선택, Pause)되면 화면 스레드의 로그 쓰기가 끝나지 않아 앱이 멈추던 문제를 고쳤습니다([이슈 #2](https://github.com/qwerzaq56-sketch/sam-mask-studio/issues/2)). 기능과 화면은 v0.5.0과 같고, 안정판 실행기와 포터블도 v0.5.1입니다. [GitHub Release v0.5.1](https://github.com/qwerzaq56-sketch/sam-mask-studio/releases/tag/v0.5.1)은 노트만, 포터블 zip(5.76 GB)은 Google Drive 같은 폴더에 올림(2026-10-03).
 
@@ -1044,6 +1046,61 @@
 - OSMO 프리셋: attach에 `handcart`, steady 줄 삭제, checked_on 첫 줄에 안정판 확인 기록(0022 마스크는 p142와 같음, 0015 리어카는 사람에 닿은 19장에서 가림: p145 측정 근거, 다시 돌리지 않음).
 - 리어카를 attach로 두면 행인이 세워 둔 리어카를 스쳐 지나가는 장에서는 리어카도 가려짐. 움직이는 물건 판정은 실험 스터디(P6 2단계, 정합 뒤 3D 점).
 - 테스트 332개 통과(steady 테스트 2개 삭제).
+
+## v0.4-p149 — 사람 마스크 보고서에 출처 · 경고 (sam3-video-annotation-tool 참고, 실험 스터디) (2026-10-09)
+- 사용자 지시(10-09): 연속 닿음은 빼고, 외부 도구 비교(tools.html 4장) 아이디어 ① 출처 기록의 명령줄 몫을 구현. v0.6.0 뒤 실험 스터디.
+- `person` report.json 프레임마다 `source`(`sam3` | `keyframe` | `propagated` | `union`), 전파를 받은 장은 `from`(`[{"key", "dir": "fwd"|"back"}]`, 기존 `from_keyframes` 개수는 그대로).
+- `warn`(있을 때만): `area_jump`(같은 카메라 폴더 앞 장 대비 사람 면적 4배 넘게 변함, 앱 `WARN_AREA_RATIO`와 같은 값), `empty`(앞 장엔 있었는데 0), `added_big`(union 전파가 화면 1 % 넘게 더함, `ADDED_WARN`). 보고서 맨 위 `warned`에 이유별 장 수, 로그 줄 끝에 `! 이유`.
+- 지난 측정 보고서로 센 경고: 0022 cam0 94장 0장, 0015 리어카 구간 46장 2장(cam1 00095 added_big = 전파가 실어 온 리어카, cam1 00105 area_jump = 리어카가 화면 밖으로 나감). GPU로 다시 돌리지는 않음.
+- 앱 몫(나중, 사용자 선택 시): FrameState 출처 표시 · ③ 타임라인(p150~), SAM2 object score(`low_score`)는 `engine/video.py`가 점수를 내보내야 해서 앱 몫으로 남김.
+- 테스트 333개 통과(새 테스트 1, 키프레임 · union 테스트에 출처 확인 추가).
+
+## v0.4-p150 — 불러온 마스크에 배치 보고서의 출처 · 경고 표시 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ③ 타임라인 몫. p149 보고서 키(`source` · `from` · `warn`)를 앱이 읽음.
+- Import Masks(장면을 열 때 포함)가 마스크 폴더에서 위로 4단계까지 `*report*.json`(명령줄 `--report` 파일)과 SplatBatch의 `runs/splatbatch/masks_report.json`을 찾음. 그 보고서의 `out`이 이 폴더를 품을 때만 씀. 이름에 report가 없는 JSON은 열지 않음. `run` 보고서의 `masks/` · `masks_sfm/`(렌즈 단계)은 사람 단계의 기록을, `sky_masks/`는 자기 기록을 씀.
+- 표시: `propagated` · `union` = `✓`, `warn`이 있으면 `⚠`(빈 마스크라도 프레임을 남겨 `[` `]`로 찾음), 나머지 = `↓` 그대로. Frame List 칸에 마우스를 올리면 이유(`people_masks: SAM3 + propagated from cam0/00006 forward · ⚠ …`), 로그 줄에 `batch report …: ✓ N propagated, ⚠ N worth a look`.
+- 이유는 FrameState `note`로 프로젝트에 저장, 여기서 고치면(★) 지움. 범례 ⚠ 문구를 "worth a look"으로.
+- 고친 버그: Export 창의 0 ms 타이머(`_fit_height`)가 창이 지워진 뒤에 돌면 PyQt6가 앱을 끔(`C0000409`). 테스트 순서에 따라 드러남, 지워졌으면 건너뜀.
+- `low_score`(SAM2 object score)는 아직(`engine/video.py`가 점수를 내보내야 함).
+- 테스트 338개 통과(새 테스트 5).
+
+## v0.4-p151 — Object별 줄 타임라인 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ③(Sammie-Roto 2의 줄 타임라인)의 나머지. p150의 출처 · 경고를 Object별로 펼쳐 봄.
+- 새 `src/app/timeline_panel.py`: 아래 Frames 독 옆 탭 **Timeline**(View > Panels에도). Object마다 한 줄(이름 + 마스크 프레임 수, 옆으로 스크롤해도 이름 칸은 고정), 프레임마다 한 칸(폭 3~14 px, 좁으면 가로 스크롤). 칸 색 = 상태: ★ 파랑 · ✓ 초록 · ↓ 회색 · ⚠ 주황 · ✕ 빨강, 마스크 없으면 빈칸.
+- 열린 프레임 = 파란 세로 띠와 ▼(옮기면 보이게 스크롤), 기준 ◎ = 주황 테두리, 카메라 폴더 경계 = 세로선과 폴더 이름. 고치는 중인 Object(없으면 고른 Object) 줄을 칠함.
+- 칸 클릭 = 그 프레임으로 가서 그 Object 선택(고치는 중이면 프레임만). 이름 클릭 = 그 Object 선택, 지금 프레임에 마스크가 없으면 가장 가까운 마스크 프레임으로. 마우스를 올리면 프레임 · Object · 상태 · p150 이유. 범례는 한 줄, 자세한 설명은 범례 툴팁.
+- 탭이 가려져 있으면 그리지 않고, 보일 때 한 번 그림. 데이터가 같으면 다시 그리지 않음.
+- 테스트 339개 통과(새 테스트 1).
+
+## v0.4-p152 — 전파 회차 기록 · 회차 지우기 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ①(sam3 video tool의 "기준 프레임 · 방향으로 지우기, 미리 보기").
+- 기록: 앱 안 전파가 남긴 프레임마다 `Origin`(회차 번호 · 기준 이미지 · 방향 · 기준에서 몇 장째). 회차 = Propagate 한 번(지금 남은 최대 회차 + 1), Resume은 같은 회차로 이어 감(기준 · 거리도 처음 계획 기준). `project.json`에 `origin`으로 저장. 여기서 고치면(★) `note`처럼 지움.
+- 표시: Frame List · Timeline 툴팁에 `propagated from cam0/00006 forward, 3 away (run 2)`. 배치 보고서 note가 있으면 그쪽이 먼저.
+- 지우기: Objects > **Clear a Propagation Run…**(새 `src/app/clear_run_dialog.py`): 선택한 Object의 회차 목록(최근 것 먼저, ◀ · ▶ 장 수), 방향(양쪽 / ◀ / ▶), "기준 옆 N장은 남김". 창이 열린 동안 Timeline이 지워질 칸을 흐리게 줄 그어 보여 줌(미리 보기), 요약 줄에 장 수와 프레임 ID. Clear = 한 번의 Undo(`Project.remove_frames`). Timeline 칸 우클릭 = **Clear Run N from Here On ◀/▶**(그 칸부터 바깥쪽) · **Clear Run N (Both Ways)**.
+- 지운 자리는 비게 됨(전파가 덮어쓴 이전 마스크로 돌아가지 않음; 그건 Ctrl+Z). p152 전 전파 · 불러온 마스크는 기록이 없어 대상 아님.
+- 테스트 343개 통과(새 테스트 4).
+
+## v0.4-p153 — 전파 프레임별 SAM2 점수 · 낮은 점수 경고 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ②(sam3 video tool의 프레임별 신뢰도).
+- `engine/video.py` `propagate(..., scores=dict)`: 프레임을 낼 때마다 `scores[index] = {obj_id: 점수}`를 채움. 점수 = SAM2 상태의 `object_score_logits`의 sigmoid(물체가 그 프레임에 있다는 믿음; 0.5 이하면 SAM2가 마스크를 비움). 인자는 선택이라 명령줄 · 옛 호출은 그대로.
+- 앱: 전파 결과를 저장할 때 점수를 프레임의 score로 남기고, `grade`가 점수 < `LOW_SCORE`(0.8, 임시)인데 마스크가 있으면 ⚠. `scores`를 받지 않는 전파 함수(옛 가짜)는 예전처럼 면적만으로.
+- 툴팁: 전파 출처 뒤에 `score 0.97`, ⚠면 이유(`SAM2 is unsure it is there (low score)` / `its area changed a lot from the reference`).
+- 남은 것: 0.8은 측정 전 임시 값. 실제 장면(0022 · 0015)에서 GPU로 점수 분포를 재서 정함(사용자 확인 뒤 `gpu run`). 명령줄 `low_score` 경고는 배치 스터디 몫(`scores` 인자 알림).
+- 테스트 346개 통과(새 테스트 3, 가짜 전파가 `scores` 인자를 받음).
+
+## v0.4-p154 — Timeline 카메라 폴더별 줄 · 검출 / 정보 없음 색 (2026-10-10)
+- 사용자 지시(10-10), 배치 마스킹 스터디 요청(W3 ③): 배치 결과는 "카메라 폴더 × 사람 마스크" 단위로 보고, 보고서에 없는 장은 "정보 없음"으로.
+- 칸 색: 보고서와 함께 불러온 Object(어느 프레임이든 note가 있음)의 ↓를 보라(검출: SAM3 · keyframe, note 있음)와 연회색(note 없음 = 보고서에 정보 없음)으로 나눔. 보고서 없는 Object는 회색 ↓ 그대로. 상태 값은 그대로 IMPORTED(Frame List · [ ] · 내보내기 영향 없음), Timeline 표시만.
+- **By camera**(범례 오른쪽, 이미지가 카메라 폴더 둘 이상일 때만 보임): Object × 폴더마다 한 줄(`people_masks #1 · cam0`), 칸 = 폴더 안 순서, 짧은 폴더는 끝이 빔. 열린 프레임 · ◎은 그 폴더 줄에만, ▼는 그 순서 칸 위, 머리줄은 10칸마다 번호. Object 사이에 선. Settings `timeline_by_camera`로 기억.
+- 클릭 · 우클릭 · 툴팁 · 지우기 미리 보기는 그대로(칸 → 그 프레임 번호).
+- 테스트 347개 통과(새 테스트 1, p151 테스트를 새 줄 구조로).
+
+## v0.4-p155 — SplatBatch가 띄운 창에서 전파가 실패하던 것 (2026-10-10)
+- 사용자 보고(10-10): SplatBatch로 연 SAM Mask Studio에서 전파가 잘 안 됨.
+- 원인(배포판 v0.6.0 로그 `propagation_failed`, 10-10 02:11): SplatBatch 창(pythonw)이 앱을 `CREATE_NO_WINDOW`로, 출력 연결 없이 띄워서 `sys.stdout` · `sys.stderr`가 None. SAM2 `init_state`의 "frame loading (JPEG)" tqdm 진행 막대가 stderr에 쓰다 `'NoneType' object has no attribute 'write'`로 전파 전체가 실패. 손으로 연 창 · 명령줄(출력을 파이프로 받음)은 해당 없음.
+- `src/main.py` `ensure_std_streams()`: 시작할 때 None인 stdout / stderr를 devnull로 바꿈(로그 파일은 그대로).
+- 테스트 349개 통과(새 테스트 2: stderr가 None이면 tqdm이 실패하는 것을 재현하고, 고친 뒤 통과).
+- 배포판(SplatBatch `tools\sam-mask-studio\0.6.0`)에는 아직 없음: 새 배포판으로 올리거나 SplatBatch가 출력을 DEVNULL로 넘기면 해결.
 
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과

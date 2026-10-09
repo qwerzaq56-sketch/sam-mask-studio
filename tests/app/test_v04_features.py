@@ -3493,3 +3493,241 @@ def test_batch_masking_fits_the_screen_with_its_buttons_in_view(qapp, tmp_path):
     for b in (dlg.try_btn, dlg.run_btn, dlg.stop_btn, dlg.cmd_btn):
         assert not dlg._left_scroll.isAncestorOf(b)
     dlg.close()
+
+
+def test_imported_masks_show_the_batch_reports_source_and_warnings(qapp, win, tmp_path):
+    """p150: importing a folder a batch run made reads its report: propagated frames ✓, the ones worth a
+    look ⚠ (an empty one kept so [ / ] finds it), the reason in the Frame List's tooltip."""
+    import json
+
+    import cv2
+    import numpy as np
+
+    from src.app.images_panel import image_marks
+    from src.core.project import FrameStatus
+
+    keys = list(win.session.keys)
+    out = tmp_path / "scene" / "people_masks"
+    out.mkdir(parents=True)
+    for i, k in enumerate(keys):
+        m = np.zeros((48, 64), np.uint8)
+        if i != 3:
+            m[5:20, 5:20] = 255
+        cv2.imwrite(str(out / f"{k}.png"), m)
+    frames = {keys[0]: {"source": "keyframe"},
+              keys[1]: {"source": "propagated", "from": [{"key": keys[0], "dir": "fwd"}]},
+              keys[2]: {"source": "union", "warn": ["area_jump"]},
+              keys[3]: {"source": "propagated", "warn": ["empty"]}}
+    (tmp_path / "scene" / "report.json").write_text(
+        json.dumps({"command": "person", "out": str(out), "frames": frames}), encoding="utf-8")
+    win.choose = lambda title, text, groups, ok="OK": [1] * len(groups)  # white = the object
+    oid = win.offer_masks([out], "Import Masks")[0]
+    o = win.session.project.get(oid)
+    st = {k: fs.status for k, fs in o.frames.items()}
+    assert st[keys[0]] == FrameStatus.IMPORTED and st[keys[1]] == FrameStatus.PROPAGATED
+    assert st[keys[2]] == st[keys[3]] == FrameStatus.WARNING and not o.frames[keys[3]].mask.any()
+    assert keys[4] in o.frames and o.frames[keys[4]].note == ""  # not in the report: ↓ as before
+    marks = image_marks(win.session.project)
+    assert [marks[k] for k in keys] == ["↓", "✓", "⚠", "⚠", "↓"]
+    win.images_panel.update_marks(win.session.project)
+    tip = win.images_panel.list.item(2).toolTip()
+    assert keys[2] in tip and f"{o.name}: SAM3 + propagated" in tip and "jumped" in tip
+    assert "from " + keys[0].rsplit(".", 1)[0] + " forward" in win.images_panel.list.item(1).toolTip()
+    assert win.images_panel.list.item(4).toolTip() == keys[4]
+    assert "batch report report.json: ✓ 1 propagated, ⚠ 2 worth a look" in win.log_view.toPlainText()
+
+
+def test_timeline_shows_a_row_per_object_and_a_click_opens_that_frame_and_object(qapp, win):
+    """p151: the Timeline dock has a row per Object, a cell per frame colored by its status (blank: no mask);
+    hovering says the status and the batch note, a click goes to that frame and selects that Object."""
+    import dataclasses
+
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from src.app.timeline_panel import FILL, HEAD_H, NAME_W, ROW_H
+    from src.core.project import FrameStatus
+
+    ids = make_objects(win, 2)
+    p = win.session.project
+    k = win.session.keys
+    fs = p.get(ids[1]).frame(k[0])
+    p.set_frame(ids[1], k[2], dataclasses.replace(fs, status=FrameStatus.PROPAGATED, note="from k0 forward"))
+    p.set_frame(ids[1], k[3], dataclasses.replace(fs, status=FrameStatus.WARNING, note="area jumped"))
+    assert "Timeline" in [d.windowTitle() for d in win._docks]
+    win._timeline_dock.raise_()
+    win.refresh()
+    qapp.processEvents()
+    view = win.timeline_panel.view
+    assert view.isVisible() and [r.oid for r in view._rows] == ids
+    rows = {r.oid: r.kinds for r in view._rows}
+    assert rows[ids[0]] == {k[0]: "manual"}
+    assert rows[ids[1]][k[2]] == "propagated" and rows[ids[1]][k[3]] == "warning"
+    assert k[1] not in rows[ids[1]] and set(FILL) >= {"manual", "propagated", "imported", "warning", "failed"}
+    tip = view.cell_text(1, 3)
+    assert k[3] in tip and p.get(ids[1]).name in tip and "⚠ worth a look" in tip and "area jumped" in tip
+    assert "no mask" in view.cell_text(0, 1)
+
+    w = view.cell_width()
+    pos = QPoint(NAME_W + 2 * w + w // 2, HEAD_H + ROW_H + ROW_H // 2)  # Object 2, frame 3
+    assert view.cell_at(pos) == (1, 2)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    settle(qapp)
+    assert win.session.index == 2 and win.objects_panel.selected_ids() == [ids[1]]
+    assert view._current == 2 and view._selected == (ids[1],)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(10, HEAD_H + ROW_H // 2))
+    settle(qapp)
+    assert win.session.index == 0 and win.objects_panel.selected_ids() == [ids[0]]  # a name: its nearest mask
+
+
+def test_propagation_runs_are_recorded_and_cleared_from_a_frame_on(qapp, win):
+    """p152: each propagated frame records its run, reference, direction and distance (tooltip); Clear a
+    Propagation Run previews what goes in the Timeline, removes it as one undo step and keeps frames edited since."""
+    import dataclasses
+
+    from PyQt6.QtWidgets import QMenu
+
+    from src.core.project import FrameStatus
+    from src.core.propagation import Direction
+    from tests.app.conftest import wait_until
+    from tests.app.test_gui import click
+
+    s = win.session
+    win.go_to(2)
+    win.new_object()
+    click(win, 30, 30)
+    win.finish_editing()
+    oid = s.project.objects[0].id
+    win.objects_panel.select_ids([oid])
+    win.propagate(0, 4, Direction.BOTH)
+    wait_until(qapp, lambda: win._busy is None)
+    k = s.keys
+    o = s.project.get(oid)
+    og = {i: o.frame(k[i]).origin for i in range(5)}
+    assert og[2] is None and og[4].run == 1 and og[4].ref == k[2] and og[4].forward and og[4].step == 2
+    assert not og[0].forward and og[0].step == 2 and og[1].step == 1
+    win.refresh()
+    assert "forward, 2 away (run 1)" in win.images_panel.list.item(4).toolTip()
+    assert [r.run for r in s.run_summaries([oid])] == [1]
+
+    seen = {}
+
+    def accept(dlg):
+        seen["frames"] = dict(dlg.frames)
+        seen["preview"] = dict(win.timeline_panel.view._preview)
+        seen["text"] = dlg.summary.text()
+        dlg.done(1)
+        return True
+
+    win.run_dialog = accept
+    win.clear_run([oid], 1, Direction.FORWARD, keep=1)  # the Timeline's "from here on" on frame 5
+    assert seen["frames"] == {oid: [k[4]]} and seen["preview"] == {oid: {k[4]}} and "frames 5" in seen["text"]
+    assert win.timeline_panel.view._preview == {}  # the preview ends with the window
+    o = s.project.get(oid)
+    assert o.frame(k[4]) is None and o.frame(k[3]) is not None
+    p = s.project
+    p.set_frame(oid, k[0], dataclasses.replace(o.frame(k[0]), status=FrameStatus.MANUAL))  # edited since: kept
+    assert p.get(oid).frame(k[0]).origin is None
+    win.clear_run([oid], 1)
+    o = s.project.get(oid)
+    assert sorted(seen["frames"][oid]) == [k[1], k[3]]
+    assert [kk for kk in k if o.frame(kk) is not None] == [k[0], k[2]]
+    win.undo()
+    assert s.project.get(oid).frame(k[3]).origin.step == 1
+    assert any(win.act_clear_run in m.actions() for m in win.menuBar().findChildren(QMenu))  # Objects menu
+
+
+def test_a_low_sam2_object_score_marks_the_frame_worth_a_look(qapp, win):
+    """p153: the engine hands out SAM2's object score per frame; the frame keeps it, under LOW_SCORE it is ⚠ and
+    the tooltip says why. A propagate function without scores (an older stand-in) still works."""
+    from src.core.project import FrameStatus
+    from src.core.propagation import LOW_SCORE, Direction
+    from tests.app.conftest import wait_until
+    from tests.app.test_gui import click
+    from tests.fakes import fake_propagate
+
+    def scored(*a, scores=None, **kw):
+        for idx, masks in fake_propagate(*a, **kw):
+            scores[idx] = {oid: (LOW_SCORE - 0.1 if idx == 4 else 0.97) for oid in masks}
+            yield idx, masks
+
+    win.propagate_fn = scored
+    s = win.session
+    win.go_to(2)
+    win.new_object()
+    click(win, 30, 30)
+    win.finish_editing()
+    oid = s.project.objects[0].id
+    win.objects_panel.select_ids([oid])
+    win.propagate(0, 4, Direction.BOTH)
+    wait_until(qapp, lambda: win._busy is None)
+    o = s.project.get(oid)
+    k = s.keys
+    assert o.frame(k[3]).status == FrameStatus.PROPAGATED and o.frame(k[3]).variants[0].score == 0.97
+    assert o.frame(k[4]).status == FrameStatus.WARNING
+    win.refresh()
+    assert "score 0.97" in win.images_panel.list.item(3).toolTip()
+    tip = win.images_panel.list.item(4).toolTip()
+    assert f"score {LOW_SCORE - 0.1:.2f}" in tip and "unsure" in tip
+
+    win.propagate_fn = fake_propagate  # no scores: graded by area alone, as before
+    win.propagate(0, 4, Direction.FORWARD)
+    wait_until(qapp, lambda: win._busy is None)
+    assert s.project.get(oid).frame(k[4]).status == FrameStatus.PROPAGATED
+    assert "score" not in win.images_panel.list.item(4).toolTip()
+
+
+def test_timeline_by_camera_rows_and_batch_colors(qapp, win):
+    """p154: By camera gives a row per Object and camera folder, cells by the frame's place in its folder;
+    a batch run's detections and the frames its report says nothing about have their own colors."""
+    import numpy as np
+
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from src.app.timeline_panel import HEAD_H, NAME_W, ROW_H, TimelinePanel
+    from src.core.project import FrameState, FrameStatus, Project, Source
+
+    keys = ["cam0/a.png", "cam0/b.png", "cam0/c.png", "cam1/a.png", "cam1/b.png"]
+    m = np.zeros((4, 4), bool)
+    m[1, 1] = True
+    p = Project(keys)
+    frames = {keys[0]: FrameState.from_mask(m, status=FrameStatus.IMPORTED, note="SAM3"),
+              keys[1]: FrameState.from_mask(m, status=FrameStatus.PROPAGATED, note="propagated from cam0/a"),
+              keys[3]: FrameState.from_mask(m, status=FrameStatus.IMPORTED),  # not in the report
+              keys[4]: FrameState.from_mask(m, status=FrameStatus.WARNING, note="⚠ why")}
+    plain = {keys[2]: FrameState.from_mask(m, status=FrameStatus.IMPORTED)}  # no report at all
+    a, b = p.add_label_objects({"people": frames, "other": plain}, Source.IMPORTED)
+
+    panel = TimelinePanel()
+    panel.resize(600, 200)
+    panel.show()
+    panel.update_from(p, keys, 4, 0, [a])
+    qapp.processEvents()
+    view = panel.view
+    assert panel.split_btn.isVisible() and not view.split and len(view._rows) == 2
+    kinds = {r.oid: r.kinds for r in view._rows}
+    assert kinds[a] == {keys[0]: "detected", keys[1]: "propagated", keys[3]: "unknown", keys[4]: "warning"}
+    assert kinds[b] == {keys[2]: "imported"}
+    assert "not in the batch report" in view.cell_text(0, 3) and "detected" in view.cell_text(0, 0)
+
+    clicked = []
+    panel.cell_clicked.connect(lambda oid, i: clicked.append((oid, i)))
+    panel.split_btn.setChecked(True)
+    qapp.processEvents()
+    assert view.split and [r.label for r in view._rows] == \
+        ["people #1 · cam0", "people #1 · cam1", "other #1 · cam0", "other #1 · cam1"]
+    assert view._rows[1].cols == ("cam1/a.png", "cam1/b.png", None) and view._cols == 3
+    assert [r.count for r in view._rows] == [2, 2, 1, 0]
+    assert view._col(4) == 1  # cam1/b.png: second in its folder
+    w = view.cell_width()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=QPoint(NAME_W + w + w // 2, HEAD_H + ROW_H + ROW_H // 2))  # people · cam1, place 2
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=QPoint(NAME_W + 2 * w + w // 2, HEAD_H + ROW_H + ROW_H // 2))  # past cam1's end
+    assert clicked == [(a, 4)]
+    panel.close()
+
+    assert win.timeline_panel.split_btn.isChecked() is False
+    win.timeline_panel.split_btn.setChecked(True)
+    assert win.settings.timeline_by_camera is True

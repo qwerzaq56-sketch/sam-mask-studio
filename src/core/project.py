@@ -138,6 +138,21 @@ class PromptLayer:
 
 
 @dataclass(frozen=True)
+class Origin:
+    """Where a mask propagated in the app came from (p152): its run (one per Propagate; Resume goes on with
+    it), the reference image, the direction, and how many frames from the reference it is (1 = next to it)."""
+
+    run: int
+    ref: str
+    forward: bool
+    step: int
+
+    def describe(self) -> str:
+        way = "forward" if self.forward else "backward"
+        return f"propagated from {self.ref.rsplit('.', 1)[0]} {way}, {self.step} away (run {self.run})"
+
+
+@dataclass(frozen=True)
 class FrameState:
     """An Object's prompts and mask candidates on one image.
 
@@ -155,6 +170,8 @@ class FrameState:
     status: FrameStatus = FrameStatus.MANUAL
     edit: Optional[EditLayer] = None
     layers: Tuple[PromptLayer, ...] = ()  # point layers over the prompt mask (Original)
+    note: str = ""  # where an imported mask came from / why it is worth a look (a batch report, p150)
+    origin: Optional[Origin] = None  # where a mask propagated here came from (p152)
 
     @property
     def has_prompts(self) -> bool:
@@ -198,9 +215,18 @@ class FrameState:
         return freeze((base | self.edit.add) & ~self.edit.sub)
 
     @staticmethod
-    def from_mask(mask: np.ndarray, score: float = 1.0, status: FrameStatus = FrameStatus.MANUAL) -> "FrameState":
+    def from_mask(mask: np.ndarray, score: float = 1.0, status: FrameStatus = FrameStatus.MANUAL,
+                  note: str = "", origin: Optional[Origin] = None) -> "FrameState":
         m = freeze(mask)
-        return FrameState(base_mask=m, variants=(Variant(m, score),), status=status)
+        return FrameState(base_mask=m, variants=(Variant(m, score),), status=status, note=note, origin=origin)
+
+
+def _unnoted(frame: FrameState) -> FrameState:
+    """A frame edited here (★) drops the imported report's note and its propagation origin: they no longer say
+    where the mask came from (and clearing a run leaves it alone)."""
+    if frame.status == FrameStatus.MANUAL and (frame.note or frame.origin is not None):
+        return dataclasses.replace(frame, note="", origin=None)
+    return frame
 
 
 @dataclass(frozen=True)
@@ -656,7 +682,7 @@ class Project:
         if frame is None:
             frames.pop(key, None)
         else:
-            frames[key] = frame
+            frames[key] = _unnoted(frame)
         self._replace(dataclasses.replace(obj, frames=frames))
 
     def clear_frames(self, obj_ids: Iterable[int], keys: Iterable[str]) -> int:
@@ -671,6 +697,22 @@ class Project:
             gone += len(wanted & set(o.frames))
             self._replace(dataclasses.replace(o, frames={k: f for k, f in o.frames.items() if k not in wanted}))
         return gone
+
+    def remove_frames(self, keys_by_obj: Dict[int, Iterable[str]]) -> int:
+        """Remove each Object's frames on its own image keys, as one undo step; returns how many went."""
+        hits = {}
+        for oid, keys in keys_by_obj.items():
+            o = self.get(oid)
+            gone = set(keys) & set(o.frames) if o is not None else set()
+            if gone:
+                hits[oid] = gone
+        if not hits:
+            return 0
+        self._checkpoint()
+        for oid, gone in hits.items():
+            o = self.get(oid)
+            self._replace(dataclasses.replace(o, frames={k: f for k, f in o.frames.items() if k not in gone}))
+        return sum(len(g) for g in hits.values())
 
     def add_special(self, special: Special, label: str) -> int:
         """A special Object (no masks yet); returns its id."""
@@ -707,7 +749,7 @@ class Project:
             if obj is None:
                 continue
             frames = dict(obj.frames)
-            frames.update(per_key)
+            frames.update({k: _unnoted(fs) for k, fs in per_key.items()})
             self._replace(dataclasses.replace(obj, frames=frames))
 
     def select_variant(self, obj_id: int, key: str, index: int) -> None:

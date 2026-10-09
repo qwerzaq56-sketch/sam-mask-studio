@@ -33,7 +33,8 @@ from src.core.project import (
     freeze,
     union,
 )
-from src.core.propagation import Direction, PropagationPlan, existing_targets, grade
+from src.core.propagation import (Direction, PropagationPlan, RunSummary, existing_targets, grade, origins,
+                                  run_frames, run_summaries)
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.special import LENS_EDGE, SKY, Special, lens_edge_mask, sky_maps, sky_mask
 from src.core.refine import (
@@ -120,6 +121,7 @@ class Session:
         self.max_side = max_side
         self.image_dir: Optional[Path] = None
         self.paths: List[Path] = []
+        self.mask_reports: Dict[int, Path] = {}  # the last import's batch reports: Object id -> report file
         self.store: Optional[ProjectStore] = None
         self.project = Project([])
         self.index = -1
@@ -568,13 +570,23 @@ class Session:
         Each image's mask file (``a.jpg.png`` or ``a.png``) is read, flipped when black
         marks the object, and brought to the working resolution. Images with an empty
         mask get no frame. One undo step for all; returns the new ids.
+
+        A batch run's report for the folder (src/core/mask_report.py, p150) marks its
+        propagated frames ✓ and the ones worth a look ⚠ (an empty one kept, to be found),
+        with the reason in the frame's note; the reports used are in ``self.mask_reports``.
         """
+        from src.core import mask_report
         from src.core.colmap import matched, read_mask
 
         frames_by_label: Dict[str, Dict[str, FrameState]] = {}
         todo = [(Path(d), black, matched(Path(d), list(self.keys))) for d, black in folders]
         total, done = sum(len(m) for _, _, m in todo), 0
+        reports: Dict[str, Path] = {}
         for folder, black, files in todo:
+            hit = mask_report.find(folder)
+            notes = mask_report.notes_for(files, hit[1], hit[2]) if hit else {}
+            if notes:
+                reports[folder.name] = hit[0]
             frames: Dict[str, FrameState] = {}
             for key, path in files.items():
                 m = read_mask(path)
@@ -585,15 +597,21 @@ class Session:
                     continue
                 if black:
                     m = ~m
-                if not m.any():
+                note = notes.get(key) or {}
+                warn = mask_report.warned(note)
+                if not m.any() and not warn:
                     continue
                 h0, w0 = self.original_size(key)
                 if m.shape != (h0, w0):
                     m = resize_mask(m, (h0, w0))  # a mask saved at another size: match the image first
                 m = resize_mask(m, working_size(h0, w0, self.max_side))
-                frames[key] = FrameState.from_mask(m, status=FrameStatus.IMPORTED)  # ↓, not ✓ (U2)
+                status = (FrameStatus.WARNING if warn else FrameStatus.PROPAGATED if mask_report.propagated(note)
+                          else FrameStatus.IMPORTED)  # ↓, not ✓ (U2), unless the report says propagated
+                frames[key] = FrameState.from_mask(m, status=status, note=mask_report.describe(note))
             frames_by_label[folder.name] = frames
         ids = self.project.add_label_objects(frames_by_label, Source.IMPORTED)
+        filled = [label for label, frames in frames_by_label.items() if frames]  # add_label_objects' order
+        self.mask_reports = {oid: reports[label] for oid, label in zip(ids, filled) if label in reports}
         self.sync()
         return ids
 
@@ -1016,6 +1034,19 @@ class Session:
         self.selected_point = None
         return True
 
+    def run_summaries(self, ids: Iterable[int]) -> List[RunSummary]:
+        return run_summaries(self.project.objects, ids)
+
+    def run_frames(self, ids: Iterable[int], run: int, ref: str, direction: Direction,
+                   keep: int = 0) -> Dict[int, List[str]]:
+        return run_frames(self.project.objects, ids, run, ref, direction, keep)
+
+    def clear_run(self, frames: Dict[int, List[str]]) -> int:
+        """Remove a propagation run's frames ({Object id: keys}, from run_frames) as one undo step."""
+        gone = self.project.remove_frames(frames)
+        self.sync()
+        return gone
+
     def clear_frames(self, ids: Iterable[int], rows: Iterable[int]) -> int:
         """Empty the Objects' masks on the images *rows* (one undo step); returns how many masks went."""
         gone = self.project.clear_frames(ids, [self.keys[i] for i in rows])
@@ -1424,12 +1455,17 @@ class Session:
         return existing_targets(frames, self.keys, plan)
 
     def apply_propagation(
-        self, results: Dict[int, Dict[int, np.ndarray]], reference: Dict[int, np.ndarray]
+        self, results: Dict[int, Dict[int, np.ndarray]], reference: Dict[int, np.ndarray],
+        origin: Optional[Tuple[int, PropagationPlan]] = None,
+        scores: Optional[Dict[int, Dict[int, float]]] = None,
     ) -> Dict[int, FrameStatus]:
         """Store propagated masks (``{index: {obj_id: mask}}``) as one undo step.
 
+        *origin*: (run number, the run's first plan): each frame records where it came from (p152).
+        *scores*: ``{index: {obj_id: SAM2 object score}}``, kept as the frame's score; a low one warns (p153).
         Returns each frame's worst status (FAILED > WARNING > PROPAGATED).
         """
+        where = origins(origin[1], origin[0], self.keys) if origin is not None else {}
         rank = {FrameStatus.PROPAGATED: 0, FrameStatus.WARNING: 1, FrameStatus.FAILED: 2}
         ref_area = {oid: int(m.sum()) for oid, m in reference.items()}
         updates: Dict[int, Dict[str, FrameState]] = {}
@@ -1438,8 +1474,10 @@ class Session:
             key = self.keys[idx]
             worst = FrameStatus.PROPAGATED
             for oid, m in by_obj.items():
-                st = grade(m, ref_area.get(oid, 0))
-                updates.setdefault(oid, {})[key] = FrameState.from_mask(m, status=st)
+                sc = (scores or {}).get(idx, {}).get(oid)
+                st = grade(m, ref_area.get(oid, 0), sc)
+                updates.setdefault(oid, {})[key] = FrameState.from_mask(
+                    m, score=1.0 if sc is None else sc, status=st, origin=where.get(idx))
                 if rank[st] > rank[worst]:
                     worst = st
             per_frame[idx] = worst

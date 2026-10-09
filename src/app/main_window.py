@@ -15,9 +15,10 @@ action goes through ``Session`` and then ``refresh()`` redraws all views.
 from __future__ import annotations
 
 import html
+import inspect
 import time
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
     QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
+    QDialog,
     QDockWidget,
     QDoubleSpinBox,
     QSlider,
@@ -38,6 +40,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressDialog,
@@ -54,6 +57,8 @@ from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import THUMB, ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
+from src.app.timeline_panel import TimelinePanel
+from src.app.clear_run_dialog import ClearRunDialog
 from src.app.objects_panel import SOURCE_SHORT, ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
@@ -64,7 +69,7 @@ from src.app.ui_util import DockTitleBar, StartPanel
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.project import FrameStatus
-from src.core.propagation import Direction, PropagationPlan
+from src.core.propagation import Direction, PropagationPlan, next_run
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
@@ -97,6 +102,15 @@ def default_engine_factory(settings: Settings, device: str = "cuda"):
     from src.engine.inference import InferenceEngine
 
     return InferenceEngine(settings.sam2_checkpoint, settings.sam3_checkpoint or None, device=device)
+
+
+def takes_scores(fn) -> bool:
+    """Whether a propagate function takes ``scores`` (the SAM2 engine does; older stand-ins may not)."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "scores" in params or any(p.kind == p.VAR_KEYWORD for p in params.values())
 
 
 def default_propagate():
@@ -134,6 +148,8 @@ class MainWindow(QMainWindow):
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
         self._last_prop: Optional[tuple] = None
         self._prop_queue: List[tuple] = []
+        self._prop_run: Optional[tuple] = None  # (run number, its first plan): each frame's origin (p152)
+        self._prop_scores: Dict[int, Dict[int, float]] = {}  # the running propagation's object scores (p153)
         self._tool = ""  # the Edit Layer tool in use ("" = none)
         self._auto_gen = 0  # newest auto-tool computation; older results are dropped
         self._auto_shown = 0  # the computation whose result is on screen
@@ -245,7 +261,17 @@ class MainWindow(QMainWindow):
         self._list_title = DockTitleBar(list_dock, [self.marks_btn, self.names_btn])
         list_dock.setTitleBarWidget(self._list_title)
         self._list_dock = list_dock
-        self._docks = (list_dock, left_dock, right_dock, frames_dock)  # View > Panels
+        # the Timeline (p151): a row per Object, a tab beside the frame strip
+        self.timeline_panel = TimelinePanel()
+        self.timeline_panel.cell_clicked.connect(self.timeline_clicked)
+        self.timeline_panel.cell_menu.connect(self.timeline_menu)
+        self.timeline_panel.set_split(self.settings.timeline_by_camera)
+        self.timeline_panel.split_toggled.connect(lambda on: self._remember("timeline_by_camera", on))
+        timeline_dock = self._dock("Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self.tabifyDockWidget(frames_dock, timeline_dock)
+        frames_dock.raise_()
+        self._timeline_dock = timeline_dock
+        self._docks = (list_dock, left_dock, right_dock, frames_dock, timeline_dock)  # View > Panels
         # the frame strip spans only the canvas: the side docks keep the full height
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
@@ -382,6 +408,11 @@ class MainWindow(QMainWindow):
         self.act_clear_frames = self._action(
             "Clear Masks on Picked Frames", self.clear_picked_frames,
             tip="Empty the selected Objects' masks on the frames picked in the Frame List (Shift/Ctrl-click)",
+        )
+        self.act_clear_run = self._action(
+            "Clear a Propagation Run…", lambda: self.clear_run(),
+            tip="Remove what one propagation left on the selected Objects: from its reference forward, backward "
+                "or both, from a frame on (the Timeline shows what goes first)",
         )
         self.act_stamp = self._action(
             "Copy Mask to Picked Frames", lambda: self.stamp_picked_frames(),
@@ -553,7 +584,7 @@ class MainWindow(QMainWindow):
         objects = m.addMenu("Objects")
         for a in (self.act_duplicate, self.act_duplicate_all, None, self.act_move, self.act_transfer_options,
                   self.act_merge, self.act_merge_options, None, self.act_lock, self.act_lock_all,
-                  self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames):
+                  self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames, self.act_clear_run):
             objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
         for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side,
@@ -836,6 +867,7 @@ class MainWindow(QMainWindow):
         self.images_panel.set_excluded(project.excluded)
         self.images_panel.update_marks(project, self.marks_object())
         self.images_panel.set_current(s.index)
+        self.timeline_panel.update_from(project, s.keys, s.index, self._reference, self.timeline_rows_marked())
         ref = self._reference if self._reference is not None else s.index
         self.propagation_panel.set_reference(ref, self._reference is not None)
         self.propagation_panel.set_pinned(self._pinned)
@@ -849,7 +881,7 @@ class MainWindow(QMainWindow):
         self.act_export_one.setEnabled(has_folder and not busy and self.session.key is not None)
         self.act_brush.setEnabled(s.mode != Mode.NEW_OBJECT and not busy)  # D not editing: edit with the brush
         for w in (self.canvas, self.objects_panel, self.properties_panel, self.images_panel,
-                  self.images_panel.frame_list):
+                  self.images_panel.frame_list, self.timeline_panel):
             w.setEnabled(has_folder and not busy)
         self.detection_panel.setEnabled(has_folder)
         self.detection_panel.set_busy(busy)
@@ -1089,6 +1121,7 @@ class MainWindow(QMainWindow):
         )
         self.propagation_panel.set_images(self.session.keys)
         self._reference, self._pinned, self._last_prop, self._prop_queue = None, None, None, []
+        self._prop_run = None
         self.propagation_panel.set_resumable(False)
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
@@ -1221,7 +1254,14 @@ class MainWindow(QMainWindow):
         self._select_new(ids)
         for oid in ids:
             o = self.session.project.get(oid)
-            self.log(f"Loaded {o.name}: masks on {len(o.frames)} image(s)")
+            line = f"Loaded {o.name}: masks on {len(o.frames)} image(s)"
+            report = self.session.mask_reports.get(oid)
+            if report is not None:  # p150: the batch report's ✓ propagated / ⚠ worth a look
+                n = {st: sum(fs.status is st for fs in o.frames.values())
+                     for st in (FrameStatus.PROPAGATED, FrameStatus.WARNING)}
+                line += (f"; batch report {report.name}: ✓ {n[FrameStatus.PROPAGATED]} propagated, "
+                         f"⚠ {n[FrameStatus.WARNING]} worth a look (hover a frame for why)")
+            self.log(line)
         return ids
 
     def choose_mask_folder(self) -> None:
@@ -1718,6 +1758,31 @@ class MainWindow(QMainWindow):
     def _remember(self, name: str, value) -> None:
         setattr(self.settings, name, value)
         self.settings.save(self.settings_path)
+
+    def timeline_rows_marked(self) -> list:
+        """The Objects whose Timeline rows are tinted: the one being edited, else the selected ones."""
+        if self.session.editing is not None:
+            return [self.session.editing]
+        return list(self.objects_panel.selected_ids())
+
+    def timeline_clicked(self, oid: int, index: int) -> None:
+        """A Timeline cell: open that frame and select that Object (while editing, the frame only).
+        A name (*index* -1): select that Object, on its nearest frame with a mask when this one has none."""
+        s = self.session
+        o = s.project.get(oid)
+        if o is None:
+            return
+        if index < 0:
+            index = s.index
+            if o.mask(s.key) is None:
+                have = [i for i, k in enumerate(s.keys) if o.mask(k) is not None]
+                if have:
+                    index = min(have, key=lambda i: abs(i - s.index))
+        if index != s.index:
+            self.go_to(index)
+        if s.editing is None:
+            self.objects_panel.select_ids([oid])
+        self.refresh()
 
     def marks_object(self) -> Optional[int]:
         """The Object the frame marks are for (None: every Object)."""
@@ -2439,6 +2504,62 @@ class MainWindow(QMainWindow):
             return None
         return ids
 
+    def clear_run(self, ids: Optional[List[int]] = None, run: Optional[int] = None,
+                  direction: Direction = Direction.BOTH, keep: int = 0) -> None:
+        """Clear a propagation run from the selected Objects (or *ids*), after a preview in the Timeline (p152)."""
+        if ids is None:
+            ids = self._many_frames_ready("clearing a propagation run")
+            if ids is None:
+                return
+        s = self.session
+        if s.key is None or self._busy:
+            return
+        if s.mode == Mode.EDIT:
+            self.log("Finish editing (Esc) before clearing a propagation run")
+            return
+        runs = s.run_summaries(ids)
+        if not runs:
+            self.log("No propagation run to clear on the selected Objects (masks propagated before p152, "
+                     "imported or edited ★ have none)")
+            return
+        names = ", ".join(s.project.get(i).name for i in ids)
+        index = {k: i for i, k in enumerate(s.keys)}
+        self._timeline_dock.show()
+        self._timeline_dock.raise_()
+        dlg = ClearRunDialog(
+            runs, lambda r, d, n: s.run_frames(ids, r.run, r.ref, d, n),
+            lambda frames: sorted({index[k] for ks in frames.values() for k in ks if k in index}),
+            names, self.timeline_panel.view.set_preview, run=run, direction=direction, keep=keep, parent=self)
+        if not self.run_dialog(dlg):
+            return
+        frames = dlg.frames
+        gone = s.clear_run(frames)
+        r = dlg.run()
+        self.log(f"Cleared {gone} mask(s) of run {r.run} (from {r.ref}, {dlg.direction().value}) "
+                 f"on {len(frames)} Object(s) (Ctrl+Z undoes it)")
+        self.refresh()
+
+    def run_dialog(self, dlg) -> bool:
+        """Show a dialog modally; True when accepted (tests replace it)."""
+        return dlg.exec() == QDialog.DialogCode.Accepted
+
+    def timeline_menu(self, oid: int, index: int, pos) -> None:
+        """Right-click on a Timeline cell: clear the run it was propagated in, from here on or whole."""
+        s = self.session
+        o = s.project.get(oid)
+        fs = o.frame(s.keys[index]) if o is not None and 0 <= index < len(s.keys) else None
+        og = fs.origin if fs is not None and fs.mask is not None else None
+        menu = QMenu(self)
+        if og is None:
+            menu.addAction("No propagation run on this frame").setEnabled(False)
+        else:
+            way = Direction.FORWARD if og.forward else Direction.BACKWARD
+            arrow = "▶" if og.forward else "◀"
+            menu.addAction(f"Clear Run {og.run} from Here On {arrow}…",
+                           lambda: self.clear_run([oid], og.run, way, og.step - 1))
+            menu.addAction(f"Clear Run {og.run} (Both Ways)…", lambda: self.clear_run([oid], og.run))
+        menu.exec(pos)
+
     def clear_picked_frames(self) -> None:
         """Empty the selected Objects' masks on the picked frames (one undo step), to redo them."""
         ids = self._many_frames_ready("clearing masks on the picked frames")
@@ -2864,6 +2985,7 @@ class MainWindow(QMainWindow):
             ):
                 return
         self._prop_queue = []
+        self._prop_run = (next_run(s.project.objects), plan)  # Resume goes on with the same run
         self._run_propagation(plan, seeds)
 
     def _run_propagation(self, plan: PropagationPlan, seeds) -> None:
@@ -2884,8 +3006,13 @@ class MainWindow(QMainWindow):
         self._last_prop = (plan, list(seeds), set())
         self.propagation_panel.set_resumable(False)
 
+        scores: Dict[int, Dict[int, float]] = {}  # SAM2's object score per frame, filled as it runs (p153)
+        self._prop_scores = scores
+        extra = {"scores": scores} if takes_scores(propagate) else {}
+
         def run(cancel, progress):
-            return propagate(ckpt, paths, plan, seeds, max_side, device=device, cancel=cancel, progress=progress)
+            return propagate(ckpt, paths, plan, seeds, max_side, device=device, cancel=cancel, progress=progress,
+                             **extra)
 
         w = PropagationWorker(run, self)
         w.progress.connect(self.propagation_panel.on_progress)
@@ -2933,7 +3060,7 @@ class MainWindow(QMainWindow):
         if self._discard:  # Cancel: the frames done are kept; back where the run started, nothing to resume
             self._discard = False
             self._prop_queue = []
-            statuses = self.session.apply_propagation(results, seeds) if results else {}
+            statuses = self.session.apply_propagation(results, seeds, self._prop_run, self._prop_scores) if results else {}
             msg = f"Cancelled: {len(statuses)} image(s) kept" + (" — Ctrl+Z undoes them" if statuses else "")
             self.propagation_panel.finish(statuses, msg)
             self.propagation_panel.set_resumable(False)
@@ -2942,7 +3069,7 @@ class MainWindow(QMainWindow):
             self.refresh()
             return
         self._leave_live(last if outcome == "Stopped" else None)  # Stop: stay on the last frame done
-        statuses = self.session.apply_propagation(results, seeds) if results else {}
+        statuses = self.session.apply_propagation(results, seeds, self._prop_run, self._prop_scores) if results else {}
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
         self.propagation_panel.finish(statuses, msg)

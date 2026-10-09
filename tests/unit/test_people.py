@@ -159,6 +159,10 @@ def test_person_keyframes_propagate_between(tmp_path, monkeypatch):
     assert rep["written"] == 10 and rep["keyframe_count"] == 5 and rep["settings"]["keyframes"] == 3
     f1 = rep["frames"]["cam0/00001.jpg"]
     assert f1["from_keyframes"] == 2 and "found" in rep["frames"]["cam0/00003.jpg"]
+    # p149: where each mask came from
+    assert f1["source"] == "propagated" and rep["frames"]["cam0/00003.jpg"]["source"] == "keyframe"
+    assert f1["from"] == [{"key": "cam0/00000.jpg", "dir": "fwd"}, {"key": "cam0/00003.jpg", "dir": "back"}]
+    assert "from" not in rep["frames"]["cam0/00003.jpg"]
     m1 = read(out / "cam0" / "00001.jpg.png")  # black = people: keyframe 0's place and keyframe 3's
     assert not m1[20, 4] and not m1[20, 34] and m1[20, 64] and m1[100, 100]
     m3 = read(out / "cam0" / "00003.jpg.png")  # a keyframe keeps its own mask only
@@ -177,12 +181,15 @@ def test_person_keyframes_union_adds_propagation_to_every_frame(tmp_path, monkey
         for i in range(n):
             cv2.imencode(".jpg", np.full((200, 200, 3), 10 * i, np.uint8))[1].tofile(str(images / cam / f"{i:05d}.jpg"))
     out = tmp_path / "people"
+    monkeypatch.setattr(cli, "ADDED_WARN", 0.001)  # p149: the fake frames' propagation adds 0.8 %
     rep = cli.person_folder(images, out, recursive=True, labels=["person"], attach=[], grow=0, max_side=200,
                             keyframes=3, union=True, propagate=fake_propagate, log=lambda s: None)
     assert sorted(ShiftEngine.calls) == [0, 0, 1, 1, 2, 2, 3, 4, 5, 6]  # SAM3 on every frame
     assert rep["written"] == 10 and rep["keyframe_count"] == 5 and rep["settings"]["union"] is True
     f1 = rep["frames"]["cam0/00001.jpg"]
     assert f1["from_keyframes"] == 2 and "found" in f1 and f1["added"] > 0
+    assert f1["source"] == "union" and len(f1["from"]) == 2 and "added_big" in f1["warn"]  # p149
+    assert rep["frames"]["cam0/00003.jpg"]["source"] == "keyframe" and rep["warned"]["added_big"] >= 1
     m1 = read(out / "cam0" / "00001.jpg.png")  # black = people: its own place (10) and keyframes 0 and 3's
     assert not m1[20, 14] and not m1[20, 4] and not m1[20, 34] and m1[20, 64]
     m3 = read(out / "cam0" / "00003.jpg.png")  # a keyframe keeps its own mask only
@@ -319,3 +326,32 @@ def test_person_split_with_keyframes_propagates_both(tmp_path, monkeypatch):
     m, o = read(out / "00002.jpg.png"), read(rest / "00002.jpg.png")
     assert not m[20, 50] and not m[70, 50] and m[15, 85]  # propagated, still apart
     assert not o[15, 85] and o[20, 50]
+
+
+class SizeEngine(FakeEngine):
+    """A person whose size follows the frame's brightness (0 = nobody)."""
+
+    def detect_many(self, image, labels):
+        h, w = image.shape[:2]
+        side = int(image[0, 0, 0])
+        return [Det("person", 0.9, box((h, w), 0, side, 0, side))] if side and "person" in labels else []
+
+
+def test_person_report_says_which_frames_are_worth_a_look(tmp_path, monkeypatch):
+    """p149: "warn" per frame against the frame before in its folder; "warned" counts them; "source" = sam3."""
+    monkeypatch.setattr(cli, "_engine", lambda model, device: SizeEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    images = tmp_path / "images"
+    sides = {"cam0": [20, 22, 60, 0, 30], "cam1": [60, 20]}  # cam1 starts afresh: its first frame is not a jump
+    for cam, ss in sides.items():
+        (images / cam).mkdir(parents=True)
+        for i, side in enumerate(ss):
+            cv2.imencode(".png", np.full((200, 200, 3), side, np.uint8))[1].tofile(str(images / cam / f"{i:05d}.png"))
+    rep = cli.person_folder(images, tmp_path / "people", recursive=True, labels=["person"], attach=[], grow=0,
+                            max_side=200, log=lambda s: None)
+    warn = {k: n.get("warn", []) for k, n in rep["frames"].items()}
+    assert warn == {"cam0/00000.png": [], "cam0/00001.png": [], "cam0/00002.png": ["area_jump"],
+                    "cam0/00003.png": ["empty"], "cam0/00004.png": [], "cam1/00000.png": [],
+                    "cam1/00001.png": ["area_jump"]}
+    assert rep["warned"] == {"area_jump": 2, "empty": 1}
+    assert {n["source"] for n in rep["frames"].values()} == {"sam3"}
