@@ -3279,3 +3279,26 @@ def test_source_names_are_words(qapp, win):
     win.refresh()
     title = win.properties_panel.title.text()
     assert "_" not in title.split("·")[-1] and "from " in title
+
+
+def test_rig_frame_list_heads_each_camera(qapp):
+    """p135 (U6): a rig's Frame List has a head line where each camera starts, names keep their number."""
+    from PyQt6.QtWidgets import QStyleOptionViewItem
+
+    from src.app.images_panel import ImagesPanel, camera_heads
+
+    assert camera_heads(["a.jpg", "b.jpg"]) == {}  # one folder: no heads
+    keys = ["cam0/00001.jpg", "cam0/00002.jpg", "cam1/00001.jpg"]
+    assert camera_heads(keys) == {0: "cam0 · 2", 2: "cam1 · 1"}
+    ip = ImagesPanel()
+    ip.set_images(keys)
+    fl = ip.frame_list
+    fl.resize(120, 300)
+    opt = QStyleOptionViewItem()
+    opt.initFrom(fl)
+    h = [ip._delegate.sizeHint(opt, fl.model().index(r, 0)).height() for r in range(3)]
+    assert h[0] == h[2] == 2 * h[1]  # the head line sits on the camera's first row
+    ip.show()
+    qapp.processEvents()
+    assert not fl.grab().isNull()  # paints (head band, name without cam0/)
+    ip.close()
