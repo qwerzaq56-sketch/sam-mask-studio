@@ -848,6 +848,24 @@ def test_open_a_colmap_scene_and_load_its_masks(qapp, win, tmp_path):
     [o] = s.project.objects
     assert o.name.startswith("masks") and o.source.value == "IMPORTED"
     assert sorted(o.frames) == names[:3]
+    # p134 (U2): imported masks are marked ↓, not ✓ as if propagated; editing one makes it ★
+    from src.app.images_panel import image_marks
+    from src.core.project import FrameStatus
+
+    assert {fs.status for fs in o.frames.values()} == {FrameStatus.IMPORTED}
+    assert set(image_marks(s.project).values()) == {"↓"}
+    assert "↓3" in win.images_panel._summaries[0].text()
+    win.objects_panel.select_ids([o.id])
+    win.refresh()
+    assert "from mask folder" in win.properties_panel.title.text()  # U8: words, not IMPORTED
+    win.go_to(0)
+    win.toggle_edit(o.id)
+    assert s.invert_mask()
+    now = s.project.get(o.id).frames
+    assert now[s.key].status == FrameStatus.MANUAL
+    assert [now[k].status for k in names[:3] if k != s.key] == [FrameStatus.IMPORTED] * 2
+    win.finish_editing()
+    win.undo()
     m0 = o.mask(names[0])
     assert m0.any() and m0.mean() < 0.5  # the black square became the object
     assert not s.project.can_undo  # p33: the scene's masks open with it; Ctrl+Z does not take them away
@@ -3238,3 +3256,26 @@ def test_narrow_object_list_keeps_names(qapp, win):
     assert btn().text() == "✎"  # a rebuilt row stays compact
     op._fit_row(op.COMPACT_BELOW + 100)
     assert btn().text() == "Points" and not op.tree.isColumnHidden(5)
+
+
+def test_merging_imported_masks_stays_imported(qapp, win):
+    """p134 (U2): a union of imported masks is still ↓; with a propagated one it is ✓, with an edited one ★."""
+    import numpy as np
+
+    from src.core.project import FrameState, FrameStatus, Project
+
+    m = np.zeros((8, 8), bool)
+    m[2:4, 2:4] = True
+    st = lambda *xs: Project._added([FrameState.from_mask(m, status=x) for x in xs]).status  # noqa: E731
+    assert st(FrameStatus.IMPORTED, FrameStatus.IMPORTED) == FrameStatus.IMPORTED
+    assert st(FrameStatus.IMPORTED, FrameStatus.PROPAGATED) == FrameStatus.PROPAGATED
+    assert st(FrameStatus.IMPORTED, FrameStatus.MANUAL) == FrameStatus.MANUAL
+
+
+def test_source_names_are_words(qapp, win):
+    """p134 (U8): Properties says "from SAM3", not the internal SAM3_DETECTION."""
+    ids = make_objects(win, 1)
+    win.objects_panel.select_ids(ids)
+    win.refresh()
+    title = win.properties_panel.title.text()
+    assert "_" not in title.split("·")[-1] and "from " in title

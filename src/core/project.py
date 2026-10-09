@@ -56,6 +56,7 @@ class FrameStatus(str, Enum):
     PROPAGATED = "propagated"
     WARNING = "warning"  # propagated, but looks suspicious
     FAILED = "failed"  # propagation produced an empty mask
+    IMPORTED = "imported"  # read from a mask folder as it was: not edited here, not propagated (U2, p134)
 
 
 def freeze(mask: np.ndarray) -> np.ndarray:
@@ -554,12 +555,18 @@ class Project:
 
     @staticmethod
     def _added(frames: Sequence[FrameState]) -> Optional[FrameState]:
-        """One frame holding the union of *frames*' masks (★ if any of them was edited by hand)."""
+        """One frame holding the union of *frames*' masks (★ if any of them was edited by hand, ↓ if all were imported)."""
         m = union(fs.mask for fs in frames)
         if m is None:
             return None
-        manual = any(fs.status == FrameStatus.MANUAL for fs in frames)
-        return FrameState.from_mask(m, status=FrameStatus.MANUAL if manual else FrameStatus.PROPAGATED)
+        statuses = {fs.status for fs in frames if fs.mask is not None}
+        if FrameStatus.MANUAL in statuses:
+            status = FrameStatus.MANUAL
+        elif statuses == {FrameStatus.IMPORTED}:
+            status = FrameStatus.IMPORTED
+        else:
+            status = FrameStatus.PROPAGATED
+        return FrameState.from_mask(m, status=status)
 
     def copy_into(self, src_id: int, dst_id: int, replace: bool, keys: Optional[Iterable[str]] = None,
                   move: bool = False) -> List[str]:

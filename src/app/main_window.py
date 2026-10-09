@@ -54,7 +54,7 @@ from src.app.batch_panel import BatchPanel
 from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import THUMB, ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
-from src.app.objects_panel import ObjectsPanel
+from src.app.objects_panel import SOURCE_SHORT, ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
 from src.core.special import LABELS as SPECIAL_LABELS
@@ -63,7 +63,7 @@ from src.app.session import IMAGE_TOOLS, Mode, Session
 from src.app.ui_util import DockTitleBar
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
-from src.core.project import FrameStatus, Source
+from src.core.project import FrameStatus
 from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
@@ -83,14 +83,6 @@ logger = get_logger(__name__)
 AUTO_ADD_COLOR = (40, 110, 255)
 AUTO_SUB_COLOR = (255, 120, 0)
 
-SOURCE_SHORT = {  # how an Object was made, in the work bar
-    Source.SAM3_DETECTION: "SAM3",
-    Source.SAM3_BATCH: "SAM3 batch",
-    Source.SAM2_POINT: "SAM2",
-    Source.SAM2_BOX: "SAM2 box",
-    Source.MERGED: "merged",
-    Source.DUPLICATE: "copy",
-}
 
 
 # Keys that move while the mouse is over a list (see MainWindow.eventFilter): -1 = back, +1 = on

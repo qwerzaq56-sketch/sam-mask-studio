@@ -34,9 +34,19 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.special import LENS_EDGE, SKY
-from src.core.project import MaskObject
+from src.core.project import MaskObject, Source
 
 ID_ROLE = Qt.ItemDataRole.UserRole
+SOURCE_SHORT = {  # how an Object was made, in words (work bar, Properties, the list's tooltip): not SAM3_DETECTION
+    Source.SAM3_DETECTION: "SAM3",
+    Source.SAM3_BATCH: "SAM3 batch",
+    Source.SAM2_POINT: "SAM2",
+    Source.SAM2_BOX: "SAM2 box",
+    Source.MERGED: "merged",
+    Source.DUPLICATE: "copy",
+    Source.IMPORTED: "mask folder",
+    Source.SPECIAL: "special",
+}
 COLUMNS = 7  # 👁 · name (check box) · linked (🔗 n) · 🔒 · Edit · × · ···  (the eye first, as in layer lists)
 EYE, NAME, LINK = 0, 1, 2
 VARIANT_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -354,7 +364,7 @@ class ObjectsPanel(QWidget):
             item.setCheckState(NAME, state)
         has = key is not None and o.mask(key) is not None
         n = sum(1 for fs in o.frames.values() if fs.mask is not None)
-        item.setToolTip(NAME, f"{o.source.value} · masks on {n} image(s)" + ("" if has else " · none on this image"))
+        item.setToolTip(NAME, f"From {SOURCE_SHORT.get(o.source, o.source.value)} · masks on {n} image(s)" + ("" if has else " · none on this image"))
         # linked: the same Object on several images (propagated, batch, ...)
         link = f"🔗 {n}" if n > 1 else ""
         if item.text(LINK) != link:

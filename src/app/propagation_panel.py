@@ -41,6 +41,7 @@ MARK = {
     REFERENCE: "★",
     FrameStatus.MANUAL: "★",
     FrameStatus.PROPAGATED: "✓",
+    FrameStatus.IMPORTED: "↓",
     FrameStatus.WARNING: "⚠",
     FrameStatus.FAILED: "✕",
 }
