@@ -211,11 +211,14 @@ def test_empty_states_and_steady_panel_widths(qapp, win):
     assert win.propagation_panel.run_view.isHidden()  # no run yet: no progress / lists
     assert win.batch_panel.progress.isHidden() and win.batch_panel.results.isHidden()
     ids = make_objects(win, 1)
-    pump()
-    widths = [d.width() for d in win.findChildren(QDockWidget)]
     win.toggle_edit(ids[0])
     pp.tabs.setCurrentIndex(pp.layer_tab)
     win.set_brush_tool("object_fill")
+    pump()
+    # p133 (U3): the Edit Layer page is never cut off; Properties may widen for it instead
+    area = pp.tabs.currentWidget()
+    assert area.widget().width() <= area.viewport().width()
+    widths = [d.width() for d in win.findChildren(QDockWidget)]
     win.set_region_mode(True)
     pump()
     assert not pp.tabs.isHidden()
@@ -3193,3 +3196,45 @@ def test_a_camera_with_its_own_work_asks_how_to_open(qapp, win, tmp_path):
 def test_dragging_on_the_strip_draws_no_box(qapp, win):
     """A drag on the thumbnail strip drew icon mode's rubber band (user report, p132)."""
     assert not win.images_panel.list.isSelectionRectVisible()
+
+
+# --- p133: narrow windows (UX audit bundle C: U3–U5) ---------------------------------
+
+
+def test_propagation_view_scrolls_instead_of_growing_the_window(qapp, win):
+    panel = win.propagation_panel
+    before = panel.minimumSizeHint().height()
+    panel._show_run(True)
+    qapp.processEvents()
+    assert panel.minimumSizeHint().height() == before  # U5: the lists scroll; the window stays as tall
+
+
+def test_button_row_folds_to_two_a_row(qapp):
+    from PyQt6.QtWidgets import QPushButton
+
+    from src.app.ui_util import ButtonRow
+
+    buttons = [QPushButton(t) for t in ("All", "None", "Preview", "Select on Image")]
+    row = ButtonRow(buttons)
+    row.resize(2000, 40)
+    row.show()
+    qapp.processEvents()
+    assert len({b.y() for b in buttons}) == 1
+    row.resize(120, 80)
+    qapp.processEvents()
+    assert len({b.y() for b in buttons}) == 2 and buttons[1].y() == buttons[0].y()
+    row.close()
+
+
+def test_narrow_object_list_keeps_names(qapp, win):
+    from PyQt6.QtWidgets import QPushButton
+
+    ids = make_objects(win, 1)
+    op = win.objects_panel
+    btn = lambda: op.tree.findChild(QPushButton, f"edit_{ids[0]}")  # noqa: E731
+    op._fit_row(op.COMPACT_BELOW - 1)
+    assert btn().text() == "✎" and op.tree.isColumnHidden(5)  # U4: ✎ and no × column
+    win.refresh()
+    assert btn().text() == "✎"  # a rebuilt row stays compact
+    op._fit_row(op.COMPACT_BELOW + 100)
+    assert btn().text() == "Points" and not op.tree.isColumnHidden(5)

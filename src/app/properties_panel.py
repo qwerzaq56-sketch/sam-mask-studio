@@ -40,7 +40,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.objects_panel import later
-from src.app.ui_util import CollapsibleBox, shrinkable
+from src.app.ui_util import CollapsibleBox, ColumnScroll, allow_narrow, shrinkable
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.project import FrameState, MaskObject
 
@@ -94,11 +94,7 @@ def mask_thumbnail(image: Optional[np.ndarray], mask: np.ndarray, color, size: i
 
 
 def _scrolled(page: QWidget) -> QScrollArea:
-    area = QScrollArea()
-    area.setWidget(page)
-    area.setWidgetResizable(True)
-    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    area.setFrameShape(QScrollArea.Shape.NoFrame)
+    area = ColumnScroll(page)
     page.setMinimumHeight(page.sizeHint().height())  # scroll instead of squashing the lists
     return area
 
@@ -322,12 +318,14 @@ class PropertiesPanel(QWidget):
         abox = QGroupBox("Auto tools")
         av = QVBoxLayout(abox)
         rows = (
-            (None, [tool_button("object_fill"), tool_button("fill_holes"), tool_button("remove_specks")]),
-            (None, [tool_button("grow"), tool_button("shrink"), tool_button("close_gaps")]),
+            # two a row (U3, p133): three cut "Remove Specks" / "Close Gaps" off in a 1280 px window
+            (None, [tool_button("object_fill"), tool_button("fill_holes")]),
+            (None, [tool_button("remove_specks"), tool_button("close_gaps")]),
+            (None, [tool_button("grow"), tool_button("shrink")]),
             (None, [tool_button("invert"), tool_button("by_color")]),
             ("Mode", [self.mode_fill_btn, self.mode_paint_btn]),
-            (" ", [self.recompute_btn, self.apply_auto_btn]),
-            (" ", [self.apply_all_btn]),
+            (None, [self.recompute_btn, self.apply_auto_btn]),
+            (None, [self.apply_all_btn]),
             (self.mode_hint, None),
             ("Region", [self.region_btn, self.clear_region_btn]),
             (self.scope_label, None),
@@ -447,6 +445,8 @@ class PropertiesPanel(QWidget):
             return w
 
         self.settings_stack = QStackedWidget()
+        # only the shown tool's page sets the width: By Color's must not widen Grow's (U3, p133)
+        self.settings_stack.currentChanged.connect(self._fit_stack)
         self._pages = {
             "object_fill": self.settings_stack.addWidget(page(
                 (("Max grow", self.grow), ("Sensitivity", self.sensitivity)),
@@ -472,6 +472,7 @@ class PropertiesPanel(QWidget):
         by_color = QWidget()
         bf = QFormLayout(by_color)
         bf.setContentsMargins(0, 0, 0, 0)
+        bf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)  # a narrow dock: the field under its label
         # presets (p105): every By Color setting, the picked and left-out colors too, under a name
         self._color_presets: dict = {}
         self.color_preset = QComboBox()
@@ -596,7 +597,17 @@ class PropertiesPanel(QWidget):
         self.empty_space.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         lay.addWidget(self.empty_space, 1)
         lay.addWidget(self.finish_btn)
+        allow_narrow(self, min_chars=6)  # combo boxes and buttons shrink with the dock instead of being cut off (U3)
+        for b in layer_page.findChildren(QPushButton):
+            if b is not self.edit_btn:  # it carries the Object's name
+                b.setMinimumWidth(0)  # the tool buttons keep their whole label: the dock widens instead
+        self._fit_stack(self.settings_stack.currentIndex())
         self.show_frame(None, None, None, None)
+
+    def _fit_stack(self, index: int) -> None:
+        for i in range(self.settings_stack.count()):
+            policy = QSizePolicy.Policy.Preferred if i == index else QSizePolicy.Policy.Ignored
+            self.settings_stack.widget(i).setSizePolicy(policy, policy)
 
     def selected_point(self) -> Optional[int]:
         it = self.points.currentItem()

@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.app.objects_panel import color_icon
-from src.app.ui_util import allow_narrow
+from src.app.ui_util import ButtonRow, allow_narrow
 from src.core.project import Detection
 from src.core.prompts import split_labels
 
@@ -103,19 +103,15 @@ class DetectionPanel(QWidget):
         self.per_label_btn.clicked.connect(lambda: self.add_requested.emit("per_label"))
         self.clear_btn = QPushButton("Discard")
         self.clear_btn.clicked.connect(self.clear_requested)
-        row = QHBoxLayout()  # selection / view
-        for b, stretch in ((self.all_btn, 2), (self.none_btn, 2), (self.preview_btn, 3), (self.select_btn, 4)):
-            row.addWidget(b, stretch)
-        row2 = QHBoxLayout()  # what to do with the checked ones
-        for b, stretch in ((self.clear_btn, 2), (self.add_btn, 3), (self.merge_btn, 3), (self.per_label_btn, 4)):
-            row2.addWidget(b, stretch)
+        row = ButtonRow((self.all_btn, self.none_btn, self.preview_btn, self.select_btn))  # selection / view
+        row2 = ButtonRow((self.clear_btn, self.add_btn, self.merge_btn, self.per_label_btn))  # the checked ones
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(top)
         lay.addWidget(self.tree, 1)
         lay.addWidget(self.status)
-        lay.addLayout(row)
-        lay.addLayout(row2)
+        lay.addWidget(row)
+        lay.addWidget(row2)
         self.set_detections([], [])
         allow_narrow(self)  # it shares the left column with the Objects
 
