@@ -3477,6 +3477,25 @@ def test_batch_masking_shows_the_people_keyframes_and_union(qapp, tmp_path):
     dlg.deleteLater()
 
 
+def test_batch_masking_shows_the_people_steady_labels(qapp, tmp_path):
+    """p146: steady (p145) labels and frames are shown and edited; the frames box only matters with labels."""
+    from src.app.batch_mask_dialog import BatchMaskDialog
+    from src.batchmask.presets import list_presets
+
+    dlg = BatchMaskDialog(tmp_path, tmp_path / "scene")
+    p = next(p for p in list_presets() if p.person and p.person.steady)
+    dlg.preset.setCurrentIndex(dlg.preset.findData(p.name))
+    assert dlg.steady.text() == "; ".join(p.person.steady) and dlg.steady_frames.value() == p.person.steady_frames
+    assert dlg.steady_frames.isEnabled()
+    dlg.steady.setText("handcart; stroller")
+    dlg.steady_frames.setValue(3)
+    assert dlg.steady_frames.text() == "touching in 3 of 5 frames around"
+    assert (dlg.current().person.steady, dlg.current().person.steady_frames) == (["handcart", "stroller"], 3)
+    dlg.steady.setText("")
+    assert not dlg.steady_frames.isEnabled() and dlg.current().person.steady == []
+    dlg.deleteLater()
+
+
 def test_batch_masking_fits_the_screen_with_its_buttons_in_view(qapp, tmp_path):
     """p144: at 150 % (a 1920 x 1080 screen is 1280 x 693) the window fits the screen, opens at the top of its
     settings, and Try Prompts / Run stay below the scrolling column."""
