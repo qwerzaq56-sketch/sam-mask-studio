@@ -12,7 +12,17 @@ from src.version import app_version
 logger = get_logger(__name__)
 
 
+def ensure_std_streams() -> None:
+    """Started without a console and without redirected output (SplatBatch's CREATE_NO_WINDOW, pythonw), stdout
+    and stderr are None, and the first progress bar (SAM2's tqdm "frame loading") fails the propagation."""
+    import os
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
 def main() -> None:
+    ensure_std_streams()
     parser = argparse.ArgumentParser(description="SAM Mask Studio — SAM3 finds, SAM2 cuts and refines")
     parser.add_argument("folder", nargs="?", help="Image folder to open")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")

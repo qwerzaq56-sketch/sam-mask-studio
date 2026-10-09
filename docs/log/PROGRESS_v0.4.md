@@ -1093,6 +1093,13 @@
 - 클릭 · 우클릭 · 툴팁 · 지우기 미리 보기는 그대로(칸 → 그 프레임 번호).
 - 테스트 347개 통과(새 테스트 1, p151 테스트를 새 줄 구조로).
 
+## v0.4-p155 — SplatBatch가 띄운 창에서 전파가 실패하던 것 (2026-10-10)
+- 사용자 보고(10-10): SplatBatch로 연 SAM Mask Studio에서 전파가 잘 안 됨.
+- 원인(배포판 v0.6.0 로그 `propagation_failed`, 10-10 02:11): SplatBatch 창(pythonw)이 앱을 `CREATE_NO_WINDOW`로, 출력 연결 없이 띄워서 `sys.stdout` · `sys.stderr`가 None. SAM2 `init_state`의 "frame loading (JPEG)" tqdm 진행 막대가 stderr에 쓰다 `'NoneType' object has no attribute 'write'`로 전파 전체가 실패. 손으로 연 창 · 명령줄(출력을 파이프로 받음)은 해당 없음.
+- `src/main.py` `ensure_std_streams()`: 시작할 때 None인 stdout / stderr를 devnull로 바꿈(로그 파일은 그대로).
+- 테스트 349개 통과(새 테스트 2: stderr가 None이면 tqdm이 실패하는 것을 재현하고, 고친 뒤 통과).
+- 배포판(SplatBatch `tools\sam-mask-studio\0.6.0`)에는 아직 없음: 새 배포판으로 올리거나 SplatBatch가 출력을 DEVNULL로 넘기면 해결.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
