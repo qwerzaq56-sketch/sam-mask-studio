@@ -71,6 +71,7 @@ LENS_SAMPLES = 16  # frames per camera folder the circle is found in
 SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
 SAM2_MODEL = SKY_SAM2  # SAM2 tiny: the engine wants a path; sky after By Color loads it
 GPU_NEEDED = 5.0  # GB free before person starts (SAM3 at 1024 px peaked at 4.2 GB on 0022)
+ADDED_WARN = 0.01  # person report: union propagation added more than this share of the frame (0022 max 0.0092)
 KEYFRAME_MIN_PIECE = 0.0005  # of the frame: smaller pieces of a keyframe's people are not propagated
 
 
@@ -324,14 +325,15 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
                max_side: int, device: str, propagate) -> Iterator[Tuple[int, np.ndarray, int]]:
     """The people of each frame of one camera folder (*keys*, in order) at the working size, in order: the
     keyframes' own masks (*marks*: index -> mask), a frame between two keyframes the union of what SAM2
-    carries forward from the one before and back from the one after. Yields (index, mask, how many keyframes
-    it came from; 0 for a keyframe). A keyframe's SAM2 run is left out when no frame it reaches is *wanted*."""
+    carries forward from the one before and back from the one after. Yields (index, mask, the keyframes it
+    came from as ``(keyframe index, "fwd" | "back")``; empty for a keyframe). A keyframe's SAM2 run is left out
+    when no frame it reaches is *wanted*."""
     from src.core.propagation import Direction, PropagationPlan
 
     paths = [images / k for k in keys]
     picks = sorted(marks)
     got: Dict[int, np.ndarray] = {}
-    hits: Dict[int, int] = {}
+    hits: Dict[int, List[Tuple[int, str]]] = {}
     nxt = 0  # the next index to hand out
     for j, k in enumerate(picks):
         lo = picks[j - 1] if j else k
@@ -355,15 +357,15 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
                     if o.shape == m.shape[1:]:
                         m[layer_of.get(obj, 0)] |= o
                 got[idx] = m
-                hits[idx] = hits.get(idx, 0) + 1
+                hits.setdefault(idx, []).append((k, "fwd" if k < idx else "back"))
         while nxt <= k:  # every frame up to this keyframe has had both its keyframes now
             if nxt in marks:
-                yield nxt, marks[nxt], 0
+                yield nxt, marks[nxt], []
             else:
                 m = got.pop(nxt, None)
                 if m is None:
                     m = np.zeros_like(layers)
-                yield nxt, (m if marks[k].ndim == 3 else m[0]), hits.pop(nxt, 0)
+                yield nxt, (m if marks[k].ndim == 3 else m[0]), hits.pop(nxt, [])
             nxt += 1
 
 
@@ -425,6 +427,26 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
             return rgb.shape[:2], np.stack(parts), counts
         return rgb.shape[:2], people_mask(dets, work.shape[:2], labels, attach, threshold, touch, 0), counts
 
+    from src.core.propagation import WARN_AREA_RATIO
+
+    last: Dict[str, float] = {}  # the people share of the frame before, a camera folder each
+
+    def warnings(key, area, note):
+        """Why a frame is worth a look (p149): the people's area jumped from the frame before in its folder
+        (more than WARN_AREA_RATIO either way, as the app's propagation), went empty, or union propagation
+        added more than ADDED_WARN of the frame."""
+        f = _folder(key)
+        before, last[f] = last.get(f), area
+        warn = []
+        if before:
+            if area == 0:
+                warn.append("empty")
+            elif not 1.0 / WARN_AREA_RATIO <= area / before <= WARN_AREA_RATIO:
+                warn.append("area_jump")
+        if note.get("added", 0) > ADDED_WARN:
+            warn.append("added_big")
+        return warn
+
     def finish(key, people, size, note):
         if people.ndim == 3:  # --split: the photographer, everyone else
             people, rest = people
@@ -437,11 +459,13 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         keep = ~found
         if and_with is not None:
             keep = _multiply(keep, and_with, b.name(key), missing, key)
-        return (~keep if invert else keep), dict(note, people=round(float(found.mean()), 4))
+        area = float(found.mean())
+        warn = warnings(key, area, note)
+        return (~keep if invert else keep), dict(note, people=round(area, 4), **({"warn": warn} if warn else {}))
 
     def make(key):
         size, people, counts = detect(key)
-        return finish(key, people, size, {"found": counts})
+        return finish(key, people, size, {"source": "sam3", "found": counts})
 
     def what(note):
         if "found" in note and "from_keyframes" in note:
@@ -452,13 +476,21 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         else:
             how = ", ".join(f"{k} {v}" for k, v in note["found"].items()) or "nothing found"
         rest = f" (others {100 * note['others']:.1f}%)" if "others" in note else ""
-        return f"masked {100 * note['people']:.1f}%{rest}  {how}"
+        warn = f"  ! {', '.join(note['warn'])}" if note.get("warn") else ""
+        return f"masked {100 * note['people']:.1f}%{rest}  {how}{warn}"
 
     if every and b.todo:
         make = _keyframe_maker(b, images, every, detect, finish, max_side, device,
                                propagate or _default_propagate(), eng, log, dense=union)
         eng = None  # released once the keyframes are done
     report = b.run(make, what)
+    warned: Dict[str, int] = {}
+    for n in report["frames"].values():
+        for w in n.get("warn", []):
+            warned[w] = warned.get(w, 0) + 1
+    report["warned"] = warned
+    if warned:
+        log("worth a look: " + ", ".join(f"{k} {v}" for k, v in warned.items()) + " (frames' \"warn\" in the report)")
     if every:
         report["keyframe_count"] = sum(1 for n in report["frames"].values()
                                        if "found" in n and "from_keyframes" not in n)
@@ -512,11 +544,13 @@ def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_si
 
     def make(key):
         folder, i = where[key]
-        for j, people, hits in streams[folder]:
+        for j, people, srcs in streams[folder]:
             if j == i:
                 break
         else:
             raise RuntimeError("propagation ended before this frame")
+        hits = len(srcs)
+        came = {"from": [{"key": folders[folder][k], "dir": d} for k, d in srcs]} if srcs else {}
         if key in own:
             mine = own.pop(key)
             if people.shape != mine.shape:  # the propagated mask at another working size
@@ -524,11 +558,12 @@ def _keyframe_maker(b: "Batch", images: Path, every: int, detect, finish, max_si
                                    for p in (people if people.ndim == 3 else people[None])]).reshape(mine.shape)
             both = mine | people
             added = float((both & ~mine).mean()) if mine.ndim == 2 else float((both[0] & ~mine[0]).mean())
-            return finish(key, both, sizes[key], {"found": found[key], "from_keyframes": hits,
-                                                  "added": round(added, 4)})
+            return finish(key, both, sizes[key], {"source": "union", "found": found[key], "from_keyframes": hits,
+                                                  **came, "added": round(added, 4)})
         if key in found:
-            return finish(key, people, sizes[key], {"found": found[key]})
-        return finish(key, people, read_rgb(images / key).shape[:2], {"from_keyframes": hits})
+            return finish(key, people, sizes[key], {"source": "keyframe", "found": found[key]})
+        return finish(key, people, read_rgb(images / key).shape[:2],
+                      {"source": "propagated", "from_keyframes": hits, **came})
 
     return make
 
