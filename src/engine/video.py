@@ -30,12 +30,17 @@ def propagate(
     device: str = "cuda",
     cancel: Optional[Callable[[], bool]] = None,
     progress: Optional[ProgressFn] = None,
+    scores: Optional[Dict[int, Dict[int, float]]] = None,
 ) -> Iterator[Tuple[int, Dict[int, np.ndarray]]]:
     """Propagate each seed mask (obj_id -> bool mask on ``plan.current``) through the plan's frames.
 
     Yields ``(sequence_index, {obj_id: bool mask at that image's working size})``
     for every target frame, backward pass first, then forward. The current
     frame is never yielded.
+
+    *scores* (a dict, filled as frames are yielded): ``{sequence_index: {obj_id: object score}}``, SAM2's
+    belief that the object is in that frame (the sigmoid of its object score logit; at 0.5 or below the mask
+    is empty). p153: a low one is a propagation warning (:data:`src.core.propagation.LOW_SCORE`).
 
     SAM2's video loader only reads a folder of numbered JPEGs, so the frames in
     the plan's window are written there at working resolution. Copies are used
@@ -96,6 +101,8 @@ def propagate(
                     for j, oid in enumerate(obj_ids):
                         m = (video_masks[j, 0] > 0.0).cpu().numpy()
                         out[int(oid)] = resize_mask(m, sizes[idx])
+                    if scores is not None:
+                        scores[idx] = object_scores(state, rel_idx, obj_ids)
                     done += 1
                     if progress:
                         progress(phase, done, total)
@@ -107,3 +114,17 @@ def propagate(
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+
+
+def object_scores(state: dict, rel_idx: int, obj_ids) -> Dict[int, float]:
+    """Each object's score on video frame *rel_idx*, read from the predictor's state; objects without one
+    (a SAM2 build that does not keep it) are left out."""
+    out = {}
+    for oid in obj_ids:
+        try:
+            per = state["output_dict_per_obj"][state["obj_id_to_idx"][oid]]
+            frame = per["non_cond_frame_outputs"].get(rel_idx) or per["cond_frame_outputs"].get(rel_idx)
+            out[int(oid)] = float(torch.sigmoid(frame["object_score_logits"].float()).max())
+        except (KeyError, TypeError, AttributeError, RuntimeError):
+            continue
+    return out

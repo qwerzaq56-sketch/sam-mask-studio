@@ -141,13 +141,18 @@ def next_run(objects: Iterable) -> int:
 
 # A propagated mask whose area drifts this far from the reference is flagged.
 WARN_AREA_RATIO = 4.0
+# SAM2's object score (0..1) under this on a frame with a mask: it is unsure the object is there (p153).
+# At 0.5 or below SAM2 empties the mask itself (✕). Provisional until measured on real runs.
+LOW_SCORE = 0.8
 
 
-def grade(mask: np.ndarray, reference_area: int) -> FrameStatus:
-    """Classify a propagated mask: FAILED if empty, WARNING if its area jumped."""
+def grade(mask: np.ndarray, reference_area: int, score: Optional[float] = None) -> FrameStatus:
+    """Classify a propagated mask: FAILED if empty, WARNING if its area jumped or SAM2's object score is low."""
     area = int(mask.sum())
     if area == 0:
         return FrameStatus.FAILED
+    if score is not None and score < LOW_SCORE:
+        return FrameStatus.WARNING
     if reference_area > 0:
         ratio = area / reference_area
         if ratio > WARN_AREA_RATIO or ratio < 1.0 / WARN_AREA_RATIO:

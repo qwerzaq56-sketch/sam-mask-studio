@@ -72,9 +72,9 @@ class FakeEngine:
 
 
 def fake_propagate(
-    sam2_ckpt, image_paths, plan, seeds, max_side, device="cuda", cancel=None, progress=None
+    sam2_ckpt, image_paths, plan, seeds, max_side, device="cuda", cancel=None, progress=None, scores=None
 ) -> Iterator:
-    """Stand-in for ``src.engine.video.propagate``: copies each seed to every target frame."""
+    """Stand-in for ``src.engine.video.propagate``: copies each seed to every target frame (no *scores*)."""
     total = len(plan.targets)
     done = 0
     for phase, targets in (("Backward", plan.backward), ("Forward", plan.forward)):

@@ -15,9 +15,10 @@ action goes through ``Session`` and then ``refresh()`` redraws all views.
 from __future__ import annotations
 
 import html
+import inspect
 import time
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -103,6 +104,15 @@ def default_engine_factory(settings: Settings, device: str = "cuda"):
     return InferenceEngine(settings.sam2_checkpoint, settings.sam3_checkpoint or None, device=device)
 
 
+def takes_scores(fn) -> bool:
+    """Whether a propagate function takes ``scores`` (the SAM2 engine does; older stand-ins may not)."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "scores" in params or any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+
 def default_propagate():
     from src.engine.video import propagate
 
@@ -139,6 +149,7 @@ class MainWindow(QMainWindow):
         self._last_prop: Optional[tuple] = None
         self._prop_queue: List[tuple] = []
         self._prop_run: Optional[tuple] = None  # (run number, its first plan): each frame's origin (p152)
+        self._prop_scores: Dict[int, Dict[int, float]] = {}  # the running propagation's object scores (p153)
         self._tool = ""  # the Edit Layer tool in use ("" = none)
         self._auto_gen = 0  # newest auto-tool computation; older results are dropped
         self._auto_shown = 0  # the computation whose result is on screen
@@ -2993,8 +3004,13 @@ class MainWindow(QMainWindow):
         self._last_prop = (plan, list(seeds), set())
         self.propagation_panel.set_resumable(False)
 
+        scores: Dict[int, Dict[int, float]] = {}  # SAM2's object score per frame, filled as it runs (p153)
+        self._prop_scores = scores
+        extra = {"scores": scores} if takes_scores(propagate) else {}
+
         def run(cancel, progress):
-            return propagate(ckpt, paths, plan, seeds, max_side, device=device, cancel=cancel, progress=progress)
+            return propagate(ckpt, paths, plan, seeds, max_side, device=device, cancel=cancel, progress=progress,
+                             **extra)
 
         w = PropagationWorker(run, self)
         w.progress.connect(self.propagation_panel.on_progress)
@@ -3042,7 +3058,7 @@ class MainWindow(QMainWindow):
         if self._discard:  # Cancel: the frames done are kept; back where the run started, nothing to resume
             self._discard = False
             self._prop_queue = []
-            statuses = self.session.apply_propagation(results, seeds, self._prop_run) if results else {}
+            statuses = self.session.apply_propagation(results, seeds, self._prop_run, self._prop_scores) if results else {}
             msg = f"Cancelled: {len(statuses)} image(s) kept" + (" — Ctrl+Z undoes them" if statuses else "")
             self.propagation_panel.finish(statuses, msg)
             self.propagation_panel.set_resumable(False)
@@ -3051,7 +3067,7 @@ class MainWindow(QMainWindow):
             self.refresh()
             return
         self._leave_live(last if outcome == "Stopped" else None)  # Stop: stay on the last frame done
-        statuses = self.session.apply_propagation(results, seeds, self._prop_run) if results else {}
+        statuses = self.session.apply_propagation(results, seeds, self._prop_run, self._prop_scores) if results else {}
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
         self.propagation_panel.finish(statuses, msg)

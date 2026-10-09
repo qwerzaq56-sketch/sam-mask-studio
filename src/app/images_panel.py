@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.project import FrameStatus, Project
+from src.core.propagation import LOW_SCORE
 
 # Most important first: a failed or suspicious frame must stand out in a long list.
 PRIORITY = (
@@ -83,7 +84,17 @@ def frame_note(fs) -> str:
     (p152); "" for neither."""
     if fs.note:
         return fs.note
-    return fs.origin.describe() if fs.origin is not None else ""
+    if fs.origin is None:
+        return ""
+    text = fs.origin.describe()
+    score = fs.variants[0].score if fs.variants else None
+    if score is not None and score != 1.0:  # SAM2's object score (p153; earlier runs kept none)
+        text += f", score {score:.2f}"
+    if fs.status == FrameStatus.WARNING:
+        low = score is not None and score < LOW_SCORE
+        text += " · ⚠ " + ("SAM2 is unsure it is there (low score)" if low else
+                           "its area changed a lot from the reference")
+    return text
 
 
 def image_notes(project: Project, only: Optional[int] = None) -> Dict[str, str]:
