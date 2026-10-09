@@ -1009,6 +1009,11 @@
 - 영향: OSMO 프리셋으로 돌리는 배치(SplatBatch 단계 4)가 3.07 → 3.50초/장, 놓침 0.27 → 0.04 %(0022 cam0). 다른 내장 프리셋은 그대로.
 - 테스트 330개 통과(새 1개, 프리셋 테스트는 가짜 전파로).
 
+## v0.4-p143 — Batch Masking 창에 사람 마스크 Keyframes · Union 칸 (2026-10-09)
+- 사용자 요청: p141(`person --keyframes N --union`) · p142(OSMO 프리셋 기본 keyframes 10 + union)의 값을 창에서 보고 고치게.
+- People 칸 아래 **Keyframes**(`SAM3 on 1 frame in 10, SAM2 between`, 0 = `off: SAM3 on every frame`)와 **union** 체크(`SAM3 on every frame too, the propagation added on top`). union은 Keyframes가 2 이상일 때만 켜지고, 아니면 저장할 때 꺼짐. Save as Preset · Run이 이 값을 씀(전에는 `_person_rest`로 보존만).
+- 1280×720 캡처로 확인. 테스트 331개 통과(새 1개).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
