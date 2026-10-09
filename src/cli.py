@@ -71,7 +71,6 @@ LENS_SAMPLES = 16  # frames per camera folder the circle is found in
 SAM3_MODEL = ROOT / "checkpoints" / "sam3" / "sam3.pt"
 SAM2_MODEL = SKY_SAM2  # SAM2 tiny: the engine wants a path; sky after By Color loads it
 GPU_NEEDED = 5.0  # GB free before person starts (SAM3 at 1024 px peaked at 4.2 GB on 0022)
-STEADY_FRAMES = 5  # person --steady: of 2N-1 frames around (0015: the pulled cart touched in 11 and 7 in a row, 2 fps)
 KEYFRAME_MIN_PIECE = 0.0005  # of the frame: smaller pieces of a keyframe's people are not propagated
 
 
@@ -372,8 +371,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
                   labels: Sequence[str] = (), attach: Sequence[str] = (), threshold: float = 0.4,
                   grow: int = 2, max_side: int = 1024, touch: int = 16, model: Path = SAM3_MODEL, device: str = "cuda",
                   and_with: Optional[Path] = None, existing: str = "stop", keyframes: int = 0, propagate=None,
-                  split: Optional[Path] = None, hands: Sequence[str] = (), union: bool = False,
-                  steady: Sequence[str] = (), steady_frames: int = STEADY_FRAMES, log=print) -> dict:
+                  split: Optional[Path] = None, hands: Sequence[str] = (), union: bool = False, log=print) -> dict:
     """The ``person`` command: black = people and what they carry (ignored in training), white = the rest
     (``--invert``: white = people). Returns the report.
 
@@ -387,12 +385,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
 
     *union* (with *keyframes*): SAM3 on every frame as without keyframes, and what SAM2 carries from the
     keyframes added on top: a frame SAM3 alone misses something in (a pole hidden by a hand) gets it from its
-    neighbours. As slow as SAM3 on every frame plus the propagation; masks only grow.
-
-    *steady*: prompts masked like *attach* (where they touch what *labels* found), but only in a frame whose
-    neighbours agree: the label touches in at least *steady_frames* of the 2 * *steady_frames* - 1 frames SAM3
-    looks at around it (:func:`_steady_finds`). A cart pulled along stays masked; a parked one a passer-by
-    only brushes past is kept as scene."""
+    neighbours. As slow as SAM3 on every frame plus the propagation; masks only grow."""
     from src.core.people import grow_mask, people_mask, split_people
     from src.engine.imageio import read_rgb, resize_mask, to_working
 
@@ -403,8 +396,7 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
         "and_with": str(and_with) if and_with else None,
         **({"keyframes": every, "propagation_model": SAM2_MODEL.name} if every else {}),
         **({"union": True} if every and union else {}),
-        **({"split": str(split), "hands": list(hands)} if split is not None else {}),
-        **({"steady": list(steady), "steady_frames": steady_frames} if steady else {})})
+        **({"split": str(split), "hands": list(hands)} if split is not None else {})})
     missing: List[str] = []
     if split is not None:
         there = [k for k in b.todo if (split / b.name(k)).exists()]
@@ -418,37 +410,20 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
     else:
         eng = None
 
-    asked = list(dict.fromkeys(list(labels) + list(attach) + list(steady) + (list(hands) if split is not None else [])))
-    joined = list(attach) + list(steady)  # the steady finds _steady_finds leaves count as attached
-
-    def raw(key):
-        rgb = read_rgb(images / key)
-        work = to_working(rgb, max_side)
-        return rgb.shape[:2], work.shape[:2], eng.detect_many(work, asked)
-
-    if steady and b.todo:
-        folders: Dict[str, List[str]] = {}
-        for k in b.keys:
-            folders.setdefault(_folder(k), []).append(k)
-        if every and not union:  # SAM3 looks at the keyframes only: their neighbours are the other keyframes
-            folders = {f: [ks[i] for i in keyframe_indices(len(ks), every)] for f, ks in folders.items()}
-        finds = _steady_finds(folders, raw, labels, steady, threshold, touch, steady_frames)
-    else:
-        def finds(key):
-            return (*raw(key), {})
-
     def detect(key):
         """(full size, the people at the working size before growing, what was found)."""
-        size, shape, dets, dropped = finds(key)
+        rgb = read_rgb(images / key)
+        work = to_working(rgb, max_side)
+        asked = list(labels) + list(attach) + (list(hands) if split is not None else [])
+        dets = eng.detect_many(work, list(dict.fromkeys(asked)))
         counts: Dict[str, int] = {}
         for d in dets:
             if d.score >= threshold:
                 counts[d.label] = counts.get(d.label, 0) + 1
-        counts.update({f"{k} not steady": v for k, v in dropped.items()})
         if split is not None:
-            parts = split_people(dets, shape, labels, joined, threshold, touch, hands)
-            return size, np.stack(parts), counts
-        return size, people_mask(dets, shape, labels, joined, threshold, touch, 0), counts
+            parts = split_people(dets, work.shape[:2], labels, attach, threshold, touch, hands)
+            return rgb.shape[:2], np.stack(parts), counts
+        return rgb.shape[:2], people_mask(dets, work.shape[:2], labels, attach, threshold, touch, 0), counts
 
     def finish(key, people, size, note):
         if people.ndim == 3:  # --split: the photographer, everyone else
@@ -494,58 +469,6 @@ def person_folder(images: Path, out: Path, recursive: bool = False, names: str =
     if eng is not None and hasattr(eng, "release"):
         eng.release()
     return report
-
-
-def _steady_finds(folders: Dict[str, List[str]], raw, labels: Sequence[str], steady: Sequence[str],
-                  threshold: float, touch: int, frames: int):
-    """``key -> (full size, working size, detections, {label: finds dropped})`` for :func:`person_folder`
-    *steady*: a find of a *steady* label is kept only when, among the frames of its camera folder in *folders*
-    (the ones SAM3 looks at, in order), at least *frames* of the 2 * *frames* - 1 around it have that label
-    touching what *labels* found (within *touch* px). *raw*: ``key -> (full size, working size, detections)``,
-    called once a frame; the neighbours ahead are looked at first and kept until their turn."""
-    from src.core.people import touching
-
-    where = {k: (f, i) for f, ks in folders.items() for i, k in enumerate(ks)}
-    ahead: Dict[str, tuple] = {}
-    touches: Dict[str, set] = {}
-
-    def look(key):
-        if key not in touches:
-            r = ahead[key] = raw(key)
-            shape, dets = tuple(r[1]), r[2]
-            main = np.zeros(shape, bool)
-            for d in dets:
-                if d.score >= threshold and d.label in labels and d.mask.shape == shape:
-                    main |= d.mask
-            touches[key] = set()
-            for lab in steady:
-                m = np.zeros(shape, bool)
-                for d in dets:
-                    if d.score >= threshold and d.label == lab and d.mask.shape == shape:
-                        m |= d.mask
-                if m.any() and touching(main, m, touch).any():
-                    touches[key].add(lab)
-        return touches[key]
-
-    def finds(key):
-        if key not in where:
-            return (*raw(key), {})
-        f, i = where[key]
-        ks = folders[f]
-        votes = {lab: sum(lab in look(k) for k in ks[max(0, i - frames + 1): i + frames]) for lab in steady}
-        size, shape, dets = ahead.pop(key)
-        for k in ks[max(0, i - 2 * frames): i]:  # looked at as a neighbour but never asked for (--skip-existing)
-            ahead.pop(k, None)
-        kept, dropped = [], {}
-        for d in dets:
-            if d.label in steady and d.score >= threshold and votes[d.label] < frames:
-                if d.label in touches[key]:  # one not touching would be left out as an attach find anyway
-                    dropped[d.label] = dropped.get(d.label, 0) + 1
-            else:
-                kept.append(d)
-        return size, shape, kept, dropped
-
-    return finds
 
 
 def _default_propagate():
@@ -685,8 +608,7 @@ def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: 
         log(f"--- person -> {folders['person']}")
         steps["person"] = person_folder(images, folders["person"], labels=p.labels, attach=p.attach,
                                         threshold=p.threshold, grow=p.grow, max_side=p.max_side, touch=p.touch,
-                                        keyframes=p.keyframes, union=p.union, steady=p.steady,
-                                        steady_frames=p.steady_frames, model=sam3_model, device=device,
+                                        keyframes=p.keyframes, union=p.union, model=sam3_model, device=device,
                                         **common)
     if preset.lens is not None:
         c = preset.lens
@@ -740,10 +662,6 @@ def _person_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--attach", help=f"Prompts masked only where they touch the above (default {';'.join(ATTACH)}; "
                                     "\"\" = none)")
     p.add_argument("--threshold", type=float, help=f"Detection score to keep (default {THRESHOLD})")
-    p.add_argument("--steady", help="Prompts masked like --attach, but only where they keep touching over "
-                                    "--steady-frames frames (a pulled cart, not a parked one walked past); '' = none")
-    p.add_argument("--steady-frames", type=int,
-                   help=f"Frames out of 2N-1 around a frame a --steady find must touch in (default {STEADY_FRAMES})")
     p.add_argument("--touch", type=int, help=f"How near (px at 1024) an --attach find must be (default {TOUCH})")
     p.add_argument("--grow", type=int, help=f"Grow the mask by px at 1024 px (default {GROW})")
     p.add_argument("--max-side", type=int, help="Working resolution's longer side (default 1024)")
@@ -821,7 +739,7 @@ def _settings(parser: argparse.ArgumentParser, args, step: str):
     for k in values:
         v = getattr(args, k, None)
         if v is not None:
-            values[k] = split(v) if k in ("labels", "attach", "steady") else v
+            values[k] = split(v) if k in ("labels", "attach") else v
     if getattr(args, "no_color", False):
         values["color"] = None
     elif getattr(args, "color_preset", None):
@@ -880,7 +798,7 @@ def _preset_command(parser: argparse.ArgumentParser, args) -> int:
             return 0
         # save
         base = find_preset(args.base) if args.base else MaskPreset(name=args.name, person=PersonStep())
-        person = {k: (split(v) if k in ("labels", "attach", "steady") else v)
+        person = {k: (split(v) if k in ("labels", "attach") else v)
                   for k in asdict(PersonStep()) if (v := getattr(args, k, None)) is not None}
         changes = {"person": person if person else (asdict(base.person) if base.person else None)}
         if args.margin is not None or args.radius is not None:
@@ -1204,7 +1122,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             labels=p.labels, attach=p.attach, threshold=p.threshold, grow=p.grow, max_side=p.max_side,
             touch=p.touch, model=args.sam3_model, device=device, and_with=args.and_with, existing=existing,
             keyframes=p.keyframes, split=args.split, hands=_hands(args.hands) if args.split else (),
-            union=p.union, steady=p.steady, steady_frames=p.steady_frames,
+            union=p.union,
         )
     elif args.command == "run":
         from src.batchmask.presets import find_preset

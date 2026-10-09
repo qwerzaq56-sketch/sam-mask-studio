@@ -3,27 +3,25 @@
   "title": "OSMO 360 dual fisheye on a black selfie stick",
   "description": "Walking scenes shot with a DJI OSMO 360 (cam0 / cam1 fisheye folders) held on a black selfie stick, a crossbody bag worn. \"black pole\" is how SAM3 finds this stick: \"selfie stick\" was found in 18 of 94 frames, \"stick\", \"monopod\", \"handle\" and \"tripod\" in none. Another rig's stick may need other words: probe first.",
   "checked_on": [
+    "0022 cam0 94 frames (people, stable v0.6.0 = SAM3 + keyframes 10 + union, attach bag; cane; handcart): the same masks as p142 (cane finds only the pole, handcart nothing): missed 0.04 %, IoU 0.934, 3.5 s a frame; 0015 cart stretch 46 frames: the pulled cart touched a person in 19 frames (cam0 11, cam1 8 in a row, 2 fps), attach masks it there (measured as steady in v0.4-p145; steady taken out, not run again, v0.4-p147)",
     "0022 cam0 94 frames (people): IoU 0.943, lowest 0.875, missed 0.3 % against the scene's hand-checked masks (v0.4-p65)",
     "0022 cam0 / cam1 (lens): radius 105.3 / 105.7 %, 16-frame circles steady to 0.13 % (v0.4-p64)",
     "0022 (lens rim): detail and SIFT points fall past 0.95 of the circle; with 2 % the SfM split in 2-4 models, the band masked 188/188 (v0.4-p127: margin 5 %)",
     "0022 (lens rim): a fixed circle, 95 % of the inscribed one, centred (0.90 of the found image circle: the lens's distorted rim left out): SplatBatch's Spirula dev SfM 188/188 twice; the 2 % margin 106/188 (v0.4-p129, user to inspect)",
     "0022 (lens overlap): the 5 % circle keeps about 201 degrees a lens, the lenses overlapping about 22 (lowest 19); rim95 about 185, overlapping about 5.6 (lowest 4.4), too little to stitch: masks/ back to the found circle 5 % in, rim95 as the SfM circle in masks_sfm/ (v0.4-p130)",
     "0022 (lens, training): Spirula's auto mask circle, fixed: radius 98.0 %, centre +0.34 / -3.16 % (61 px up), both cameras, refitted to its mask edge (residual 0.3-2 px); its SfM 186/188; about 184-213 degrees a lens, the lenses overlapping about 15 (lowest 5, where it is off centre) (v0.4-p131, user's choice)",
-    "0015 cart stretch 46 frames (people, + cane attach, handcart steady 5 of 9): the cart a passer-by pulls masked in all 19 frames it touches them (cam0 11, cam1 8 in a row, 2 fps); 0022 cam0: masks the same as without (cane finds only the pole), 3.52 s a frame (v0.4-p145)",
     "0022 cam0 94 frames (people, union): SAM3 on every frame + SAM2 propagation from every 10th added on top: missed 0.04 % (every frame alone 0.27 %, keyframes 10 alone 0.08 %), extra 7.1 % (5.85), IoU 0.934, 3.5 s a frame (3.07); a pole hidden by a hand (00023) and a propagation miss (00645) both filled (v0.4-p142)",
     "0022 cam0 (sky): looked at, no hand-made sky masks to score against yet (v0.4-p63)"
   ],
   "person": {
     "labels": ["person", "black pole"],
-    "attach": ["bag", "cane"],
+    "attach": ["bag", "cane", "handcart"],
     "threshold": 0.4,
     "touch": 16,
     "grow": 2,
     "max_side": 1024,
     "keyframes": 10,
-    "union": true,
-    "steady": ["handcart"],
-    "steady_frames": 5
+    "union": true
   },
   "lens": {
     "radius": 98.0,
