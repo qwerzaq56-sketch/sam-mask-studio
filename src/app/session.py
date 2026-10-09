@@ -591,7 +591,7 @@ class Session:
                 if m.shape != (h0, w0):
                     m = resize_mask(m, (h0, w0))  # a mask saved at another size: match the image first
                 m = resize_mask(m, working_size(h0, w0, self.max_side))
-                frames[key] = FrameState.from_mask(m, status=FrameStatus.PROPAGATED)
+                frames[key] = FrameState.from_mask(m, status=FrameStatus.IMPORTED)  # ↓, not ✓ (U2)
             frames_by_label[folder.name] = frames
         ids = self.project.add_label_objects(frames_by_label, Source.IMPORTED)
         self.sync()

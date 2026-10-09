@@ -44,18 +44,20 @@ PRIORITY = (
     (FrameStatus.WARNING, "⚠"),
     (FrameStatus.MANUAL, "★"),
     (FrameStatus.PROPAGATED, "✓"),
+    (FrameStatus.IMPORTED, "↓"),
 )
 
 
 NO_MASK = "–"  # marks for one Object: it has no mask on this image
 PROBLEMS = ("✕", "⚠", NO_MASK)  # what [ / ] jump between
-MARK_COLORS = {  # the mark's text color in both views (✓ keeps the default)
+MARK_COLORS = {  # the mark's text color in both views (✓ and ↓ keep the default: gray rows are ⊘ excluded)
     "✕": QColor(215, 40, 40),
     "⚠": QColor(215, 130, 0),
     "★": QColor(40, 110, 220),
     NO_MASK: QColor(150, 150, 150),
 }
-LEGEND = "★ edited here · ✓ propagated · ⚠ suspicious (area jumped) · ✕ empty after propagation"
+LEGEND = ("★ edited here · ✓ propagated · ↓ imported from a mask folder, unchanged · ⚠ suspicious (area jumped) · "
+          "✕ empty after propagation")
 LEGEND_ONE = LEGEND + " · – the Object has no mask here"
 
 
@@ -396,7 +398,8 @@ class ImagesPanel(QWidget):
             m = self._marks.get(k)
             if m:
                 counts[m] = counts.get(m, 0) + 1
-        order = ["★", "✓", "⚠", "✕"] + ([NO_MASK] if self._only is not None else [])
+        # ↓ only when there are imported masks: most projects have none
+        order = ["★", "✓"] + (["↓"] if counts.get("↓") else []) + ["⚠", "✕"] + ([NO_MASK] if self._only is not None else [])
         parts = []
         for m in order:
             c = MARK_COLORS.get(m)

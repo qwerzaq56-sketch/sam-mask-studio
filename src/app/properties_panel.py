@@ -39,7 +39,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.app.objects_panel import later
+from src.app.objects_panel import SOURCE_SHORT, later
 from src.app.ui_util import CollapsibleBox, ColumnScroll, allow_narrow, shrinkable
 from src.core.special import LABELS as SPECIAL_LABELS
 from src.core.project import FrameState, MaskObject
@@ -681,7 +681,7 @@ class PropertiesPanel(QWidget):
             )
         else:
             state = "Editing" if editing else "Selected"
-            what = f"Special: {SPECIAL_LABELS[obj.special.kind]}" if obj.special is not None else obj.source.value
+            what = f"Special: {SPECIAL_LABELS[obj.special.kind]}" if obj.special is not None else f"from {SOURCE_SHORT.get(obj.source, obj.source.value)}"  # U8: not SAM3_DETECTION
             self.title.setText(f"{state}: <b>{obj.name}</b> · {what}")
         special = obj is not None and obj.special is not None
         for tab, on in ((self.mask_tab, not special), (self.layer_tab, not special), (self.special_tab, special)):
