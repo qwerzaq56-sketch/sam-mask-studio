@@ -332,6 +332,12 @@ audit on a real 123-image folder (tags `v0.4-p1` … `v0.4-p7.1`; details in `PR
   empty states hidden; side docks start within ~55 % of a small window; natural-size dock title
   buttons, compact title when the Frame List is folded.
 
+**v0.6.1 released** (2026-10-10): tags `v0.4-p149` … `v0.4-p155`; splatbatch pins it in place of v0.6.0 (portable
+`--split` parts, CLI contract 4 unchanged). Masks are the same as v0.6.0; the person report adds `source` / `from` /
+`warn` (p149). App: the batch report's source and warnings on imported masks (p150), a Timeline tab with a row per
+Object, by camera folder (p151, p154), propagation runs recorded and cleared (p152), SAM2's object score per frame
+(p153), and a window started without stdout / stderr (SplatBatch) no longer fails every propagation (p155).
+
 **v0.6.0 released** (2026-10-09, the stable masking): tags `v0.4-p60` … `v0.4-p148` (details in
 `docs/log/PROGRESS_v0.4.md`). splatbatch pins this version (portable `--split` parts, CLI contract 4).
 - Command line `python -m src.cli`: `lens`, `person`, `sky`, `run --preset`, `probe`, `preset`, `truth`; `--cpu`.
