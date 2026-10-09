@@ -132,7 +132,7 @@ class DetectionPanel(QWidget):
         self._busy = busy
         for w in (self.detect_btn, self.prompt, self.tree):
             w.setEnabled(not busy)
-        for b in (self.all_btn, self.none_btn, self.clear_btn, *self._add_buttons()):
+        for b in (self.all_btn, self.none_btn, self.clear_btn, self.preview_btn, self.select_btn, *self._add_buttons()):
             b.setEnabled(not busy and b.property("wanted") is not False)
         if message:
             self.status.setText(message)
@@ -168,8 +168,10 @@ class DetectionPanel(QWidget):
         self._n = len(detections)
         self._updating = False
         has = bool(detections)
-        for b in (self.all_btn, self.none_btn, self.clear_btn):
-            self._want(b, has)
+        for b in (self.all_btn, self.none_btn, self.clear_btn, self.preview_btn, self.select_btn):
+            self._want(b, has)  # Preview stays on for the next detection, grayed while there is nothing (U7)
+        if not has:
+            self.status.setText("")  # "N candidate(s) … Check the ones to keep" is done with (U7)
         self._want_add(any(checked))
 
     def _sync_checks(self, checked: Sequence[bool]) -> None:

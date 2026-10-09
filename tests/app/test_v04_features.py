@@ -3383,3 +3383,28 @@ def test_opening_a_rig_says_whether_it_is_a_fisheye(qapp, win, tmp_path):
     assert win.open_folder(root)
     assert win.rig_circles == {"cam0": None, "cam1": None}
     assert "No image circle in cam0, cam1: opened as a camera folder dataset" in win.log_view.toPlainText()
+
+
+def test_small_fixes_of_the_ux_audit_d(qapp, win, tmp_path):
+    """p139: U7 nothing left to add clears the hint, U9 Scope starts at All images, U14 a missing checkpoint
+    shows, U15 the toolbar's brush is called Paint as in the Edit Layer."""
+    from src.app.dialogs import SettingsDialog
+    from src.app.settings import Settings
+
+    dp = win.detection_panel
+    dp.set_busy(False, "3 candidate(s) — person 3. Check the ones to keep")
+    dp.set_detections([], [])
+    assert dp.status.text() == "" and not dp.preview_btn.isEnabled() and dp.preview_btn.isChecked()
+    assert win.propagation_panel.scope_value() == "all"
+    there = tmp_path / "sam2.pt"
+    there.write_bytes(b"x")
+    dlg = SettingsDialog(Settings(sam2_checkpoint=str(tmp_path / "none.pt"), sam3_checkpoint="",
+                                  sky_checkpoint=str(there)), win)
+    rows = dlg._rows
+    assert not rows["SAM2 checkpoint"].missing.isHidden()  # not there
+    assert rows["SAM3 checkpoint"].missing.isHidden()  # empty: optional
+    assert rows["Sky model (ONNX)"].missing.isHidden()
+    dlg.sam2.setText(str(there))
+    assert rows["SAM2 checkpoint"].missing.isHidden()
+    dlg.deleteLater()
+    assert win.act_brush.text().replace("&", "") == "Paint"

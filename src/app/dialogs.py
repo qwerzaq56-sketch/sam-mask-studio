@@ -60,6 +60,24 @@ def _path_row(edit: QLineEdit, pick) -> QWidget:
     return w
 
 
+def _file_row(edit: QLineEdit, pick) -> QWidget:
+    """A path row that says when the file is not there: a red frame and "file not found" (U14)."""
+    w = _path_row(edit, pick)
+    missing = QLabel("file not found")
+    missing.setStyleSheet("color: rgb(215, 40, 40);")
+    w.layout().insertWidget(1, missing)
+
+    def check(text: str) -> None:
+        gone = bool(text.strip()) and not Path(text.strip()).is_file()
+        edit.setStyleSheet("QLineEdit { border: 1px solid rgb(215, 40, 40); }" if gone else "")
+        missing.setVisible(gone)
+
+    edit.textChanged.connect(check)
+    check(edit.text())
+    w.missing = missing  # (tests read it)
+    return w
+
+
 def _section(title: str, layout) -> QGroupBox:
     """One of the Export window's sections (What, Where, Files, Check)."""
     box = QGroupBox(title)
@@ -124,9 +142,11 @@ class SettingsDialog(QDialog):
         self.max_side.setSpecialValueText("original size")
         self.max_side.setValue(settings.max_side)
         form = QFormLayout(self)
-        form.addRow("SAM2 checkpoint", _path_row(self.sam2, lambda: self._pick(self.sam2)))
-        form.addRow("SAM3 checkpoint", _path_row(self.sam3, lambda: self._pick(self.sam3)))
-        form.addRow("Sky model (ONNX)", _path_row(self.sky, lambda: self._pick(self.sky)))
+        self._rows = {}
+        for label, edit in (("SAM2 checkpoint", self.sam2), ("SAM3 checkpoint", self.sam3),
+                            ("Sky model (ONNX)", self.sky)):
+            self._rows[label] = _file_row(edit, lambda _c=False, e=edit: self._pick(e))
+            form.addRow(label, self._rows[label])
         form.addRow("Working max side (px)", self.max_side)
         self.cpu = QCheckBox("Run SAM on the CPU")
         self.cpu.setChecked(settings.use_cpu)
@@ -1246,7 +1266,7 @@ SHORTCUTS = (
         ("N", "New Object from points"),
         ("E", "Edit with points: start editing the selected Object; from the brush / an auto tool: back to points; "
               "points again: finish editing"),
-        ("D", "Edit with the brush: start editing (the selected Object); from points: the brush; "
+        ("D", "Paint (the brush): start editing (the selected Object); from points: the brush; "
               "the brush again: finish editing; in an auto tool: Paint mode (in Paint: pick all / none)"),
         ("Delete", "Delete the selected point, else the selected Objects (no question: Ctrl+Z; 🔒 locked ones stay)"),
         ("Esc", "Leave the tool (drops an auto tool's result), then finish editing"),

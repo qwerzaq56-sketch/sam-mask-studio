@@ -114,10 +114,10 @@ bedroom/
 
 ### 브러쉬와 오토 툴: Edit Layer
 
-- **Brush** (`D`): 드래그 = 칠하기(추가), `Alt`+드래그 = 빼기. 크기는 `Alt`+우클릭 드래그(오른쪽 = 크게), `Ctrl`+휠 또는 `Shift`+휠.
+- **Paint** (`D`, 툴바와 Edit Layer의 Brush › Paint가 같은 것): 드래그 = 칠하기(추가), `Alt`+드래그 = 빼기. 크기는 `Alt`+우클릭 드래그(오른쪽 = 크게), `Ctrl`+휠 또는 `Shift`+휠.
   **Restore**: 칠한 곳의 손질을 되돌립니다(**Add** / **Subtract** / **Both**).
 - **Auto tools** (Edit Layer 탭): **Object Fill**(물체 경계까지 넓히기) · **Fill Holes** · **Remove Specks** · **Grow** · **Shrink** · **Close Gaps**.
-  1. 도구 버튼을 누르면 **Fill** 모드로 시작해, 결과 전체를 미리 보여 줍니다(마젠타 = 더해질 곳, 보라 = 빠질 곳).
+  1. 도구 버튼을 누르면 **Fill** 모드로 시작해, 결과 전체를 미리 보여 줍니다(파랑 = 더해질 곳, 주황 = 빠질 곳, 캔버스 왼쪽 아래 범례 **Adds / Removes**).
   2. 일부만 쓰려면 **Paint** 모드로 바꿔 쓸 부분을 칠해서 고릅니다(`Alt`+드래그 = 해제).
   3. **Apply & Continue** (`Enter`) = 반영하고 다음 결과 계산, **Apply & Close** (`Shift+Enter`) = 반영하고 도구 끝.
      `Esc`, 다른 도구, 같은 도구 버튼을 다시 누르면 반영하지 않고 나갑니다.
@@ -125,8 +125,8 @@ bedroom/
   - 설정값(Max size, Amount, Max gap …)은 **Settings** 칸에 있습니다.
 - **Apply Layer**: 손질을 굳혀 기본 마스크로 만듭니다. **Delete Layer**: 손질을 전부 버립니다.
 
-![Grow의 Fill 모드 미리보기: 마젠타 = 더해질 곳, 아래 Will apply에 바뀔 픽셀 수](img/02-auto-tool-fill.png)
-*Grow의 Fill 모드 미리보기: 마젠타 = 더해질 곳, 아래 Will apply에 바뀔 픽셀 수*
+![Grow의 Fill 모드 미리보기: 파랑 = 더해질 곳(캔버스 범례 Adds). 0022 사본, 불러온 마스크(↓)](img/02-auto-tool-fill.png)
+*Grow의 Fill 모드 미리보기: 파랑 = 더해질 곳(캔버스 범례 Adds). 0022 사본, 불러온 마스크(↓)*
 
 **확인할 것**
 

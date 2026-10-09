@@ -432,10 +432,10 @@ class MainWindow(QMainWindow):
         self.act_cutout_checker.setIconText("Checker")
         self._show_preview_style()
         self.act_brush = self._action(
-            "Brush",
+            "Paint",  # the Edit Layer's Paint button: one name for one tool (U15, was "Brush")
             self.brush_key,
             ["D"],
-            "Brush editing (not editing: edits the selected Object with the brush): drag = add, "
+            "Paint with the brush (not editing: edits the selected Object with it): drag = add, "
             "Alt+drag = subtract, Ctrl+drag left / right or Ctrl+wheel = size",
             True,
         )
@@ -855,12 +855,12 @@ class MainWindow(QMainWindow):
         mode_text = {
             Mode.IDLE: "Ready — use an Object's Points button (E), + New Object from Points (N), or a SAM3 prompt",
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
-            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: brush · Delete: point · Esc: finish",
+            Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: paint · Delete: point · Esc: finish",
         }[s.mode]
         if self.picking():
             mode_text = "SELECT ON IMAGE — click / drag: add · Shift: toggle · Ctrl: remove · Edit is off meanwhile"
         if s.mode == Mode.EDIT and self.canvas.brush_mode:
-            mode_text = "BRUSH — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · D: brush off"
+            mode_text = "PAINT — drag: add · Alt+drag: subtract · Ctrl+wheel: size · wheel: zoom · D: paint off"
             if self.canvas.brush_tool != "paint":
                 mode_text = (
                     f"{self.canvas.brush_tool.replace('_', ' ').upper()} BRUSH — drag over the area,"

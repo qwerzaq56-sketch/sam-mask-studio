@@ -980,6 +980,15 @@
 - 0022 리그 사본: 188장 1.8초, 8장 0.5초. 테스트 324개 통과(새 2개).
 - 06 2.1의 R1~R4가 모두 끝남. UX 점검 묶음 A(U6 p135 + R2~R4 p136~p138)도 끝.
 
+## v0.4-p139 — 작은 고침 (UX 점검 묶음 D: U7 · U9 · U11 · U14 · U15) (2026-10-09)
+- 사용자 요청: 묶음 D. 화면이 바뀌는 U10 · U12 · U13은 p140.
+- **U7** Add · Discard로 후보를 다 쓰면 `N candidate(s) … Check the ones to keep` 안내를 지우고 Preview · Select on Image를 회색으로(Preview는 켜진 채 남아 다음 Detect에 그대로).
+- **U9** Propagation Scope 기본값 `Selection` → **All images**(설명서 B4와 같게).
+- **U11** 설명서 B3 오토 툴 미리보기 색 마젠타 / 보라 → 파랑 = 더해질 곳 / 주황 = 빠질 곳(범례 Adds / Removes), 그림을 0022 사본으로 다시 찍음.
+- **U14** Settings: 체크포인트 · 하늘 모델 파일이 없으면 빨간 테두리 + `file not found`(SAM3처럼 비워 둔 칸은 표시 없음).
+- **U15** 툴바 `Brush` → **Paint**(Edit Layer의 Paint와 같은 것). 상태 줄 `D: paint`, F1 `D` 설명, 설명서 · keymap 문서.
+- 테스트 325개 통과(새 1개, Scope 테스트는 Selection을 골라서).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
