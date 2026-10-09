@@ -438,6 +438,15 @@ class Session:
             return fs.layers[i - 1].points, fs.layers[i - 1].box
         return (), None
 
+    def other_prompts(self) -> List[Tuple[Tuple[Point, ...], Optional[Box]]]:
+        """The (points, box) of the layers clicks do not go to, the Original first (shown gray, p163)."""
+        fs = self.editing_frame()
+        if fs is None:
+            return []
+        i = self.current_layer()
+        every = [(fs.points, fs.box)] + [(ly.points, ly.box) for ly in fs.layers]
+        return [pb for n, pb in enumerate(every) if n != i and (pb[0] or pb[1] is not None)]
+
     def _update_prompts(self, change: Callable[[Tuple[Point, ...], Optional[Box]], tuple]) -> None:
         """Change the current layer's (points, box) and compute its mask (one undo step)."""
         i = self.current_layer()

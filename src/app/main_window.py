@@ -830,7 +830,7 @@ class MainWindow(QMainWindow):
 
         fs = s.editing_frame()
         pts, box = s.active_prompts()  # the current point layer's (docs/specs/10)
-        self.canvas.set_prompts(pts, s.selected_point, box)
+        self.canvas.set_prompts(pts, s.selected_point, box, s.other_prompts())
         editing_obj = project.get(s.editing) if s.editing is not None else None
         mode = s.effective_mode
         if s.mode != Mode.EDIT and (self._tool or self.canvas.brush_mode):

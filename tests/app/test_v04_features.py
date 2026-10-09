@@ -3829,3 +3829,24 @@ def test_h_tap_toggles_hide_masks_and_h_held_peeks(qapp, win):
     win._h_press = (win._h_press[0] - 1.0, win._h_press[1])
     QTest.keyRelease(win.canvas, Qt.Key.Key_H)
     assert act.isChecked()
+
+
+def test_the_other_point_layers_points_show_gray(qapp, win):
+    """p163: while one point layer takes the clicks, the others' points / box are drawn gray (not clickable)."""
+    s = win.session
+    oid, _m = _imported(win)
+    win.toggle_edit(oid)
+    s.click(60, 40)  # Layer 1
+    s.add_layer(subtract=True)
+    s.click(10, 10)  # Layer 2
+    win.refresh()
+    (p1, b1), = s.other_prompts()  # Layer 2 takes the clicks: Layer 1 shows gray (the Original has none)
+    assert [(p.x, p.y) for p in p1] == [(60, 40)] and b1 is None
+    assert [(p.x, p.y) for p in win.canvas.points] == [(10, 10)]
+    assert [[(p.x, p.y) for p in pts] for pts, _ in win.canvas.other_prompts] == [[(60, 40)]]
+    s.select_layer(1)
+    win.refresh()
+    assert [[(p.x, p.y) for p in pts] for pts, _ in win.canvas.other_prompts] == [[(10, 10)]]
+    win.canvas.grab()  # paints with the gray layer
+    win.finish_editing()
+    assert s.other_prompts() == []
