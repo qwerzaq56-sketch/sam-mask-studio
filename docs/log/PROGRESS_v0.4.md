@@ -973,6 +973,13 @@
 - **Output = Into the dataset**: `<root>/masks/camN/`에 쓰고, 덮어쓸 파일은 먼저 `masks_backup_<시각>/camN/`으로(장면과 같은 규칙). **New dataset**: 빈 폴더에 `images/camN`(하드 링크, 안 되면 복사) + `masks/camN`, ⊘ 프레임 뺌, 모델 없음(검사 목록 `images/ linked (no model)`).
 - `rig.RigDataset`이 Export 창에 장면 자리로 들어감(모델 · 카메라 모델 없음 → 변환 목록 없음). 0022 리그 8장 사본(모델 뺌)으로 창 확인. 테스트 322개 통과(새 1개).
 
+## v0.4-p138 — 리그가 어안인지 확인 (06 2.1 R4) (2026-10-09)
+- 리그를 열면 Logs에 어안인지 한 줄. 모델이 있으면 `cameras.bin`의 카메라 모델(FISHEYE 계열)로, 없으면 카메라마다 16장을 1/4 크기로 읽어 이미지 원을 찾음(`rig.find_circles`, Lens edge의 원 찾기와 같은 계산).
+  - 원이 있으면 `Fisheye rig: image circle cam0 radius 105.3 %, cam1 radius 105.7 % — Objects ▸ + Special ▸ Fisheye Lens Edge masks the black rim`.
+  - 없으면 `No image circle in cam0, cam1: opened as a camera folder dataset, not a fisheye`.
+- 0022 리그 사본: 188장 1.8초, 8장 0.5초. 테스트 324개 통과(새 2개).
+- 06 2.1의 R1~R4가 모두 끝남. UX 점검 묶음 A(U6 p135 + R2~R4 p136~p138)도 끝.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

@@ -78,3 +78,21 @@ def test_mask_sets_of_a_rig(tmp_path):
     for d in ("masks_sky/cam0", "masks/people/cam1", "masks/notes", "other/cam0"):
         (root / d).mkdir(parents=True)
     assert [d.relative_to(root).as_posix() for d in mask_sets(root)] == ["masks", "masks/people", "masks_sky"]
+
+
+def test_a_fisheye_is_told_by_its_image_circle(tmp_path):
+    """06 2.1 R4: a rig without a model is a fisheye when its frames show an image circle."""
+    from src.core.rig import find_circles
+
+    for cam, fish in (("cam0", True), ("cam1", False)):
+        d = tmp_path / "images" / cam
+        d.mkdir(parents=True)
+        for i in range(3):
+            img = np.full((200, 200, 3), 120, np.uint8)
+            if fish:
+                img[:] = 0
+                cv2.circle(img, (100, 100), 90, (120, 140, 160), -1)
+            cv2.imwrite(str(d / f"{i}.jpg"), img)
+    found = find_circles(tmp_path / "images", [f"{c}/{i}.jpg" for c in ("cam0", "cam1") for i in range(3)])
+    assert found["cam1"] is None
+    assert abs(found["cam0"]["radius"] - 90) < 4 and abs(found["cam0"]["cx"]) < 3

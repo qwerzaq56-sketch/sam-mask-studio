@@ -3373,3 +3373,13 @@ def test_a_rig_without_a_model_exports_into_the_dataset_or_a_new_one(qapp, win, 
         "cam0/frame_000.png.png", "cam0/frame_001.png.png", "cam1/frame_000.png.png"]
     assert not (new / "sparse").exists()
     assert "1 ⊘ left out, no model" in win.log_view.toPlainText()
+
+
+def test_opening_a_rig_says_whether_it_is_a_fisheye(qapp, win, tmp_path):
+    """p138 (06 2.1 R4): no model, so the frames are looked at: plain frames are no fisheye."""
+    from tests.unit.test_rig import make_rig
+
+    root = make_rig(tmp_path / "rig", n=2, masks=False)
+    assert win.open_folder(root)
+    assert win.rig_circles == {"cam0": None, "cam1": None}
+    assert "No image circle in cam0, cam1: opened as a camera folder dataset" in win.log_view.toPlainText()

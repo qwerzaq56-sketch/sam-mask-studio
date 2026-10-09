@@ -17,7 +17,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+import numpy as np
 
 from src.engine.imageio import IMG_EXTS, find_images, key_stem
 
@@ -25,6 +27,7 @@ CAMERA_DIR = re.compile(r"^cam(era)?[_-]?\d+$", re.IGNORECASE)
 IMAGES_NAMES = ("images", "image")
 MASKS_NAMES = ("masks", "mask")
 SHOWN = 5  # names listed in a warning before "…"
+CIRCLE_SAMPLES = 16  # frames per camera the image circle is looked for in (as the cli's lens command)
 
 
 def camera_dirs(folder: Path) -> List[Path]:
@@ -117,6 +120,32 @@ def rig_dataset(images_dir: Path) -> Optional[RigDataset]:
     """The dataset of a rig's ``images/``; None when its folder is named otherwise (no ``<root>/masks`` to write)."""
     root = rig_root(images_dir)
     return RigDataset(root=root, images_dir=Path(images_dir)) if root is not None else None
+
+
+def _small(path: Path) -> Optional[np.ndarray]:
+    """*path* as RGB, decoded at a quarter size (a 4K frame in ~20 ms): enough to see a circle."""
+    import cv2
+
+    data = np.fromfile(str(path), dtype=np.uint8)
+    img = cv2.imdecode(data, cv2.IMREAD_REDUCED_COLOR_4) if data.size else None
+    return None if img is None else cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def find_circles(images_dir: Path, keys: List[str], samples: int = CIRCLE_SAMPLES) -> Dict[str, Optional[dict]]:
+    """Each camera's image circle (radius, cx, cy in % of the inscribed circle, as Lens edge keeps them) from
+    up to *samples* frames spread over it; None for a camera with no circle to see (not a fisheye).
+    How a rig without a model is told to be a fisheye (06 2.1 R4)."""
+    from src.core.special import detect_lens_circle
+
+    cams: Dict[str, List[str]] = {}
+    for k in keys:
+        cams.setdefault(k.rpartition("/")[0], []).append(k)
+    out = {}
+    for cam, ks in sorted(cams.items()):
+        pick = [ks[i] for i in np.unique(np.linspace(0, len(ks) - 1, min(samples, len(ks))).astype(int))]
+        frames = [f for f in (_small(Path(images_dir) / k) for k in pick) if f is not None]
+        out[cam] = detect_lens_circle(frames) if frames else None
+    return out
 
 
 def _listed(names) -> str:
