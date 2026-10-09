@@ -78,3 +78,11 @@ def test_a_note_is_saved_and_dropped_when_the_frame_is_edited_here(tmp_path):
     fs = p.get(oid).frames["a.jpg"]
     p.set_frame(oid, "a.jpg", dataclasses.replace(fs, status=FrameStatus.MANUAL))
     assert p.get(oid).frames["a.jpg"].note == ""
+
+
+def test_a_batch_score_and_low_score_in_the_tooltip():
+    """p157 / p158: the batch notes the lowest SAM2 object score carried to a frame and warns low_score."""
+    note = {"source": "propagated", "from": [{"key": "cam0/00001.jpg", "dir": "fwd"}], "score": 0.634, "warn": ["low_score"]}
+    assert R.warned(note)
+    assert R.describe(note) == "propagated from cam0/00001 forward · score 0.63 · ⚠ SAM2 is unsure it is there (low score)"
+    assert R.describe({"source": "keyframe"}) == "SAM3 (keyframe)"  # no score: nothing added

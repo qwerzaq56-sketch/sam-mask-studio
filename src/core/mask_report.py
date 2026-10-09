@@ -2,8 +2,9 @@
 
 ``python -m src.cli person`` / ``run`` with ``--report`` notes for every frame where its people mask came
 from (``source``: sam3, keyframe, propagated, union; ``from``: the keyframes propagation carried it from)
-and why it is worth a look (``warn``: area_jump, empty, added_big; p149). Importing the folder reads that
-back, so the Frame List shows ✓ for propagated frames and ⚠ for the ones to look at, with the reason.
+and why it is worth a look (``warn``: area_jump, empty, added_big; p149; low_score with ``score``, p157).
+Importing the folder reads that back, so the Frame List shows ✓ for propagated frames and ⚠ for the ones to
+look at, with the reason.
 
 The report is found by walking up from the mask folder: a ``*report*.json`` there or in a folder above
 (the ``--report`` file next to the scene: name it so), or SplatBatch's ``runs/splatbatch/masks_report.json``.
@@ -30,6 +31,7 @@ WARNINGS = {
     "area_jump": "the people's area jumped from the frame before (over 4× either way)",
     "empty": "no people, the frame before had some",
     "added_big": "propagation added over 1 % of the frame to SAM3's",
+    "low_score": "SAM2 is unsure it is there (low score)",  # p157: the batch's score under LOW_SCORE
 }
 PROPAGATED = ("propagated", "union")
 
@@ -128,6 +130,8 @@ def describe(note: dict) -> str:
         if came:
             text += " from " + ", ".join(came)
         parts.append(text)
+    if isinstance(note.get("score"), (int, float)):  # p157: the lowest SAM2 object score carried here
+        parts.append(f"score {note['score']:.2f}")
     parts += ["⚠ " + WARNINGS.get(w, w) for w in note.get("warn") or []]
     return " · ".join(parts)
 

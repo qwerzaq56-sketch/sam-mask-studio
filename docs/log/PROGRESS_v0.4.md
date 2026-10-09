@@ -1115,6 +1115,11 @@
 - 결정: `LOW_SCORE = 0.8` 그대로, 임시 표시를 뗌(주석 · 매뉴얼 01). 코드 동작은 바뀌지 않음.
 - 측정 스크립트와 줄 단위 결과는 세션 임시 폴더(저장소 밖)에만 있음.
 
+## v0.4-p158 — 배치 보고서의 SAM2 점수 · low_score를 툴팁에 (2026-10-10)
+- 배치 마스킹 스터디 요청(10-10): p157(명령줄, 배치 스터디 몫)이 사람 보고서 프레임 note에 `score`(그 장으로 전파한 키프레임 덩어리 object score의 최솟값)와, `LOW_SCORE`(0.8) 아래면 warn `low_score`를 넣음. 앱 표시는 이쪽이 정함.
+- `mask_report.describe`: note에 score가 있으면 출처 뒤에 `score 0.63`, warn `low_score`는 앱 전파와 같은 문구(`SAM2 is unsure it is there (low score)`). 불러온 마스크의 Frame List · Timeline 툴팁에 그대로 보임. score가 없는 옛 보고서는 전과 같음.
+- 테스트 350개 통과(새 테스트 1).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
