@@ -1003,6 +1003,12 @@
 - 프레임별 놓침: 00023 N=0 3.96 % → union 0.02 %, 00645 N=10 4.01 % → union 0.42 %. 두 방식이 각각 놓친 곳을 다 메움. 대가는 넘침 +1.3 %p(사람 마스크는 무시 영역이라 넓은 쪽이 안전).
 - 테스트 329개 통과(새 2개).
 
+## v0.4-p142 — OSMO 프리셋 사람 단계 기본값 = keyframes 10 + union (2026-10-09)
+- 사용자 결정(10-09): "union 프리셋 기본으로 넣어줘". `PersonStep`에 `keyframes: int = 0`, `union: bool = False` 필드, 내장 `osmo360-selfie-stick`은 `"keyframes": 10, "union": true` + checked_on 한 줄(p141 측정값).
+- `run`과 `person --preset`이 프리셋 값을 씀. 명령줄 `--keyframes N` / `--union`이 덮어씀, `--keyframes 0`이면 프리셋의 전파를 끔(매 프레임 SAM3만). `preset show` 요약에 `SAM3 every frame + propagation from every 10th (union)`.
+- 영향: OSMO 프리셋으로 돌리는 배치(SplatBatch 단계 4)가 3.07 → 3.50초/장, 놓침 0.27 → 0.04 %(0022 cam0). 다른 내장 프리셋은 그대로.
+- 테스트 330개 통과(새 1개, 프리셋 테스트는 가짜 전파로).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

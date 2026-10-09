@@ -608,7 +608,8 @@ def run_folder(images: Path, out: Path, preset, recursive: bool = False, names: 
         log(f"--- person -> {folders['person']}")
         steps["person"] = person_folder(images, folders["person"], labels=p.labels, attach=p.attach,
                                         threshold=p.threshold, grow=p.grow, max_side=p.max_side, touch=p.touch,
-                                        model=sam3_model, device=device, **common)
+                                        keyframes=p.keyframes, union=p.union, model=sam3_model, device=device,
+                                        **common)
     if preset.lens is not None:
         c = preset.lens
         log(f"--- lens -> {folders['lens']}" + (f" (with {folders['person'].name}/)" if "person" in folders else ""))
@@ -933,12 +934,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _gpu_options(person)
     person.add_argument("--and-with", type=Path, help="Mask folder (white = keep, same names) to multiply in, "
                                                       "e.g. the lens edge: one masks/ folder comes out")
-    person.add_argument("--keyframes", type=int, default=0, metavar="N",
+    person.add_argument("--keyframes", type=int, metavar="N",
                         help="SAM3 only on every N-th frame of each camera folder (and its last), SAM2 propagation "
-                             "in between (as the app's Propagate). Default 0: SAM3 on every frame")
-    person.add_argument("--union", action="store_true",
+                             "in between (as the app's Propagate). Default 0 (or the preset's): SAM3 on every frame")
+    person.add_argument("--union", action="store_true", default=None,
                         help="With --keyframes: SAM3 on every frame too, the propagation added on top (catches "
-                             "what SAM3 misses in a frame; as slow as SAM3 on every frame)")
+                             "what SAM3 misses in a frame; as slow as SAM3 on every frame). --keyframes 0 turns a preset's off")
     person.add_argument("--split", type=Path, metavar="DIR",
                         help="Only the photographer to --out (the pole, who touches it, their bag, a hand on the "
                              "pole or the lens rim); everyone else to DIR, black = people as in --out")
@@ -1113,15 +1114,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     elif args.command == "person":
         p, _ = _settings(parser, args, "person")
-        if args.union and args.keyframes < 2:
+        if args.union and p.keyframes < 2:
             parser.error("--union needs --keyframes N (N > 1)")
         device = _device(parser, args)
         report = person_folder(
             args.images, args.out, recursive=args.recursive, names=args.names, invert=args.invert,
             labels=p.labels, attach=p.attach, threshold=p.threshold, grow=p.grow, max_side=p.max_side,
             touch=p.touch, model=args.sam3_model, device=device, and_with=args.and_with, existing=existing,
-            keyframes=args.keyframes, split=args.split, hands=_hands(args.hands) if args.split else (),
-            union=args.union,
+            keyframes=p.keyframes, split=args.split, hands=_hands(args.hands) if args.split else (),
+            union=p.union,
         )
     elif args.command == "run":
         from src.batchmask.presets import find_preset
