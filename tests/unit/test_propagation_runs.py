@@ -90,3 +90,18 @@ def test_object_scores_read_from_the_sam2_state():
     }
     got = object_scores(state, 3, [7, 9])
     assert set(got) == {7} and abs(got[7] - 1 / (1 + np.exp(-2.0))) < 1e-6
+
+
+def test_anchor_span_stops_before_fixed_frames_and_at_the_camera_folder():
+    """p159: Correction Anchor carries a fix out to just before the nearest ★ / ↓ frame, inside its folder."""
+    from src.core.propagation import anchor_span, is_anchor
+
+    keys = ["cam0/a.jpg", "cam0/b.jpg", "cam0/c.jpg", "cam0/d.jpg", "cam0/e.jpg", "cam1/a.jpg", "cam1/b.jpg"]
+    st = lambda s: FrameState.from_mask(_mask(), status=s)  # noqa: E731
+    frames = {keys[0]: st(FrameStatus.MANUAL), keys[2]: st(FrameStatus.MANUAL),
+              keys[3]: st(FrameStatus.PROPAGATED), keys[4]: st(FrameStatus.WARNING), keys[6]: st(FrameStatus.IMPORTED)}
+    assert is_anchor(frames[keys[0]]) and is_anchor(frames[keys[6]]) and not is_anchor(frames[keys[4]])
+    assert not is_anchor(None)
+    assert anchor_span(frames, keys, 2) == (1, 4)  # back to b (a is ★), on to e: cam1 is another folder
+    assert anchor_span(frames, keys, 5) == (5, 5)  # cam1/b is ↓ right after
+    assert anchor_span({}, keys, 3) == (0, 4)      # nothing fixed: the whole folder

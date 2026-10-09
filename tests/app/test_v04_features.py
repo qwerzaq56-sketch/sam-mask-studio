@@ -3731,3 +3731,39 @@ def test_timeline_by_camera_rows_and_batch_colors(qapp, win):
     assert win.timeline_panel.split_btn.isChecked() is False
     win.timeline_panel.split_btn.setChecked(True)
     assert win.settings.timeline_by_camera is True
+
+
+def test_propagate_to_the_next_fixed_frames_each_object_to_its_own(qapp, win):
+    """p159 (Correction Anchor): scope "To the next fixed frames" carries each selected Object from the reference
+    out to just before its nearest ★ / ↓ frame; Objects with other spans follow in the same run."""
+    from src.core.project import FrameState, FrameStatus
+    from src.core.propagation import Direction
+    from tests.app.conftest import wait_until
+    from tests.app.test_gui import click
+
+    s = win.session
+    k = s.keys
+    assert len(k) >= 5
+    win.go_to(2)
+    ids = []
+    for x in (30, 60):
+        win.new_object()
+        click(win, x, 30)
+        win.finish_editing()
+        ids.append(s.project.objects[-1].id)
+    a, b = ids
+    m = s.project.get(a).frame(k[2]).mask
+    s.project.set_frame(a, k[4], FrameState.from_mask(m, status=FrameStatus.MANUAL))  # a: fixed on 5
+    s.project.set_frame(b, k[1], FrameState.from_mask(m, status=FrameStatus.IMPORTED))  # b: imported on 2
+    win.objects_panel.select_ids([a, b])
+    win.propagation_panel.scope.setCurrentIndex(win.propagation_panel.scope.findData("anchors"))
+    win.propagate(0, len(k) - 1, Direction.BOTH, "anchors")
+    wait_until(qapp, lambda: win._busy is None and not win._prop_queue)
+    oa, ob = s.project.get(a), s.project.get(b)
+    assert [i for i in range(len(k)) if oa.frame(k[i]) is not None and oa.frame(k[i]).origin] == [0, 1, 3]
+    assert oa.frame(k[4]).status == FrameStatus.MANUAL and oa.frame(k[4]).origin is None  # the anchor stays
+    got_b = [i for i in range(len(k)) if ob.frame(k[i]) is not None and ob.frame(k[i]).origin]
+    assert got_b == list(range(3, len(k)))  # b: from 3 on, 2 is its anchor
+    assert ob.frame(k[1]).status == FrameStatus.IMPORTED
+    assert {oa.frame(k[0]).origin.run, ob.frame(k[3]).origin.run} == {1}  # one run
+    assert ob.frame(k[4]).origin.forward and ob.frame(k[4]).origin.step == 2

@@ -133,6 +133,29 @@ def run_frames(objects: Iterable, ids: Iterable[int], run: int, ref: str, direct
     return out
 
 
+def is_anchor(fs) -> bool:
+    """A frame propagation stops at (p159): a mask made or fixed here (★), or one imported as it was (↓; a batch
+    report's propagated or warned frames come in as ✓ / ⚠, p150, and are carried over like any propagated one)."""
+    return fs is not None and fs.mask is not None and fs.status in (FrameStatus.MANUAL, FrameStatus.IMPORTED)
+
+
+def anchor_span(frames: dict, keys: Sequence[str], ref: int) -> Tuple[int, int]:
+    """Start..End from *ref* out to just before the nearest anchor (:func:`is_anchor`) either way, inside
+    *ref*'s camera folder (``cam0/`` of a rig): the frames a fix on *ref* should carry to (Correction Anchor)."""
+    folder = keys[ref].rpartition("/")[0]
+
+    def stop(i: int) -> bool:
+        return keys[i].rpartition("/")[0] != folder or is_anchor(frames.get(keys[i]))
+
+    lo = ref
+    while lo > 0 and not stop(lo - 1):
+        lo -= 1
+    hi = ref
+    while hi < len(keys) - 1 and not stop(hi + 1):
+        hi += 1
+    return lo, hi
+
+
 def next_run(objects: Iterable) -> int:
     """The number for a new propagation run: one more than any run still on a frame."""
     return 1 + max((fs.origin.run for o in objects for fs in o.frames.values() if fs.origin is not None),
