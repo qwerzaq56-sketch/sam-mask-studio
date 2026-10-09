@@ -1126,6 +1126,13 @@
 - `mask_report.describe`: note에 score가 있으면 출처 뒤에 `score 0.63`, warn `low_score`는 앱 전파와 같은 문구(`SAM2 is unsure it is there (low score)`). 불러온 마스크의 Frame List · Timeline 툴팁에 그대로 보임. score가 없는 옛 보고서는 전과 같음.
 - 테스트 351개 통과(p157 합쳐서, 새 테스트 1).
 
+## v0.4-p159 — 다음 고정 프레임까지 전파 (Correction Anchor, 2026-10-10)
+- ideas P5-3. 고친 프레임(★)에서 다시 전파할 때 범위를 손으로 좁히지 않아도 되게: Scope에 **To the next fixed frames**.
+- `propagation.is_anchor`: 마스크가 있고 상태가 MANUAL(★) 또는 IMPORTED(↓)인 프레임. 배치 보고서에서 ✓ / ⚠로 들어온 전파 프레임은 고정이 아님(덮어씀).
+- `propagation.anchor_span`: 기준에서 앞뒤로 가장 가까운 고정 프레임 바로 앞까지, 기준의 카메라 폴더(`cam0/`) 안.
+- `MainWindow.propagate_to_anchors`: Object마다 자기 프레임으로 범위를 구해 같은 범위끼리 묶어 계획을 만들고, 첫 묶음을 돌린 뒤 나머지는 큐로(전부 같은 전파 회차 번호, 출처 계획 유지). 덮어쓰기 확인은 한 번. 중지 후 이어가기(Resume)도 큐 앞에 남은 계획을 붙여 그대로.
+- 테스트: 범위 단위 테스트 1, 두 Object가 서로 다른 고정 프레임까지 가는 앱 테스트 1.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

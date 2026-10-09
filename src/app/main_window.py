@@ -18,7 +18,7 @@ import html
 import inspect
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -69,7 +69,7 @@ from src.app.ui_util import DockTitleBar, StartPanel
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.project import FrameStatus
-from src.core.propagation import Direction, PropagationPlan, next_run
+from src.core.propagation import Direction, PropagationPlan, anchor_span, next_run
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
@@ -2950,6 +2950,9 @@ class MainWindow(QMainWindow):
         if s.key is None or self._busy:
             return
         ref = self._reference if self._reference is not None else s.index
+        if scope == "anchors":
+            self.propagate_to_anchors(ref, direction)
+            return
         if scope == "all":
             plan = PropagationPlan(0, len(s.keys) - 1, ref, direction)
         elif scope in ("selection", "custom"):
@@ -2987,6 +2990,41 @@ class MainWindow(QMainWindow):
         self._prop_queue = []
         self._prop_run = (next_run(s.project.objects), plan)  # Resume goes on with the same run
         self._run_propagation(plan, seeds)
+
+    def propagate_to_anchors(self, ref: int, direction: Direction) -> None:
+        """Correction Anchor (p159): carry each Object's mask on *ref* out to just before its nearest fixed
+        frame (★ / ↓) either way, inside the camera folder. Objects with the same span run together; the others
+        follow in turn, all one run (one Clear a Propagation Run)."""
+        s = self.session
+        ids = self.target_object_ids()
+        seeds = s.seeds(ref, ids=ids) if ids else s.seeds(ref)
+        if not seeds:
+            self.warn(f"Select (or, with none selected, check) an Object that has a mask on the reference image "
+                      f"({s.keys[ref]}).")
+            return
+        spans: Dict[Tuple[int, int], List[int]] = {}
+        for oid in seeds:
+            spans.setdefault(anchor_span(s.project.get(oid).frames, s.keys, ref), []).append(oid)
+        plans = [(s.plan(lo, hi, direction, reference=ref), oids) for (lo, hi), oids in spans.items()]
+        plans = [(p, oids) for p, oids in plans if p.targets]
+        if not plans:
+            self.warn("Nothing to propagate: a fixed frame (★ / ↓) or the camera folder's end is right next to "
+                      "the reference that way.")
+            return
+        existing = sorted({k for p, oids in plans for k in s.overwrite_targets(p, oids)}, key=s.keys.index)
+        if existing:
+            shown = "\n".join(existing[:15]) + (f"\n… and {len(existing) - 15} more" if len(existing) > 15 else "")
+            if not self.ask("Existing masks found",
+                            f"Existing masks found.\n\n{shown}\n\nOverwrite existing propagated masks?", "Overwrite"):
+                return
+        for p, oids in plans:
+            self.log(f"To the next fixed frames: {s.keys[p.start]} ~ {s.keys[p.end]} for "
+                     + ", ".join(s.project.get(o).name for o in oids))
+        run = next_run(s.project.objects)
+        (plan, oids), rest = plans[0], plans[1:]
+        self._prop_queue = [(p, o, p) for p, o in rest]  # each with its own plan for the frames' origins
+        self._prop_run = (run, plan)
+        self._run_propagation(plan, {o: seeds[o] for o in oids})
 
     def _run_propagation(self, plan: PropagationPlan, seeds) -> None:
         s = self.session
@@ -3106,12 +3144,14 @@ class MainWindow(QMainWindow):
         """Continue a stopped propagation: each direction from the last frame it reached."""
         if self._busy:
             return
-        self._prop_queue = self._remaining_plans()
+        self._prop_queue = self._remaining_plans() + self._prop_queue  # p159: other Objects' spans after
         self._run_next_queued()
 
     def _run_next_queued(self) -> None:
         while self._prop_queue:
-            plan, ids = self._prop_queue.pop(0)
+            plan, ids, *origin = self._prop_queue.pop(0)
+            if origin and self._prop_run is not None:  # p159: the next Object's span, same run
+                self._prop_run = (self._prop_run[0], origin[0])
             seeds = self.session.seeds(plan.current, ids=ids)
             if seeds:
                 self._run_propagation(plan, seeds)

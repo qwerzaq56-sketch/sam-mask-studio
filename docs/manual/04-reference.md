@@ -128,7 +128,7 @@
 | 칸 | 내용 |
 |---|---|
 | **Reference** | 전파 기준 ◎(Frame List에서 더블클릭). 없으면 지금 프레임 |
-| **Scope** | **Selection (Frame List)**(고른 프레임만, 사이는 건너뜀, **📌 Pin**으로 고정) · **Range (Start ~ End)** · **Custom (IDs: 1-4, 35, 23)** · **All images** |
+| **Scope** | **Selection (Frame List)**(고른 프레임만, 사이는 건너뜀, **📌 Pin**으로 고정) · **Range (Start ~ End)** · **Custom (IDs: 1-4, 35, 23)** · **All images** · **To the next fixed frames**(기준에서 가장 가까운 `★` / `↓` 바로 앞까지, 카메라 폴더 안, Object마다 따로) |
 | **Direction** | **Both** · **Forward** · **Backward** |
 | **Propagate Selected Objects** | 선택한 Object(기준 ◎에 마스크가 있는 것)만 전파. 선택이 없으면 체크된 전체. 덮어쓰기 경고도 그 Object들만 봄 |
 | **Stop** · **Resume** · **Cancel** | 멈춤(결과 유지) · 이어서 · 끝(결과 유지, 원래 프레임으로) |

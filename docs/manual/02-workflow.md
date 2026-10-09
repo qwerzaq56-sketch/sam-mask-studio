@@ -143,7 +143,7 @@ bedroom/
 1. Objects에서 전파할 Object들을 **선택**합니다(줄 클릭, `Shift` / `Ctrl`+클릭). 아무것도 선택하지 않으면 체크된 Object 전체가 전파됩니다.
 2. **Propagation** 탭에서:
    - **Reference**: ◎ 프레임이 맞는지 확인합니다(정하지 않았으면 지금 프레임).
-   - **Scope**: **All images**. 다른 선택: **Selection (Frame List)**(Shift / Ctrl-클릭으로 고른 프레임, **📌 Pin**으로 고정) · **Range (Start ~ End)** · **Custom (IDs: 1-4, 35, 23)**.
+   - **Scope**: **All images**. 다른 선택: **Selection (Frame List)**(Shift / Ctrl-클릭으로 고른 프레임, **📌 Pin**으로 고정) · **Range (Start ~ End)** · **Custom (IDs: 1-4, 35, 23)** · **To the next fixed frames**(아래 B4 참고).
    - **Direction**: **Both**(앞뒤 모두). **Forward** / **Backward**도 있습니다.
 3. **Propagate Selected Objects**.
 
@@ -172,7 +172,7 @@ bedroom/
 
 1. `]` / `[`: 다음 / 이전 **문제 프레임**(`⚠` `✕`)으로 갑니다. 끝에서는 처음으로 돌아갑니다.
 2. B3처럼 고칩니다. 고친 프레임에는 `★`가 붙습니다.
-3. 뒤쪽이 줄줄이 틀렸다면, 고친 프레임을 기준 ◎로 두고(더블클릭 / `Enter`) **Scope**를 **Range**로 좁혀 다시 전파합니다.
+3. 뒤쪽이 줄줄이 틀렸다면, 고친 프레임을 기준 ◎로 두고(더블클릭 / `Enter`) **Scope**를 **To the next fixed frames**로 다시 전파합니다. 기준에서 앞뒤로 가장 가까운 고정 프레임(`★` 고친 것, `↓` 그대로 불러온 것) 바로 앞까지만 덮고, 카메라 폴더(`cam0/` 등)를 넘지 않습니다. Object마다 자기 고정 프레임까지 따로 갑니다. 범위를 직접 정하려면 **Range**.
 
 **잘 보는 법**
 

@@ -60,6 +60,7 @@ SCOPES = (
     ("range", "Range (Start ~ End)"),
     ("custom", "Custom (IDs: 1-4, 35, 23)"),
     ("all", "All images"),
+    ("anchors", "To the next fixed frames"),  # p159: Correction Anchor
 )
 
 
@@ -89,7 +90,10 @@ class PropagationPanel(QWidget):
         self.scope.setCurrentIndex(self.scope.findData("all"))  # the whole folder, as the manual says (U9)
         self.scope.setToolTip(
             "Selection: the images picked in the Frame List (Shift/Ctrl-click), or the pinned ones\n"
-            "Range: Start ~ End · Custom: IDs and ID ranges, e.g. 1-4, 35, 23 · All images: the whole folder"
+            "Range: Start ~ End · Custom: IDs and ID ranges, e.g. 1-4, 35, 23 · All images: the whole folder\n"
+            "To the next fixed frames: after fixing a frame, carry it out to just before the nearest frame\n"
+            "made or fixed by hand (★) or imported as it was (↓) either way, inside its camera folder;\n"
+            "each Object to its own"
         )
         self.scope.currentIndexChanged.connect(self._scope_changed)
         self.pin_btn = QPushButton("📌 Pin")
