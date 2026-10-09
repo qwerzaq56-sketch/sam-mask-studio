@@ -189,7 +189,7 @@
 
 ## D6. Export 창
 
-File → **Export Final Masks…** (`Ctrl+E`). 장면이 아니면 **For**, **Output**이 없습니다.
+File → **Export Final Masks…** (`Ctrl+E`). 장면이 아니면 **For**, **Output**이 없습니다. 모델 없는 카메라 리그(`images/cam0`, `images/cam1`)는 For = **Camera rig dataset**(`masks/camN/a.jpg.png`, 검정 = 무시), Output = **Into the dataset** · **New dataset**(모델 없이 images/ 링크 + 마스크).
 
 | 칸 | 내용 |
 |---|---|

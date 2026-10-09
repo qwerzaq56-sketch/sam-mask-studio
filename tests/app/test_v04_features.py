@@ -3329,3 +3329,47 @@ def test_a_rig_without_a_model_offers_its_mask_sets(qapp, win, tmp_path):
     assert [o.name for o in objs] == ["masks #1", "people #1"] and all(len(o.frames) == 4 for o in objs)
     asked.clear()
     assert win.open_folder(root) and not asked  # its work is saved now: not offered again
+
+
+def test_a_rig_without_a_model_exports_into_the_dataset_or_a_new_one(qapp, win, tmp_path):
+    """p137 (06 2.1 R3): Into the dataset (masks/camN, old ones backed up) and a new dataset (no model)."""
+    from src.app.dialogs import ExportDialog
+    from src.core.storage import check_export
+    from tests.app.conftest import wait_until
+    from tests.unit.test_rig import make_rig
+
+    root = make_rig(tmp_path / "rig", n=2)  # with masks/cam0, masks/cam1 (empty ones)
+    win.choose = lambda *a, **kw: None  # do not load them
+    assert win.open_folder(root) and win.scene is None and win.rig.root == root
+    s = win.session
+    s.start_new_object()
+    s.click(30, 30)
+    s.finish_editing()
+    dlg = ExportDialog(tmp_path / "elsewhere", win, check=lambda pat: check_export(s.project, pat),
+                       scene=win.rig, target="rig")
+    assert [dlg.target.itemData(i) for i in range(dlg.target.count())] == ["rig", "custom"]  # no trainer presets
+    assert dlg.to_scene.text() == "Into the dataset"
+    opts = dlg.options()
+    assert opts.out_dir == root / "masks" and opts.name_pattern == "{name}.png" and opts.backup
+    written = s.export(opts)
+    assert sorted(p.relative_to(root / "masks").as_posix() for p in written) == [
+        f"{c}/frame_00{i}.png.png" for c in ("cam0", "cam1") for i in (0, 1)]
+    [backup] = [d for d in root.iterdir() if d.name.startswith("masks_backup_")]
+    assert (backup / "cam1" / "frame_001.png.png").is_file()  # the old ones moved, per camera
+    win.go_to(3)
+    win.toggle_excluded()  # cam1/frame_001 ⊘
+    dlg = ExportDialog(tmp_path / "x", win, check=lambda pat: check_export(s.project, pat), scene=win.rig,
+                       target="rig", excluded=1)
+    dlg.to_new.setChecked(True)
+    new = tmp_path / "rig_dataset"
+    dlg.dataset.setText(str(new))
+    assert dlg.dataset_root() == new and dlg.options().out_dir == new / "masks"
+    assert "images/ linked (no model)" in dlg.summary.text()
+    win.run_export(dlg.jobs(), dataset=new)
+    wait_until(qapp, lambda: not win._busy)
+    assert sorted(p.relative_to(new / "images").as_posix() for p in (new / "images").rglob("*.png")) == [
+        "cam0/frame_000.png", "cam0/frame_001.png", "cam1/frame_000.png"]
+    assert sorted(p.relative_to(new / "masks").as_posix() for p in (new / "masks").rglob("*.png")) == [
+        "cam0/frame_000.png.png", "cam0/frame_001.png.png", "cam1/frame_000.png.png"]
+    assert not (new / "sparse").exists()
+    assert "1 ⊘ left out, no model" in win.log_view.toPlainText()

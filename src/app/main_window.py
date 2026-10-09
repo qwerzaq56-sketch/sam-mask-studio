@@ -68,7 +68,7 @@ from src.core.propagation import Direction, PropagationPlan
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
-from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, mask_sets, masks_dir, rig_images_dir, rig_root
+from src.core.rig import CAMERA_DIR, camera_dirs, is_rig, mask_sets, masks_dir, rig_dataset, rig_images_dir, rig_root
 from src.core.rig import check as rig_check
 from src.core.storage import check_export, default_export_dir, export_one_mask, full_mask, has_sky
 from src.engine.imageio import find_images, key_stem, read_rgb
@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
         self._job = ""  # "batch" | "propagation" while _prop_worker runs
         self._reference: Optional[int] = None  # propagation reference (double-clicked image); None = current
         self.scene = None  # the COLMAP scene the open folder belongs to (src/core/colmap.py)
+        self.rig = None  # a camera rig without a model: where Export writes as into a scene (src/core/rig.py)
         self._pinned: Optional[List[int]] = None  # the pinned Frame List selection (Selection scope)
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
         self._last_prop: Optional[tuple] = None
@@ -1063,6 +1064,8 @@ class MainWindow(QMainWindow):
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
         self.scene = find_scene(folder)
+        # a rig without a model: Export writes into its masks/camN as into a scene (06 2.1 R3)
+        self.rig = rig_dataset(folder) if self.scene is None and is_rig(folder) else None
         self.setWindowTitle(f"SAM Mask Studio {app_version()}{self._cpu_tag()} — {folder}"
                             + (" (COLMAP scene)" if self.scene else ""))
         loaded = len(self.session.project.objects)
@@ -2966,7 +2969,8 @@ class MainWindow(QMainWindow):
         dlg = ExportDialog(
             default_export_dir(s.image_dir), self,
             check=lambda pattern, ids=None, flipped=(): check_export(project, pattern, ids, flipped),
-            scene=self.scene, target=self.settings.export_target if self.scene else "custom",
+            scene=self.scene or self.rig,
+            target=self.settings.export_target if self.scene else "rig" if self.rig else "custom",
             bars=project.bars_or_default(),
             objects=[(o.id, o.name, o.included) for o in project.objects],
             excluded=len(project.excluded),
@@ -3137,7 +3141,7 @@ class MainWindow(QMainWindow):
                 return [sorted(o.out_dir.iterdir()) for o in jobs]
             if dataset is not None:
                 step("Linking images, filtering the model")
-                report.append(build_dataset(s.image_dir, self.scene.model_dir, dataset, keep))
+                report.append(build_dataset(s.image_dir, (self.scene or self.rig).model_dir, dataset, keep))
             out = []
             for n, o in enumerate(jobs, 1):
                 name = o.out_dir.name + (f" ({n} of {len(jobs)})" if len(jobs) > 1 else "")
@@ -3158,8 +3162,9 @@ class MainWindow(QMainWindow):
             elif report:
                 r = report[0]
                 self.log(f"New dataset {dataset}: {r.model.images_kept} image(s) ({r.linked} linked, {r.copied} copied), "
-                         f"{r.model.images_dropped} left out, 3D points {r.model.points_kept} kept / "
-                         f"{r.model.points_dropped} removed"
+                         + (f"{r.model.images_dropped} left out, 3D points {r.model.points_kept} kept / "
+                            f"{r.model.points_dropped} removed" if self.scene is not None
+                            else f"{len(s.keys) - len(keep)} ⊘ left out, no model")
                          + (f"; not carried over: {', '.join(r.model.skipped_files)}" if r.model.skipped_files else ""))
             for opts, written in zip(jobs, paths):
                 self.log(f"Exported {len(written)} mask(s) to {opts.out_dir}")
