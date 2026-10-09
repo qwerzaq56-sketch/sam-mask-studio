@@ -45,7 +45,7 @@ Original(포인트 · 박스 · 불러온 마스크)  ∪  더하기 레이어  
 | ① | **메뉴 바** (File · Edit · View · Go · Help) | 모든 명령이 키와 함께 있습니다. 메뉴를 열어 보면 단축키를 배울 수 있습니다 |
 | ② | **툴바** | 작업 중 자주 켜고 끄는 것만: Mask Preview · Preview: Final / Object(`X`) · Cut Out: Inside / Outside(`C`) · Checker · Paint(`D`, 브러시) · Outline(두께 칸) · Overlay 슬라이더(마스크 색 진하기, 값 더블클릭 = 100 %) · Show Changes · Solo · Hide Masks |
 | ③ | **Frame List** | 프레임 목록(ID · 표시 · 파일 이름). 제목줄의 `1` = 선택한 Object 기준으로 표시, `Aa` = 이름을 접어 좁게. 카메라 리그(`cam0/`, `cam1/`)는 카메라가 바뀌는 줄에 머리줄(`cam1 · 94`)이 붙고 이름은 파일 이름만 |
-| ④ | **Objects** | Object 목록. 한 줄: 👁 · 체크박스 · 이름 · 🔗 · 🔒 · Points · × · ···. 아래에 **+ New Object from Points**, **+ Special ▾** 와 선택한 Object용 버튼 |
+| ④ | **Objects** | Object 목록. 한 줄: 👁 · 체크박스 · 이름 · 🔗 · 🔒 · Points · × · ···. 아래에 **+ New Object**, **+ Special ▾** 와 선택한 Object용 버튼 |
 | ⑤ | **탭** | **Prompt**(SAM3로 찾기, 마우스를 올리면 Prompt / Detection) · **Batch**(여러 프레임에 한꺼번에) · **Propagation**(전파) · **Logs**(작업 기록) |
 | ⑥ | **작업 상태 바** | 캔버스 위 한 줄: 지금 프레임 │ 대상 Object │ 모드(View, Points, Paint, Auto · …, Select on Image, 전파 중 …) │ 파일 이름 |
 | ⑦ | **캔버스** | 이미지와 마스크. 휠 = 확대 · 축소, 가운데 드래그 또는 `Space`+드래그 = 이동 |
@@ -107,7 +107,7 @@ File → **Settings…** 에서 모델 파일 위치를 정합니다.
 
 - 설정은 앱 폴더의 `config.local.json`에 저장됩니다.
 - SAM2 tiny와 SAM3를 함께 쓰면 VRAM을 약 4 GB 씁니다(8 GB GPU에서 개발 · 시험).
-- GPU가 없으면 SAM2(클릭, 전파)와 Sky는 CPU로 느리게 동작하지만, **SAM3 글자 검출(Detect / Batch)은 NVIDIA GPU가 있어야** 합니다. 이때는 **+ New Object from Points** (`N`)로 Object를 만드세요.
+- GPU가 없으면 SAM2(클릭, 전파)와 Sky는 CPU로 느리게 동작하지만, **SAM3 글자 검출(Detect / Batch)은 NVIDIA GPU가 있어야** 합니다. 이때는 **+ New Object** (`N`)로 Object를 만드세요.
 
 ---
 

@@ -231,7 +231,7 @@ class Session:
     # ------------------------------------------------------------------
 
     def start_new_object(self) -> None:
-        """Arm "+ New Object from Points": the next click or box creates an Object."""
+        """Arm "+ New Object": the next click or box creates an Object."""
         self.mode = Mode.NEW_OBJECT
         self.editing = None
         self.selected_point = None

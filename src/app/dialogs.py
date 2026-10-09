@@ -1266,7 +1266,7 @@ SHORTCUTS = (
     ("Edit", (
         ("Ctrl+Z", "Undo"),
         ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
-        ("N", "New Object from points"),
+        ("N", "New Object"),
         ("E", "Edit with points: start editing the selected Object; from the brush / an auto tool: back to points; "
               "points again: finish editing"),
         ("D", "Paint (the brush): start editing (the selected Object); from points: the brush; "

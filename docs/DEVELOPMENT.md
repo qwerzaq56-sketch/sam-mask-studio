@@ -23,7 +23,7 @@ The original planning documents are in `docs/specs/` and win over anything here:
 | Spec | Implementation |
 |---|---|
 | 01 §5 layout: toolbar Open/Save/Undo/Redo/Export/ERP · Objects · Canvas · Properties · Prompt/Detection/Status/Logs | `app/main_window.py` (ERP action present but disabled — later) |
-| 01 §6 Objects only via SAM3 Detection or **+ New Object from Points**; plain clicks never create | `Session.click` (IDLE → no-op), `start_new_object` |
+| 01 §6 Objects only via SAM3 Detection or **+ New Object**; plain clicks never create | `Session.click` (IDLE → no-op), `start_new_object` |
 | 01 §7 row: ☑ name [Edit] [×], Variant ●/○ rows under the Object; 03 §3 [···] + "Selected Objects: Merge/Duplicate/Delete" | `app/objects_panel.py` (both [×] and [···]) |
 | 01 §8 one Object in Edit; left/right = +/− point; select a point, Delete removes it; Clear Points; Finish Editing; Ctrl+Z/Y | `Session.edit/click/select_point/delete_point/clear_points`, canvas hit-test, Properties point list |
 | 01 §8.1 Positive / Negative point lists | `app/properties_panel.py` (grouped, numbered in placement order) |
@@ -107,7 +107,7 @@ Verified locally (Windows 10, RTX 2060 Super 8 GB, torch 2.14 cu130, SAM2.1 tiny
   17 s, first detect 1.7 s then 0.2 s; propagation of 19 frames (both directions) 7.3 s, Current
   skipped, targets exact; peak VRAM 4.5 GB with SAM2 image + SAM3 + SAM2 video predictor.
 - Real app driven with mouse events (offscreen Qt, real models): SAM3 detect → keep one →
-  Object → SAM2 refine; New Object from Points → Variant choice → select a point and delete it;
+  Object → SAM2 refine; New Object → Variant choice → select a point and delete it;
   rename (Korean) / duplicate / delete with confirm; propagate Both → ★ untouched, every frame
   filled, ⚠/✕ where the object leaves the view; fix frame 15 → Forward re-propagate with the
   overwrite prompt, earlier frames untouched; merge; Final preview; COLMAP-named inverted export

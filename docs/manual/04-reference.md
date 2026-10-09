@@ -56,7 +56,7 @@
 
 | 버튼 | 동작 |
 |---|---|
-| **+ New Object from Points** (`N`) | 캔버스를 클릭하거나 박스를 드래그해 새 Object |
+| **+ New Object** (`N`) | 캔버스를 클릭하거나 박스를 드래그해 새 Object |
 | **+ Special ▾** | Sky Mask / Fisheye Lens Edge 특수 Object ([D5](#d5-colmap-장면--특수-object)) |
 | **Move A → B** | 먼저 고른 A의 **이 프레임** 마스크를 마지막에 고른 B에 **더하고** A에서 뺌. A는 Object로 남음 |
 | 옆 **⚙** (Move / Copy Object into Another) | Action: **Move** / **Copy** · B's mask: **Add** / **Replace** · Images: **This image only** / **Every image where A has a mask**. 고른 값은 기억하지 않음 |
@@ -247,7 +247,7 @@ Object = 학습에서 **무시할 것**입니다. 프리셋은 이것을 학습�
 | 키 | 동작 |
 |---|---|
 | `Ctrl+Z` / `Ctrl+Y` (`Ctrl+Shift+Z`) | Undo / Redo |
-| `N` | New Object from Points |
+| `N` | New Object |
 | `E` | 포인트로 편집: 선택한 Object 편집 시작 · 브러쉬 / 오토 툴에서 → 포인트 · 포인트에서 다시 → 편집 끝 (바뀔 수 있음) |
 | `D` | 브러쉬로 편집: 편집 시작 · 포인트에서 → 브러쉬 · 브러쉬에서 다시 → 편집 끝 (바뀔 수 있음) |
 | `Delete` | 고른 포인트 삭제, 없으면 고른 Object 삭제(확인 없음, 🔒는 남음) |

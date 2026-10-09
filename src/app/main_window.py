@@ -365,7 +365,7 @@ class MainWindow(QMainWindow):
         self.act_quit = self._action("&Quit", self.close)  # no key: too easy to hit next to Ctrl+Z / Ctrl+A
         self.act_undo = self._action("&Undo", self.undo, ["Ctrl+Z"])
         self.act_redo = self._action("&Redo", self.redo, ["Ctrl+Y", "Ctrl+Shift+Z"])
-        self.act_new = self._action("&New Object from Points", self.new_object, ["N"],
+        self.act_new = self._action("&New Object", self.new_object, ["N"],
                                     "Then click (or drag a box) on the image")
         self.act_edit = self._action("&Edit Points / Finish", self.edit_key, ["E"],
                                      "Edit the selected Object with SAM2 points; again: finish")
@@ -895,7 +895,7 @@ class MainWindow(QMainWindow):
         self.propagation_panel.run_btn.setEnabled(has_folder and not busy)
 
         mode_text = {
-            Mode.IDLE: "Ready — use an Object's Points button (E), + New Object from Points (N), or a SAM3 prompt",
+            Mode.IDLE: "Ready — use an Object's Points button (E), + New Object (N), or a SAM3 prompt",
             Mode.NEW_OBJECT: "NEW OBJECT — left click or drag a box on the image (Esc cancels)",
             Mode.EDIT: "EDIT — left: positive · right: negative · drag: box · D: paint · Delete: point · Esc: finish",
         }[s.mode]

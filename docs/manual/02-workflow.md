@@ -78,12 +78,12 @@ bedroom/
 
 **다른 방법**
 
-- **+ New Object from Points** (`N`): 누른 뒤 캔버스를 클릭하거나 박스를 드래그하면 SAM2로 Object 하나를 만듭니다. SAM3가 못 찾는 물체에 씁니다.
+- **+ New Object** (`N`): 누른 뒤 캔버스를 클릭하거나 박스를 드래그하면 SAM2로 Object 하나를 만듭니다. SAM3가 못 찾는 물체에 씁니다.
 - **Batch** 탭: 여러 프레임(**All images** / **Range (Start ~ End)** / **Selected images**)에 프롬프트를 한꺼번에 돌려 **라벨마다 Object 하나**를 만듭니다(프레임마다 그 라벨 후보의 합).
   **Min score**보다 낮은 후보는 무시합니다. **Run on Images**로 시작, **Stop** = 여기까지 남기기, **Cancel** = 전부 버리기.
   사람을 한 사람씩 나눌 필요가 없으면 이것이 가장 빠릅니다. 이때는 B4 전파를 건너뛰고 B5 검수로 갑니다.
 
-> 그냥 캔버스를 클릭해서는 Object가 생기지 않습니다. 항상 Detect 후 Add, 또는 **+ New Object from Points**로 만듭니다.
+> 그냥 캔버스를 클릭해서는 Object가 생기지 않습니다. 항상 Detect 후 Add, 또는 **+ New Object**로 만듭니다.
 
 ## B3. 다듬기
 
@@ -251,7 +251,7 @@ bedroom/
 | 전파했는데 어떤 Object는 그대로 | 전파는 **선택한** Object만 합니다(아무것도 선택 안 했을 때만 체크된 전체). 기준 ◎ 프레임에 그 Object의 마스크가 있어야 합니다 |
 | Cancel했는데 결과가 남아 있음 | 전파의 Cancel은 결과를 남기고 끝냅니다. 없애려면 `Ctrl+Z`. (Batch 탭의 Cancel은 전부 버립니다) |
 | Points를 눌러도 편집이 안 됨 | **Select on Image**가 켜져 있으면 편집에 들어갈 수 없습니다. 후보를 Add하거나 Discard하세요 |
-| 캔버스를 클릭했는데 Object가 안 생김 | 먼저 **+ New Object from Points** (`N`)를 누르세요 |
+| 캔버스를 클릭했는데 Object가 안 생김 | 먼저 **+ New Object** (`N`)를 누르세요 |
 | 오토 툴을 쓰다가 다른 프레임으로 못 감 | Paint 모드에서 골라 둔 부분이 아직 안 써짐. `Enter` = 쓰기, `Esc` = 버리기 |
 | ⊘로 뺀 프레임이 여전히 학습됨 | ⊘는 **New dataset**으로 내보낼 때만 빠집니다. Into the scene은 원본 장면이라 뺄 수 없습니다 |
 | 특수 Object(Sky 등)를 편집 · 전파할 수 없음 | 특수 Object는 설정값으로 만들어서 손으로 못 고칩니다. Special 탭의 **Apply (make it an ordinary Object)** 후에 편집합니다 |

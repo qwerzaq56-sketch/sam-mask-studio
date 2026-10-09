@@ -91,7 +91,7 @@ README = """SAM Mask Studio {version} (portable)
 - Windows 10 / 11 (64비트)
 - GPU로 실행: NVIDIA 그래픽카드 + CUDA 13을 지원하는 최신 드라이버 (PyTorch {torch})
   GPU가 없거나 드라이버가 오래되면 SAM2(클릭, 전파)와 Sky는 CPU로 느리게 실행되고,
-  SAM3 글자 검출(Detect / Batch)은 쓸 수 없습니다 (+ New Object from Points로 대신)
+  SAM3 글자 검출(Detect / Batch)은 쓸 수 없습니다 (+ New Object로 대신)
 - VRAM 8GB 정도 권장
 
 폴더 구성
