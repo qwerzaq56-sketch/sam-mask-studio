@@ -54,7 +54,7 @@ bedroom/
 **조작**
 
 1. Frame List에서 사람이 잘 보이는 프레임을 엽니다(클릭, 또는 `←` `→`).
-2. **Prompt / Detection** 탭의 입력칸에 `person`을 쓰고 **Detect**(또는 `Enter`).
+2. **Prompt** 탭의 입력칸에 `person`을 쓰고 **Detect**(또는 `Enter`).
    쉼표로 여러 개를 한 번에 찾을 수 있습니다: `person, tripod`.
 3. 후보가 라벨별로 묶여 목록에 나오고, **Select on Image**가 켜집니다. 캔버스에서 고릅니다:
    - 클릭 / 드래그 = 후보 추가(드래그 박스에 조금이라도 걸리면 대상)

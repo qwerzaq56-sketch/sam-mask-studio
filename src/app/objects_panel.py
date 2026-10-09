@@ -197,6 +197,7 @@ class ObjectsPanel(QWidget):
         self.tree.itemSelectionChanged.connect(self._on_selection)
         self.tree.itemClicked.connect(self._on_clicked)
         self.tree.viewport().installEventFilter(self)  # a click on empty space clears the selection
+        self._compact = False  # a narrow list: ✎ for Points / Editing and no × column, so names show (U4)
 
         self.new_btn = QPushButton("+ New Object from Points")
         self.new_btn.setToolTip("Then click (or drag a box) on the image — N")
@@ -380,14 +381,34 @@ class ObjectsPanel(QWidget):
                 item.child(i).setText(0, f"{'●' if i == sel else '○'}  Variant {i + 1}   {v.score:.3f}")
 
     def _edit_button(self, oid: int, editing: bool) -> QPushButton:
-        b = QPushButton("Editing" if editing else "Points")
+        b = QPushButton()
         b.setCheckable(True)
         b.setChecked(editing)
         b.setToolTip("Finish Editing (Esc)" if editing else "Edit this Object with SAM2 points (E)")
-        b.setFixedWidth(60)
+        self._size_edit_button(b)
         b.clicked.connect(lambda _=False, i=oid: later(self, self.edit_requested, i))
         b.setObjectName(f"edit_{oid}")
         return b
+
+    def _size_edit_button(self, b: QPushButton) -> None:
+        if self._compact:
+            b.setText("✎")
+            b.setFixedWidth(26)
+        else:
+            b.setText("Editing" if b.isChecked() else "Points")
+            b.setFixedWidth(60)
+
+    COMPACT_BELOW = 330  # px of list width: below it a row's name kept only a letter or two at 1280 px (p133)
+
+    def _fit_row(self, width: int) -> None:
+        compact = width < self.COMPACT_BELOW
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.tree.setColumnHidden(5, compact)  # × : Delete stays in ··· and under the list
+        for b in self.tree.findChildren(QPushButton):
+            if b.objectName().startswith("edit_"):
+                self._size_edit_button(b)
 
     def _options_button(self, tip: str, slot) -> QPushButton:
         b = QPushButton("⚙")
@@ -509,6 +530,8 @@ class ObjectsPanel(QWidget):
         self._update_buttons()
 
     def eventFilter(self, obj, event):
+        if obj is self.tree.viewport() and event.type() == QEvent.Type.Resize:
+            self._fit_row(self.tree.width())
         if (
             obj is self.tree.viewport()
             and event.type() == QEvent.Type.MouseButtonPress

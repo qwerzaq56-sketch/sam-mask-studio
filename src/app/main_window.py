@@ -201,7 +201,9 @@ class MainWindow(QMainWindow):
         self.tabs.setUsesScrollButtons(False)  # a narrow column elides the tab names instead of hiding tabs
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.batch_panel = BatchPanel()
-        self.tabs.addTab(self.detection_panel, "Prompt / Detection")
+        # short names: the four have to fit a 1280 px window's column (U4, p133)
+        self.tabs.addTab(self.detection_panel, "Prompt")
+        self.tabs.setTabToolTip(0, "Prompt / Detection: find Objects with a SAM3 text prompt")
         self.tabs.addTab(self.batch_panel, "Batch")
         self.tabs.addTab(self.propagation_panel, "Propagation")
         self.tabs.addTab(self.log_view, "Logs")

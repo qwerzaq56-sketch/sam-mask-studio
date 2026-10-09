@@ -111,7 +111,7 @@ class SpecialPanel(QWidget):
                                "cli sky --color-preset). Runs on Make Sky Masks; the preset's values are kept "
                                "in the Object")
         self.finish.addItem("Off", None)
-        self.tips = QCheckBox("Take out tree tips beyond the band")
+        self.tips = QCheckBox("Take out tree tips")  # short: a check box never wraps (U3, p133)
         self.tips.setToolTip("Rough, not-sky-colored pixels up to 120 px from the tree, beyond By Color's "
                              "Near edge band (needs the preset's band on)")
         self.tips.setChecked(True)
@@ -120,6 +120,7 @@ class SpecialPanel(QWidget):
         self.finish_note.setStyleSheet("color: gray;")
         head = QLabel("Finish (By Color + SAM2, full resolution)")
         head.setStyleSheet("font-weight: 600; margin-top: 6px;")
+        head.setWordWrap(True)
         sf.addRow(head)
         sf.addRow("By Color", self.finish)
         sf.addRow(self.tips)
