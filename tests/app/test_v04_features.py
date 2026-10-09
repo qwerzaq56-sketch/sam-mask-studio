@@ -3635,3 +3635,43 @@ def test_propagation_runs_are_recorded_and_cleared_from_a_frame_on(qapp, win):
     win.undo()
     assert s.project.get(oid).frame(k[3]).origin.step == 1
     assert any(win.act_clear_run in m.actions() for m in win.menuBar().findChildren(QMenu))  # Objects menu
+
+
+def test_a_low_sam2_object_score_marks_the_frame_worth_a_look(qapp, win):
+    """p153: the engine hands out SAM2's object score per frame; the frame keeps it, under LOW_SCORE it is ⚠ and
+    the tooltip says why. A propagate function without scores (an older stand-in) still works."""
+    from src.core.project import FrameStatus
+    from src.core.propagation import LOW_SCORE, Direction
+    from tests.app.conftest import wait_until
+    from tests.app.test_gui import click
+    from tests.fakes import fake_propagate
+
+    def scored(*a, scores=None, **kw):
+        for idx, masks in fake_propagate(*a, **kw):
+            scores[idx] = {oid: (LOW_SCORE - 0.1 if idx == 4 else 0.97) for oid in masks}
+            yield idx, masks
+
+    win.propagate_fn = scored
+    s = win.session
+    win.go_to(2)
+    win.new_object()
+    click(win, 30, 30)
+    win.finish_editing()
+    oid = s.project.objects[0].id
+    win.objects_panel.select_ids([oid])
+    win.propagate(0, 4, Direction.BOTH)
+    wait_until(qapp, lambda: win._busy is None)
+    o = s.project.get(oid)
+    k = s.keys
+    assert o.frame(k[3]).status == FrameStatus.PROPAGATED and o.frame(k[3]).variants[0].score == 0.97
+    assert o.frame(k[4]).status == FrameStatus.WARNING
+    win.refresh()
+    assert "score 0.97" in win.images_panel.list.item(3).toolTip()
+    tip = win.images_panel.list.item(4).toolTip()
+    assert f"score {LOW_SCORE - 0.1:.2f}" in tip and "unsure" in tip
+
+    win.propagate_fn = fake_propagate  # no scores: graded by area alone, as before
+    win.propagate(0, 4, Direction.FORWARD)
+    wait_until(qapp, lambda: win._busy is None)
+    assert s.project.get(oid).frame(k[4]).status == FrameStatus.PROPAGATED
+    assert "score" not in win.images_panel.list.item(4).toolTip()

@@ -63,3 +63,30 @@ def test_an_origin_is_saved_and_dropped_when_the_frame_is_edited_here(tmp_path):
     p.set_frame(oid, "f1.jpg", dataclasses.replace(fs, status=FrameStatus.MANUAL))
     assert p.get(oid).frames["f1.jpg"].origin is None
     assert next_run(p.objects) == 1
+
+
+def test_grade_warns_on_a_low_object_score():
+    from src.core.propagation import LOW_SCORE, grade
+
+    m = np.zeros((10, 10), bool)
+    m[2:6, 2:6] = True
+    assert grade(m, 16) == FrameStatus.PROPAGATED
+    assert grade(m, 16, LOW_SCORE + 0.05) == FrameStatus.PROPAGATED
+    assert grade(m, 16, LOW_SCORE - 0.05) == FrameStatus.WARNING
+    assert grade(np.zeros_like(m), 16, 0.99) == FrameStatus.FAILED
+
+
+def test_object_scores_read_from_the_sam2_state():
+    import torch
+
+    from src.engine.video import object_scores
+
+    state = {
+        "obj_id_to_idx": {7: 0, 9: 1},
+        "output_dict_per_obj": {
+            0: {"cond_frame_outputs": {}, "non_cond_frame_outputs": {3: {"object_score_logits": torch.tensor([[2.0]])}}},
+            1: {"cond_frame_outputs": {}, "non_cond_frame_outputs": {}},
+        },
+    }
+    got = object_scores(state, 3, [7, 9])
+    assert set(got) == {7} and abs(got[7] - 1 / (1 + np.exp(-2.0))) < 1e-6

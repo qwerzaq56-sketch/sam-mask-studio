@@ -1078,6 +1078,14 @@
 - 지운 자리는 비게 됨(전파가 덮어쓴 이전 마스크로 돌아가지 않음; 그건 Ctrl+Z). p152 전 전파 · 불러온 마스크는 기록이 없어 대상 아님.
 - 테스트 343개 통과(새 테스트 4).
 
+## v0.4-p153 — 전파 프레임별 SAM2 점수 · 낮은 점수 경고 (2026-10-10)
+- 사용자 지시(10-10): tools.html 아이디어 ②(sam3 video tool의 프레임별 신뢰도).
+- `engine/video.py` `propagate(..., scores=dict)`: 프레임을 낼 때마다 `scores[index] = {obj_id: 점수}`를 채움. 점수 = SAM2 상태의 `object_score_logits`의 sigmoid(물체가 그 프레임에 있다는 믿음; 0.5 이하면 SAM2가 마스크를 비움). 인자는 선택이라 명령줄 · 옛 호출은 그대로.
+- 앱: 전파 결과를 저장할 때 점수를 프레임의 score로 남기고, `grade`가 점수 < `LOW_SCORE`(0.8, 임시)인데 마스크가 있으면 ⚠. `scores`를 받지 않는 전파 함수(옛 가짜)는 예전처럼 면적만으로.
+- 툴팁: 전파 출처 뒤에 `score 0.97`, ⚠면 이유(`SAM2 is unsure it is there (low score)` / `its area changed a lot from the reference`).
+- 남은 것: 0.8은 측정 전 임시 값. 실제 장면(0022 · 0015)에서 GPU로 점수 분포를 재서 정함(사용자 확인 뒤 `gpu run`). 명령줄 `low_score` 경고는 배치 스터디 몫(`scores` 인자 알림).
+- 테스트 346개 통과(새 테스트 3, 가짜 전파가 `scores` 인자를 받음).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

@@ -1457,10 +1457,12 @@ class Session:
     def apply_propagation(
         self, results: Dict[int, Dict[int, np.ndarray]], reference: Dict[int, np.ndarray],
         origin: Optional[Tuple[int, PropagationPlan]] = None,
+        scores: Optional[Dict[int, Dict[int, float]]] = None,
     ) -> Dict[int, FrameStatus]:
         """Store propagated masks (``{index: {obj_id: mask}}``) as one undo step.
 
         *origin*: (run number, the run's first plan): each frame records where it came from (p152).
+        *scores*: ``{index: {obj_id: SAM2 object score}}``, kept as the frame's score; a low one warns (p153).
         Returns each frame's worst status (FAILED > WARNING > PROPAGATED).
         """
         where = origins(origin[1], origin[0], self.keys) if origin is not None else {}
@@ -1472,8 +1474,10 @@ class Session:
             key = self.keys[idx]
             worst = FrameStatus.PROPAGATED
             for oid, m in by_obj.items():
-                st = grade(m, ref_area.get(oid, 0))
-                updates.setdefault(oid, {})[key] = FrameState.from_mask(m, status=st, origin=where.get(idx))
+                sc = (scores or {}).get(idx, {}).get(oid)
+                st = grade(m, ref_area.get(oid, 0), sc)
+                updates.setdefault(oid, {})[key] = FrameState.from_mask(
+                    m, score=1.0 if sc is None else sc, status=st, origin=where.get(idx))
                 if rank[st] > rank[worst]:
                     worst = st
             per_frame[idx] = worst
