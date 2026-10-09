@@ -327,7 +327,7 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
     keyframes' own masks (*marks*: index -> mask), a frame between two keyframes the union of what SAM2
     carries forward from the one before and back from the one after. Yields (index, mask, the keyframes it
     came from as ``(keyframe index, "fwd" | "back")``; empty for a keyframe; the lowest SAM2 object score of
-    the pieces carried into it, or None: p157). A keyframe's SAM2 run is left out when no frame it reaches is
+    the pieces carried into it that are still there, or None: p157, p160). A keyframe's SAM2 run is left out when no frame it reaches is
     *wanted*."""
     from src.core.propagation import Direction, PropagationPlan
 
@@ -353,8 +353,9 @@ def propagated(images: Path, keys: Sequence[str], marks: Dict[int, np.ndarray], 
             for idx, objs in propagate(str(SAM2_MODEL), paths, plan, seeds, max_side, device=device, scores=scores):
                 if idx in marks:
                     continue
-                if scores.get(idx):
-                    low[idx] = min(low.get(idx, 1.0), min(scores[idx].values()))
+                kept = [v for o, v in scores.get(idx, {}).items() if o in objs and objs[o].any()]
+                if kept:  # a piece SAM2 let go of (empty, score 0.5 or below) has left the view: not a doubt (p160)
+                    low[idx] = min(low.get(idx, 1.0), min(kept))
                 m = got.get(idx)
                 if m is None:
                     m = np.zeros_like(layers)
