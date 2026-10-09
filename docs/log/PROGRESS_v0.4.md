@@ -1045,6 +1045,14 @@
 - 리어카를 attach로 두면 행인이 세워 둔 리어카를 스쳐 지나가는 장에서는 리어카도 가려짐. 움직이는 물건 판정은 실험 스터디(P6 2단계, 정합 뒤 3D 점).
 - 테스트 332개 통과(steady 테스트 2개 삭제).
 
+## v0.4-p149 — 사람 마스크 보고서에 출처 · 경고 (sam3-video-annotation-tool 참고, 실험 스터디) (2026-10-09)
+- 사용자 지시(10-09): 연속 닿음은 빼고, 외부 도구 비교(tools.html 4장) 아이디어 ① 출처 기록의 명령줄 몫을 구현. v0.6.0 뒤 실험 스터디.
+- `person` report.json 프레임마다 `source`(`sam3` | `keyframe` | `propagated` | `union`), 전파를 받은 장은 `from`(`[{"key", "dir": "fwd"|"back"}]`, 기존 `from_keyframes` 개수는 그대로).
+- `warn`(있을 때만): `area_jump`(같은 카메라 폴더 앞 장 대비 사람 면적 4배 넘게 변함, 앱 `WARN_AREA_RATIO`와 같은 값), `empty`(앞 장엔 있었는데 0), `added_big`(union 전파가 화면 1 % 넘게 더함, `ADDED_WARN`). 보고서 맨 위 `warned`에 이유별 장 수, 로그 줄 끝에 `! 이유`.
+- 지난 측정 보고서로 센 경고: 0022 cam0 94장 0장, 0015 리어카 구간 46장 2장(cam1 00095 added_big = 전파가 실어 온 리어카, cam1 00105 area_jump = 리어카가 화면 밖으로 나감). GPU로 다시 돌리지는 않음.
+- 앱 몫(나중, 사용자 선택 시): FrameState 출처 표시 · ③ 타임라인(p150~), SAM2 object score(`low_score`)는 `engine/video.py`가 점수를 내보내야 해서 앱 몫으로 남김.
+- 테스트 333개 통과(새 테스트 1, 키프레임 · union 테스트에 출처 확인 추가).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
