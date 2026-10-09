@@ -42,6 +42,10 @@ class PersonStep:
     touch: int = 16
     grow: int = 2
     max_side: int = 1024
+    # p142: SAM3 on every frame stays the default; keyframes N > 1 adds SAM2 propagation from every N-th frame,
+    # union keeps SAM3 on every frame and adds the propagation on top (src/cli.py ``person --keyframes --union``)
+    keyframes: int = 0
+    union: bool = False
 
 
 @dataclass
@@ -145,7 +149,9 @@ class MaskPreset:
         if self.person:
             p = self.person
             lines.append(f"person: {'; '.join(p.labels)}" + (f" + touching {'; '.join(p.attach)}" if p.attach else "")
-                         + f" (score >= {p.threshold}, grow {p.grow} px)")
+                         + f" (score >= {p.threshold}, grow {p.grow} px)"
+                         + (f"; SAM3 every frame + propagation from every {p.keyframes}th (union)" if p.union and p.keyframes > 1
+                            else f"; SAM3 every {p.keyframes}th frame, propagation between" if p.keyframes > 1 else ""))
         if self.lens:
             c = self.lens
             lines.append("lens: " + (f"radius {c.radius} %" if c.radius is not None else "circle found per camera folder")

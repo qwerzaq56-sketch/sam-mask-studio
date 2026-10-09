@@ -70,8 +70,10 @@ def test_pick_frames_and_circle():
 
 
 def _frames(tmp_path, monkeypatch):
+    from tests.fakes import fake_propagate
     monkeypatch.setattr(cli, "_engine", lambda model, device: FakeEngine())
     monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+    monkeypatch.setattr(cli, "_default_propagate", lambda: fake_propagate)  # the OSMO preset's union (p142)
     model = tmp_path / "sam3.pt"
     model.write_bytes(b"x")
     images = tmp_path / "images" / "cam0"
@@ -101,6 +103,27 @@ def test_person_takes_a_preset_and_the_options_change_it(tmp_path, monkeypatch, 
     assert s["attach"] == [] and s["grow"] == 0
     with pytest.raises(SystemExit):
         cli.main(["person", str(images), "--out", str(tmp_path / "p3"), "--model", str(model), "--preset", "nope"])
+
+
+def test_osmo_preset_runs_union_and_keyframes_0_turns_it_off(tmp_path, monkeypatch, mine):
+    osmo = P.find_preset("osmo360-selfie-stick")
+    assert (osmo.person.keyframes, osmo.person.union) == (10, True)
+    assert "propagation from every 10th (union)" in osmo.summary()
+    assert "keyframes" not in P.find_preset("people-only").summary()
+    images, model = _frames(tmp_path, monkeypatch)
+    rep = tmp_path / "r.json"
+    assert cli.main(["person", str(images), "--out", str(tmp_path / "p"), "--recursive", "--model", str(model),
+                     "--preset", "osmo360-selfie-stick", "--report", str(rep)]) == 0
+    r = json.loads(rep.read_text(encoding="utf-8"))
+    assert r["settings"]["keyframes"] == 10 and r["settings"]["union"] is True
+    rep2 = tmp_path / "r2.json"
+    assert cli.main(["person", str(images), "--out", str(tmp_path / "p2"), "--recursive", "--model", str(model),
+                     "--preset", "osmo360-selfie-stick", "--keyframes", "0", "--report", str(rep2)]) == 0
+    s = json.loads(rep2.read_text(encoding="utf-8"))["settings"]
+    assert "keyframes" not in s and "union" not in s
+    with pytest.raises(SystemExit):
+        cli.main(["person", str(images), "--out", str(tmp_path / "p3"), "--model", str(model),
+                  "--preset", "people-only", "--union"])
 
 
 def test_probe_scores_against_a_reference_and_saves_a_preset(tmp_path, monkeypatch, mine, capsys):
