@@ -1121,6 +1121,11 @@
 - 이 값이 앱의 `LOW_SCORE`(0.8, p156 측정)보다 낮으면 `warn`에 `low_score`가 들어가고 `warned` 집계에도 잡힙니다. 키프레임은 SAM3 결과라 score가 없습니다.
 - 테스트: `test_person_report_warns_where_sam2_was_unsure`. 깨끗한 worktree에서 350 통과.
 
+## v0.4-p158 — 배치 보고서의 SAM2 점수 · low_score를 툴팁에 (2026-10-10)
+- 배치 마스킹 스터디 요청(10-10): p157(명령줄, 배치 스터디 몫)이 사람 보고서 프레임 note에 `score`(그 장으로 전파한 키프레임 덩어리 object score의 최솟값)와, `LOW_SCORE`(0.8) 아래면 warn `low_score`를 넣음. 앱 표시는 이쪽이 정함.
+- `mask_report.describe`: note에 score가 있으면 출처 뒤에 `score 0.63`, warn `low_score`는 앱 전파와 같은 문구(`SAM2 is unsure it is there (low score)`). 불러온 마스크의 Frame List · Timeline 툴팁에 그대로 보임. score가 없는 옛 보고서는 전과 같음.
+- 테스트 351개 통과(p157 합쳐서, 새 테스트 1).
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)
