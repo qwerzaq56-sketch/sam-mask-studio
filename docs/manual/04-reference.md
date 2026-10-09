@@ -119,6 +119,7 @@
 | `Ctrl+I` | 이 프레임의 마스크 인버트(Region 안에서만, 있으면) |
 | `Ctrl+Backspace` | 이 프레임의 마스크 비우기(Region 안에서만, 있으면) |
 | `←` `→` | 다른 프레임에서 같은 Object를 이어서 편집 |
+| Objects 목록에서 다른 줄 클릭 | 그 Object 편집으로 넘어감(`Ctrl` / `Shift`+클릭은 선택만, Special Object는 넘어가지 않음) |
 | **Finish Editing** (`Esc`) | 편집 끝 |
 
 ## D4. 전파와 여러 프레임 작업

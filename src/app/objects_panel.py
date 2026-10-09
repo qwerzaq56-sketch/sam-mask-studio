@@ -19,6 +19,7 @@ from PyQt6.QtCore import QPointF, QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -175,6 +176,7 @@ class ObjectsPanel(QWidget):
     remove_frame_requested = pyqtSignal(int)
     variant_selected = pyqtSignal(int, int)  # obj id, variant index (current image)
     selection_changed = pyqtSignal(list)
+    row_clicked = pyqtSignal(int)  # a plain click (no Ctrl / Shift) that leaves just this Object selected (p161)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -565,6 +567,12 @@ class ObjectsPanel(QWidget):
         idx = item.data(0, VARIANT_ROLE)
         if item.parent() is not None and idx is not None:
             later(self, self.variant_selected, item.data(0, ID_ROLE), idx)
+        elif item.parent() is None:
+            oid = item.data(0, ID_ROLE)
+            plain = not QApplication.keyboardModifiers() & (Qt.KeyboardModifier.ControlModifier
+                                                            | Qt.KeyboardModifier.ShiftModifier)
+            if plain and self.selected_ids() == [oid]:
+                later(self, self.row_clicked, oid)
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if self._updating or column != NAME or item.parent() is not None:

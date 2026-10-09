@@ -666,6 +666,7 @@ class MainWindow(QMainWindow):
         o.include_toggled.connect(lambda oid, on: self._do(lambda: self.session.project.set_included(oid, on)))
         o.renamed.connect(lambda oid, name: self._do(lambda: self.session.project.rename(oid, name)))
         o.edit_requested.connect(self.toggle_edit)
+        o.row_clicked.connect(self.switch_edit)
         self.properties_panel.edit_requested.connect(self.toggle_edit)  # the Edit Layer tab's Edit button (p94)
         o.new_requested.connect(self.new_object)
         o.merge_requested.connect(self.merge)
@@ -2142,6 +2143,15 @@ class MainWindow(QMainWindow):
             self.session.edit(oid)
             self.canvas.setFocus()  # E: points (the brush is D)
         self.refresh()
+
+    def switch_edit(self, oid: int) -> None:
+        """A click on another Object's row while editing: edit that one instead (p161). Not a Special Object
+        (made from its settings), and nothing when no Object is being edited."""
+        s = self.session
+        o = s.project.get(oid)
+        if s.editing is None or s.editing == oid or o is None or o.special is not None:
+            return
+        self.toggle_edit(oid)
 
     def edit_key(self) -> None:
         """E, Edit's points tool (D is its brush): start editing; brush / auto tool -> points; points again -> out."""
