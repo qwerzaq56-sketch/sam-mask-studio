@@ -250,6 +250,8 @@ class Canvas(QWidget):
         self.points: Tuple[Point, ...] = ()
         self.selected_point: Optional[int] = None
         self.box: Optional[Box] = None
+        # the other point layers' (points, box): drawn gray, not clickable (p163)
+        self.other_prompts: Tuple[Tuple[Tuple[Point, ...], Optional[Box]], ...] = ()
 
         self.zoom = 1.0
         self._pan = QPointF(0, 0)
@@ -495,10 +497,12 @@ class Canvas(QWidget):
         if m is not None and result is not None:
             self.brush_finished.emit(result)
 
-    def set_prompts(self, points: Sequence[Point], selected: Optional[int], box: Optional[Box]) -> None:
+    def set_prompts(self, points: Sequence[Point], selected: Optional[int], box: Optional[Box],
+                    others: Sequence[Tuple[Sequence[Point], Optional[Box]]] = ()) -> None:
         self.points = tuple(points)
         self.selected_point = selected
         self.box = box
+        self.other_prompts = tuple((tuple(p), b) for p, b in others)
         self.update()
 
     def set_overlay_opacity(self, factor: float) -> None:
@@ -615,6 +619,8 @@ class Canvas(QWidget):
             self._draw_outlines(painter, o, s)
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if self.mode == Mode.EDIT and not self.original_view:
+            self._draw_other_prompts(painter)
         if self.box is not None and self.mode == Mode.EDIT and not self.original_view:
             self._draw_box(painter, self.box, QColor(255, 220, 0))
         if self._drag_to is not None and self._press is not None and not self._brush.is_drawing:
@@ -714,6 +720,16 @@ class Canvas(QWidget):
             for poly in polys:
                 painter.drawPolygon(poly)
         painter.restore()
+
+    def _draw_other_prompts(self, painter: QPainter) -> None:
+        """The point layers clicks do not go to: gray (lighter = +, darker = −), smaller, under the current ones."""
+        for pts, box in self.other_prompts:
+            if box is not None:
+                self._draw_box(painter, box, QColor(170, 170, 170, 180))
+            for pt in pts:
+                painter.setPen(QPen(QColor(230, 230, 230, 170), 1.0))
+                painter.setBrush(QColor(170, 170, 170, 170) if pt.positive else QColor(80, 80, 80, 170))
+                painter.drawEllipse(self.to_widget(pt.x, pt.y), POINT_RADIUS - 1.5, POINT_RADIUS - 1.5)
 
     def _draw_box(self, painter: QPainter, box: Box, color: QColor) -> None:
         a = self.to_widget(min(box[0], box[2]), min(box[1], box[3]))
