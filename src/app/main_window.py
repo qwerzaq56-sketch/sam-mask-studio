@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
+    QDialog,
     QDockWidget,
     QDoubleSpinBox,
     QSlider,
@@ -38,6 +39,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressDialog,
@@ -55,6 +57,7 @@ from src.app.detection_panel import DetectionPanel, candidate_color
 from src.app.dialogs import THUMB, ExportDialog, OptionsDialog, SettingsDialog, ShortcutsDialog
 from src.app.images_panel import ImagesPanel
 from src.app.timeline_panel import TimelinePanel
+from src.app.clear_run_dialog import ClearRunDialog
 from src.app.objects_panel import SOURCE_SHORT, ObjectsPanel
 from src.app.propagation_panel import PropagationPanel
 from src.app.properties_panel import AUTO_TOOLS, TOOL_TEXT, PropertiesPanel
@@ -65,7 +68,7 @@ from src.app.ui_util import DockTitleBar, StartPanel
 from src.app.settings import DEFAULT_PATH, Settings
 from src.app.workers import PropagationWorker, Task
 from src.core.project import FrameStatus
-from src.core.propagation import Direction, PropagationPlan
+from src.core.propagation import Direction, PropagationPlan, next_run
 from src.core.colmap import find_scene, matched, scene_root, white_share
 from src.core.colmap_model import build_dataset, dataset_blocker
 from src.core.reproject import MaskJob, Stitch, Views, convert, stitch_to_erp
@@ -135,6 +138,7 @@ class MainWindow(QMainWindow):
         # a stopped propagation: (plan, object ids, frames done), and plans queued by Resume
         self._last_prop: Optional[tuple] = None
         self._prop_queue: List[tuple] = []
+        self._prop_run: Optional[tuple] = None  # (run number, its first plan): each frame's origin (p152)
         self._tool = ""  # the Edit Layer tool in use ("" = none)
         self._auto_gen = 0  # newest auto-tool computation; older results are dropped
         self._auto_shown = 0  # the computation whose result is on screen
@@ -249,6 +253,7 @@ class MainWindow(QMainWindow):
         # the Timeline (p151): a row per Object, a tab beside the frame strip
         self.timeline_panel = TimelinePanel()
         self.timeline_panel.cell_clicked.connect(self.timeline_clicked)
+        self.timeline_panel.cell_menu.connect(self.timeline_menu)
         timeline_dock = self._dock("Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.tabifyDockWidget(frames_dock, timeline_dock)
         frames_dock.raise_()
@@ -390,6 +395,11 @@ class MainWindow(QMainWindow):
         self.act_clear_frames = self._action(
             "Clear Masks on Picked Frames", self.clear_picked_frames,
             tip="Empty the selected Objects' masks on the frames picked in the Frame List (Shift/Ctrl-click)",
+        )
+        self.act_clear_run = self._action(
+            "Clear a Propagation Run…", lambda: self.clear_run(),
+            tip="Remove what one propagation left on the selected Objects: from its reference forward, backward "
+                "or both, from a frame on (the Timeline shows what goes first)",
         )
         self.act_stamp = self._action(
             "Copy Mask to Picked Frames", lambda: self.stamp_picked_frames(),
@@ -561,7 +571,7 @@ class MainWindow(QMainWindow):
         objects = m.addMenu("Objects")
         for a in (self.act_duplicate, self.act_duplicate_all, None, self.act_move, self.act_transfer_options,
                   self.act_merge, self.act_merge_options, None, self.act_lock, self.act_lock_all,
-                  self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames):
+                  self.act_unlock_all, None, self.act_stamp, self.act_stamp_options, self.act_clear_frames, self.act_clear_run):
             objects.addSeparator() if a is None else objects.addAction(a)
         m = mb.addMenu("&View")
         for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side,
@@ -1098,6 +1108,7 @@ class MainWindow(QMainWindow):
         )
         self.propagation_panel.set_images(self.session.keys)
         self._reference, self._pinned, self._last_prop, self._prop_queue = None, None, None, []
+        self._prop_run = None
         self.propagation_panel.set_resumable(False)
         self.batch_panel.set_image_count(len(self.session.keys))
         self.canvas.set_image(self.session.image)
@@ -2480,6 +2491,62 @@ class MainWindow(QMainWindow):
             return None
         return ids
 
+    def clear_run(self, ids: Optional[List[int]] = None, run: Optional[int] = None,
+                  direction: Direction = Direction.BOTH, keep: int = 0) -> None:
+        """Clear a propagation run from the selected Objects (or *ids*), after a preview in the Timeline (p152)."""
+        if ids is None:
+            ids = self._many_frames_ready("clearing a propagation run")
+            if ids is None:
+                return
+        s = self.session
+        if s.key is None or self._busy:
+            return
+        if s.mode == Mode.EDIT:
+            self.log("Finish editing (Esc) before clearing a propagation run")
+            return
+        runs = s.run_summaries(ids)
+        if not runs:
+            self.log("No propagation run to clear on the selected Objects (masks propagated before p152, "
+                     "imported or edited ★ have none)")
+            return
+        names = ", ".join(s.project.get(i).name for i in ids)
+        index = {k: i for i, k in enumerate(s.keys)}
+        self._timeline_dock.show()
+        self._timeline_dock.raise_()
+        dlg = ClearRunDialog(
+            runs, lambda r, d, n: s.run_frames(ids, r.run, r.ref, d, n),
+            lambda frames: sorted({index[k] for ks in frames.values() for k in ks if k in index}),
+            names, self.timeline_panel.view.set_preview, run=run, direction=direction, keep=keep, parent=self)
+        if not self.run_dialog(dlg):
+            return
+        frames = dlg.frames
+        gone = s.clear_run(frames)
+        r = dlg.run()
+        self.log(f"Cleared {gone} mask(s) of run {r.run} (from {r.ref}, {dlg.direction().value}) "
+                 f"on {len(frames)} Object(s) (Ctrl+Z undoes it)")
+        self.refresh()
+
+    def run_dialog(self, dlg) -> bool:
+        """Show a dialog modally; True when accepted (tests replace it)."""
+        return dlg.exec() == QDialog.DialogCode.Accepted
+
+    def timeline_menu(self, oid: int, index: int, pos) -> None:
+        """Right-click on a Timeline cell: clear the run it was propagated in, from here on or whole."""
+        s = self.session
+        o = s.project.get(oid)
+        fs = o.frame(s.keys[index]) if o is not None and 0 <= index < len(s.keys) else None
+        og = fs.origin if fs is not None and fs.mask is not None else None
+        menu = QMenu(self)
+        if og is None:
+            menu.addAction("No propagation run on this frame").setEnabled(False)
+        else:
+            way = Direction.FORWARD if og.forward else Direction.BACKWARD
+            arrow = "▶" if og.forward else "◀"
+            menu.addAction(f"Clear Run {og.run} from Here On {arrow}…",
+                           lambda: self.clear_run([oid], og.run, way, og.step - 1))
+            menu.addAction(f"Clear Run {og.run} (Both Ways)…", lambda: self.clear_run([oid], og.run))
+        menu.exec(pos)
+
     def clear_picked_frames(self) -> None:
         """Empty the selected Objects' masks on the picked frames (one undo step), to redo them."""
         ids = self._many_frames_ready("clearing masks on the picked frames")
@@ -2905,6 +2972,7 @@ class MainWindow(QMainWindow):
             ):
                 return
         self._prop_queue = []
+        self._prop_run = (next_run(s.project.objects), plan)  # Resume goes on with the same run
         self._run_propagation(plan, seeds)
 
     def _run_propagation(self, plan: PropagationPlan, seeds) -> None:
@@ -2974,7 +3042,7 @@ class MainWindow(QMainWindow):
         if self._discard:  # Cancel: the frames done are kept; back where the run started, nothing to resume
             self._discard = False
             self._prop_queue = []
-            statuses = self.session.apply_propagation(results, seeds) if results else {}
+            statuses = self.session.apply_propagation(results, seeds, self._prop_run) if results else {}
             msg = f"Cancelled: {len(statuses)} image(s) kept" + (" — Ctrl+Z undoes them" if statuses else "")
             self.propagation_panel.finish(statuses, msg)
             self.propagation_panel.set_resumable(False)
@@ -2983,7 +3051,7 @@ class MainWindow(QMainWindow):
             self.refresh()
             return
         self._leave_live(last if outcome == "Stopped" else None)  # Stop: stay on the last frame done
-        statuses = self.session.apply_propagation(results, seeds) if results else {}
+        statuses = self.session.apply_propagation(results, seeds, self._prop_run) if results else {}
         bad = sum(1 for st in statuses.values() if st.value in ("warning", "failed"))
         msg = f"{outcome}: {len(statuses)} image(s) updated" + (f", {bad} need a look (⚠/✕)" if bad else "")
         self.propagation_panel.finish(statuses, msg)

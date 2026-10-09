@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from src.core.project import FrameStatus
+from src.core.project import FrameStatus, Origin
 
 
 class Direction(str, Enum):
@@ -71,6 +71,72 @@ class PropagationPlan:
         lo = self.current if self.direction == Direction.FORWARD else self.start
         hi = self.current if self.direction == Direction.BACKWARD else self.end
         return lo, hi
+
+
+def origins(plan: PropagationPlan, run: int, keys: Sequence[str]) -> Dict[int, Origin]:
+    """Each target frame's origin in *run*: the plan's reference, its direction, how many frames out (p152)."""
+    ref = keys[plan.current]
+    out = {i: Origin(run, ref, True, n) for n, i in enumerate(plan.forward, 1)}
+    out.update({i: Origin(run, ref, False, n) for n, i in enumerate(plan.backward, 1)})
+    return out
+
+
+@dataclass(frozen=True)
+class RunSummary:
+    """One propagation run as the given Objects still hold it: its reference, and how many of their frames
+    (and how far out) it filled backward / forward."""
+
+    run: int
+    ref: str
+    backward: int
+    forward: int
+    far_backward: int
+    far_forward: int
+
+    def describe(self) -> str:
+        parts = [f"◀ {self.backward}" if self.backward else "", f"▶ {self.forward}" if self.forward else ""]
+        return f"Run {self.run} — from {self.ref.rsplit('.', 1)[0]}: " + " · ".join(p for p in parts if p)
+
+
+def run_summaries(objects: Iterable, ids: Iterable[int]) -> List[RunSummary]:
+    """The runs the Objects *ids* still hold frames of, newest first (a run per reference it started from)."""
+    wanted = set(ids)
+    tally: Dict[Tuple[int, str], List[int]] = {}
+    for o in objects:
+        if o.id not in wanted:
+            continue
+        for fs in o.frames.values():
+            og = fs.origin
+            if og is None or fs.mask is None:
+                continue
+            t = tally.setdefault((og.run, og.ref), [0, 0, 0, 0])
+            t[1 if og.forward else 0] += 1
+            t[3 if og.forward else 2] = max(t[3 if og.forward else 2], og.step)
+    return [RunSummary(run, ref, *t) for (run, ref), t in sorted(tally.items(), key=lambda kv: -kv[0][0])]
+
+
+def run_frames(objects: Iterable, ids: Iterable[int], run: int, ref: str, direction: Direction,
+               keep: int = 0) -> Dict[int, List[str]]:
+    """{Object id: image keys} of *run* from *ref* in *direction*, more than *keep* frames from the reference:
+    what clearing that run (from there on) removes. Frames edited since (★) have no origin, so they stay."""
+    wanted = set(ids)
+    out: Dict[int, List[str]] = {}
+    for o in objects:
+        if o.id not in wanted:
+            continue
+        for k, fs in o.frames.items():
+            og = fs.origin
+            if og is None or og.run != run or og.ref != ref or og.step <= keep:
+                continue
+            if direction == Direction.BOTH or og.forward == (direction == Direction.FORWARD):
+                out.setdefault(o.id, []).append(k)
+    return out
+
+
+def next_run(objects: Iterable) -> int:
+    """The number for a new propagation run: one more than any run still on a frame."""
+    return 1 + max((fs.origin.run for o in objects for fs in o.frames.values() if fs.origin is not None),
+                   default=0)
 
 
 # A propagated mask whose area drifts this far from the reference is flagged.

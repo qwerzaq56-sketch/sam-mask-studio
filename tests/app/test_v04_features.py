@@ -3578,3 +3578,60 @@ def test_timeline_shows_a_row_per_object_and_a_click_opens_that_frame_and_object
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(10, HEAD_H + ROW_H // 2))
     settle(qapp)
     assert win.session.index == 0 and win.objects_panel.selected_ids() == [ids[0]]  # a name: its nearest mask
+
+
+def test_propagation_runs_are_recorded_and_cleared_from_a_frame_on(qapp, win):
+    """p152: each propagated frame records its run, reference, direction and distance (tooltip); Clear a
+    Propagation Run previews what goes in the Timeline, removes it as one undo step and keeps frames edited since."""
+    import dataclasses
+
+    from PyQt6.QtWidgets import QMenu
+
+    from src.core.project import FrameStatus
+    from src.core.propagation import Direction
+    from tests.app.conftest import wait_until
+    from tests.app.test_gui import click
+
+    s = win.session
+    win.go_to(2)
+    win.new_object()
+    click(win, 30, 30)
+    win.finish_editing()
+    oid = s.project.objects[0].id
+    win.objects_panel.select_ids([oid])
+    win.propagate(0, 4, Direction.BOTH)
+    wait_until(qapp, lambda: win._busy is None)
+    k = s.keys
+    o = s.project.get(oid)
+    og = {i: o.frame(k[i]).origin for i in range(5)}
+    assert og[2] is None and og[4].run == 1 and og[4].ref == k[2] and og[4].forward and og[4].step == 2
+    assert not og[0].forward and og[0].step == 2 and og[1].step == 1
+    win.refresh()
+    assert "forward, 2 away (run 1)" in win.images_panel.list.item(4).toolTip()
+    assert [r.run for r in s.run_summaries([oid])] == [1]
+
+    seen = {}
+
+    def accept(dlg):
+        seen["frames"] = dict(dlg.frames)
+        seen["preview"] = dict(win.timeline_panel.view._preview)
+        seen["text"] = dlg.summary.text()
+        dlg.done(1)
+        return True
+
+    win.run_dialog = accept
+    win.clear_run([oid], 1, Direction.FORWARD, keep=1)  # the Timeline's "from here on" on frame 5
+    assert seen["frames"] == {oid: [k[4]]} and seen["preview"] == {oid: {k[4]}} and "frames 5" in seen["text"]
+    assert win.timeline_panel.view._preview == {}  # the preview ends with the window
+    o = s.project.get(oid)
+    assert o.frame(k[4]) is None and o.frame(k[3]) is not None
+    p = s.project
+    p.set_frame(oid, k[0], dataclasses.replace(o.frame(k[0]), status=FrameStatus.MANUAL))  # edited since: kept
+    assert p.get(oid).frame(k[0]).origin is None
+    win.clear_run([oid], 1)
+    o = s.project.get(oid)
+    assert sorted(seen["frames"][oid]) == [k[1], k[3]]
+    assert [kk for kk in k if o.frame(kk) is not None] == [k[0], k[2]]
+    win.undo()
+    assert s.project.get(oid).frame(k[3]).origin.step == 1
+    assert any(win.act_clear_run in m.actions() for m in win.menuBar().findChildren(QMenu))  # Objects menu
