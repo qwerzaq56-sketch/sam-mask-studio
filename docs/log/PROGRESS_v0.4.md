@@ -1115,6 +1115,12 @@
 - 결정: `LOW_SCORE = 0.8` 그대로, 임시 표시를 뗌(주석 · 매뉴얼 01). 코드 동작은 바뀌지 않음.
 - 측정 스크립트와 줄 단위 결과는 세션 임시 폴더(저장소 밖)에만 있음.
 
+## v0.4-p157 — 명령줄 person 보고서 low_score 경고 (배치 마스킹)
+
+- `cli person --keyframes`: 전파로 채운 프레임과 union 프레임의 note에 `score`가 붙습니다. 그 장으로 전파해 들어온 덩어리들의 SAM2 object score 가운데 가장 낮은 값입니다(`engine.video.propagate(scores=)`, p153).
+- 이 값이 앱의 `LOW_SCORE`(0.8, p156 측정)보다 낮으면 `warn`에 `low_score`가 들어가고 `warned` 집계에도 잡힙니다. 키프레임은 SAM3 결과라 score가 없습니다.
+- 테스트: `test_person_report_warns_where_sam2_was_unsure`. 깨끗한 worktree에서 350 통과.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

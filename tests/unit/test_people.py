@@ -355,3 +355,30 @@ def test_person_report_says_which_frames_are_worth_a_look(tmp_path, monkeypatch)
                     "cam1/00001.png": ["area_jump"]}
     assert rep["warned"] == {"area_jump": 2, "empty": 1}
     assert {n["source"] for n in rep["frames"].values()} == {"sam3"}
+
+
+def test_person_report_warns_where_sam2_was_unsure(tmp_path, monkeypatch):
+    """p157: a propagated frame notes the lowest SAM2 object score carried into it; below LOW_SCORE it warns."""
+    from src.core.propagation import LOW_SCORE
+    from tests.fakes import fake_propagate
+
+    ShiftEngine.calls, ShiftEngine.order = [], []
+    monkeypatch.setattr(cli, "_engine", lambda model, device: ShiftEngine())
+    monkeypatch.setattr(cli, "gpu_free_gb", lambda: 7.0)
+
+    def prop(ckpt, paths, plan, seeds, max_side, device="cuda", scores=None, **kw):
+        for idx, objs in fake_propagate(ckpt, paths, plan, seeds, max_side, device):
+            if scores is not None:  # SAM2 unsure of what keyframe 3 carries back into frame 2
+                scores[idx] = {o: (0.3 if plan.current == 3 and idx == 2 else 0.999) for o in objs}
+            yield idx, objs
+
+    images = tmp_path / "images"
+    (images / "cam0").mkdir(parents=True)
+    for i in range(4):
+        cv2.imencode(".jpg", np.full((200, 200, 3), 10 * i, np.uint8))[1].tofile(str(images / "cam0" / f"{i:05d}.jpg"))
+    rep = cli.person_folder(images, tmp_path / "people", recursive=True, labels=["person"], attach=[], grow=0,
+                            max_side=200, keyframes=3, propagate=prop, log=lambda s: None)
+    f1, f2 = rep["frames"]["cam0/00001.jpg"], rep["frames"]["cam0/00002.jpg"]
+    assert f1["score"] == 0.999 and "low_score" not in f1.get("warn", [])
+    assert f2["score"] == 0.3 < LOW_SCORE and "low_score" in f2["warn"] and rep["warned"]["low_score"] == 1
+    assert "score" not in rep["frames"]["cam0/00000.jpg"]  # a keyframe: SAM3's own
