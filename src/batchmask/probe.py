@@ -115,7 +115,8 @@ def probe(images: Path, keys: Sequence[str], detect: Callable, person: PersonSte
     from src.core.people import people_mask
     from src.engine.imageio import read_rgb, to_working
 
-    prompts = list(dict.fromkeys([*person.labels, *person.attach, *also]))
+    steady = list(getattr(person, "steady", []))  # one frame at a time here: treated as attach (p145)
+    prompts = list(dict.fromkeys([*person.labels, *person.attach, *steady, *also]))
     colors = {p: COLORS[i % len(COLORS)] for i, p in enumerate(prompts)}
     stats = {p: {"found_in": 0, "scores": [], "area": [], "covers": [], "spill": []} for p in prompts}
     frames: Dict[str, dict] = {}
@@ -143,7 +144,8 @@ def probe(images: Path, keys: Sequence[str], detect: Callable, person: PersonSte
             if d.score >= person.threshold and d.mask.shape == shape:
                 per_label[d.label] = per_label.get(d.label, np.zeros(shape, bool)) | d.mask
                 stats[d.label]["scores"].append(float(d.score))
-        combined = people_mask(dets, shape, person.labels, person.attach, person.threshold, person.touch, person.grow)
+        combined = people_mask(dets, shape, person.labels, [*person.attach, *steady], person.threshold, person.touch,
+                               person.grow)
         ref = reference_mask(reference, key) if reference is not None else None
         ref = None if ref is None else _fit(ref, shape)
         area = circle(shape, inside) if inside else None
@@ -181,7 +183,8 @@ def probe(images: Path, keys: Sequence[str], detect: Callable, person: PersonSte
 
     labels = {}
     for p, s in stats.items():
-        labels[p] = {"role": "label" if p in person.labels else "attach" if p in person.attach else "also",
+        labels[p] = {"role": "label" if p in person.labels else "attach" if p in person.attach
+                     else "steady" if p in steady else "also",
                      "found_in": s["found_in"], "score_mean": mean(s["scores"]),
                      "score_max": round(max(s["scores"]), 3) if s["scores"] else None,
                      "area_mean": mean(s["area"]), "covers": mean(s["covers"]), "spill": mean(s["spill"])}
