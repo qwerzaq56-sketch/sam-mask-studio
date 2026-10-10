@@ -181,7 +181,7 @@ bedroom/
 | 흑백으로 보기 | **Mask Preview** (`V`) 켜기 / 끄기, `Z`를 누르고 있는 동안만 보기. 흑백인 채로 편집도 됩니다 |
 | 무엇을 흑백으로 | **Preview: Final / Object** (`X`): Final Mask 전체 ↔ 선택한 Object만 |
 | 한 Object만 색 | **Solo** (`Q`): 선택한 Object(와 편집 중인 것)만 색칠 |
-| 맨 이미지 | **Hide Masks** (`H`): 모든 색을 끔. `H`를 누르고 있으면 누른 동안만 |
+| 맨 이미지 | **Hide Masks** (`H`): 모든 색을 끔. `Space`를 누르고 있으면 누른 동안만 |
 | 한 Object만 숨기기 | 그 줄의 **👁**. 체크박스(Final Mask에 넣기)와 따로이고, 저장되지 않습니다 |
 | 한 Object 기준 표시 | Frame List 제목줄 **`1`**: 선택한 Object의 표시만, 그 Object가 없는 프레임은 `–` |
 | 키프레임 오가기 | `,` / `.`: 이전 / 다음 `★`. `F`: 기준 ◎로 |

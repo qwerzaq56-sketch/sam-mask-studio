@@ -292,10 +292,11 @@ Object = 학습에서 **무시할 것**입니다. 프리셋은 이것을 학습�
 | `X` | Mask Preview 대상: Final Mask ↔ 선택한 Object |
 | `O` | Outline 켜기 / 끄기 |
 | `Q` / `` ` `` | Solo: 선택한 Object만 색칠 |
-| `H` | Hide Masks: 맨 이미지(짧게 = 켜고 끄기, 누르고 있기 = 누른 동안만) |
+| `H` | Hide Masks: 맨 이미지(켜고 끄기) |
+| `Space` (누르고 있기) | 누른 동안만 Hide Masks |
 | `R` | Show Changes(Edit Layer의 초록 / 빨강) |
 | 휠 | 커서 위치로 확대 · 축소 |
-| 가운데 드래그 / `Space`+드래그 | 이동 |
+| 가운데 드래그 | 이동 |
 | `F1` | 단축키 목록 |
 
 ### Select on Image (Detection 후보 고르기)
