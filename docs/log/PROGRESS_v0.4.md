@@ -1167,6 +1167,11 @@
 - Properties → Points 트리에서 레이어 줄 더블클릭 → 이름 입력 창. Original과 아직 안 만든 레이어("· next click")는 바꾸지 않음. 줄 글자 = `이름 (+)` / `이름 (−)`.
 - 매뉴얼 02 · 04. 테스트 1(새로).
 
+## v0.4-p166 — 누르고 있는 동안 마스크 숨기기를 H → Space로 (2026-10-11)
+- 사용자 결정(10-11): "스페이스바 어차피 잘 안 쓰니까 스페이스로". p162의 H 누르고 있기를 되돌리고(H = 전처럼 켜고 끄기만, `HOLD_SECONDS` 없앰), `Space`를 누르고 있는 동안 Hide Masks, 떼면 그 전 상태로(`MainWindow._space_key`). H로 숨겨 둔 상태면 그대로.
+- `Space`+드래그 이동은 없앰(캔버스 `_space_held`), 이동은 가운데 드래그. Frame List · Frames 줄 위의 `Space` = 기준 ◎(Enter와 같음)는 그대로.
+- View 메뉴 안내 "Hide Masks while held — Space (hold)", F1 표, 툴팁, 매뉴얼 01 · 02 · 04. p162 테스트를 이것으로 바꿈.
+
 ## 반영 안 함 (리뷰 평가 결과)
 - 전파 Preview 단계: 결과가 바로 Undo 되고 Cancel이 결과를 버리므로 이미 같은 효과
 - Frame List와 하단 줄 통합: 역할이 이미 나뉨(목록 = 이동, 줄 = 썸네일)

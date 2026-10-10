@@ -3804,8 +3804,9 @@ def test_a_click_on_another_objects_row_while_editing_edits_that_one(qapp, win):
     assert s.editing == b and win.objects_panel.selected_ids() == [b]
 
 
-def test_h_tap_toggles_hide_masks_and_h_held_peeks(qapp, win):
-    """p162: a tap of H toggles Hide Masks as before; held past HOLD_SECONDS, the masks come back on release."""
+def test_space_held_hides_the_masks_and_h_toggles(qapp, win):
+    """p166 (p162 moved): Space held = Hide Masks only while it is down (Space+drag no longer pans; middle-drag
+    does), H toggles; over a frame list Space still sets the reference."""
     from PyQt6.QtCore import Qt
     from PyQt6.QtTest import QTest
 
@@ -3814,22 +3815,19 @@ def test_h_tap_toggles_hide_masks_and_h_held_peeks(qapp, win):
     win.canvas.setFocus()
     qapp.processEvents()
     act = win.act_hide_masks
-    QTest.keyClick(win.canvas, Qt.Key.Key_H)  # tap: on
-    assert act.isChecked() and win._h_press is None
-    QTest.keyClick(win.canvas, Qt.Key.Key_H)  # tap: off
-    assert not act.isChecked()
-    QTest.keyPress(win.canvas, Qt.Key.Key_H)  # held: hidden while down...
+    QTest.keyClick(win.canvas, Qt.Key.Key_H)  # H: on, and stays
     assert act.isChecked()
-    win._h_press = (win._h_press[0] - 1.0, win._h_press[1])  # ...for a second
-    QTest.keyRelease(win.canvas, Qt.Key.Key_H)
-    assert not act.isChecked()  # back on release
-    act.setChecked(True)  # hidden from the toolbar: a long H shows them while down, hides again
-    QTest.keyPress(win.canvas, Qt.Key.Key_H)
+    QTest.keyClick(win.canvas, Qt.Key.Key_H)
     assert not act.isChecked()
-    win._h_press = (win._h_press[0] - 1.0, win._h_press[1])
-    QTest.keyRelease(win.canvas, Qt.Key.Key_H)
+    QTest.keyPress(win.canvas, Qt.Key.Key_Space)  # held: hidden while down
     assert act.isChecked()
-
+    QTest.keyRelease(win.canvas, Qt.Key.Key_Space)
+    assert not act.isChecked() and win._space_hide is None
+    act.setChecked(True)  # hidden by H: Space keeps them hidden and leaves it so
+    QTest.keyPress(win.canvas, Qt.Key.Key_Space)
+    QTest.keyRelease(win.canvas, Qt.Key.Key_Space)
+    assert act.isChecked()
+    assert not hasattr(win.canvas, "_space_held")
 
 def test_the_other_point_layers_points_show_gray(qapp, win):
     """p163: while one point layer takes the clicks, the others' points / box are drawn gray (not clickable)."""

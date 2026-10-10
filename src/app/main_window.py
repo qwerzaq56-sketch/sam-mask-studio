@@ -119,9 +119,6 @@ def default_propagate():
     return propagate
 
 
-# A key held this long counts as held, not tapped (H: peek at the plain image, p162).
-HOLD_SECONDS = 0.35
-
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -159,7 +156,7 @@ class MainWindow(QMainWindow):
         self._goto_fields: List[QLineEdit] = []  # Frame List, frame strip
         self._busy: Optional[str] = None  # a long job that locks navigation/editing
         self._live = None  # while propagating: (frame index, {Object id: mask}) just done, shown on the canvas
-        self._h_press = None  # H down: (when, Hide Masks before it); held long, put back on release (p162)
+        self._space_hide = None  # Space down: Hide Masks before it, put back on release (p166)
         self._t_press = None  # T down while picking: Original before it, put back on release (BC-P3, p100)
         self._pick_at: dict = {}  # ("in" / "out", rgb) -> (image key, x, y) where By Color's color was taken
         self._loading_models = False
@@ -530,7 +527,7 @@ class MainWindow(QMainWindow):
         self.act_hide_masks = self._action(
             "Hide Masks", lambda _on: self._update_overlays(), ["H"],
             tip="No Object colors on the canvas, the Object in Edit included: the plain image "
-                "(a tool's preview still shows). Hold H: only while it is down", checkable=True,
+                "(a tool's preview still shows). Hold Space: only while it is down", checkable=True,
         )
         for a in (self.act_final, self.act_preview_mode, self.act_preview_style, self.act_cutout_side, self.act_brush, self.act_outline, self.act_changes,
                   self.act_pick_all, self.act_leave_auto, self.act_auto_fill, self.act_apply_continue,
@@ -597,6 +594,7 @@ class MainWindow(QMainWindow):
         self._hint(m, "Peek at Mask Preview", "Z (hold)")
         for a in (self.act_outline, self.act_changes, None, self.act_solo, self.act_hide_masks):
             m.addSeparator() if a is None else m.addAction(a)
+        self._hint(m, "Hide Masks while held", "Space (hold)")
         m.addSeparator()
         panels = m.addMenu("Panels")
         for d in self._docks:
@@ -1428,13 +1426,15 @@ class MainWindow(QMainWindow):
                 self.set_reference(self.session.index)  # Enter (no auto tool) = the current image is the reference ◎
             return True
         if (
-            t in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyRelease)
-            and event.key() == Qt.Key.Key_H
+            t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and event.key() == Qt.Key.Key_Space
             and event.modifiers() == Qt.KeyboardModifier.NoModifier
-            and not event.isAutoRepeat()
             and not self._typing_text()
+            and self.isActiveWindow()
         ):
-            self._hide_key(t == QEvent.Type.ShortcutOverride)  # the H shortcut itself still toggles on press
+            if not event.isAutoRepeat():
+                self._space_key(t == QEvent.Type.KeyPress)  # over a frame list Space is Enter (above)
+            return True
         if (
             t in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() == Qt.Key.Key_T
@@ -1477,19 +1477,19 @@ class MainWindow(QMainWindow):
             return False
         return isinstance(w, (QLineEdit, QPlainTextEdit))
 
-    def _hide_key(self, pressed: bool) -> None:
-        """H: a tap toggles Hide Masks (its shortcut); held past HOLD_SECONDS, the masks come back on release,
-        so holding H peeks at the plain image (p162)."""
+    def _space_key(self, pressed: bool) -> None:
+        """Space held: Hide Masks while it is down, back as it was on release (p166; H toggles)."""
+        act = self.act_hide_masks
         if pressed:
-            if self._h_press is None:
-                self._h_press = (time.monotonic(), self.act_hide_masks.isChecked())
+            if self._space_hide is None:
+                self._space_hide = act.isChecked()
+                act.setChecked(True)
+                self._update_overlays()
             return
-        press, self._h_press = self._h_press, None
-        if press is None:
-            return
-        when, before = press
-        if time.monotonic() - when >= HOLD_SECONDS and self.act_hide_masks.isChecked() != before:
-            self.act_hide_masks.trigger()
+        before, self._space_hide = self._space_hide, None
+        if before is not None:
+            act.setChecked(before)
+            self._update_overlays()
 
     def _original_key(self, pressed: bool) -> None:
         """T while picking colors (BC-P3): Original turned around only while T is held, back on release (p100:

@@ -256,7 +256,6 @@ class Canvas(QWidget):
         self.zoom = 1.0
         self._pan = QPointF(0, 0)
         self._pan_from: Optional[Tuple[QPointF, QPointF]] = None
-        self._space_held = False
         self._point_drag: Optional[Tuple[int, QPointF, bool]] = None  # index, press pos, moved
         # Select on Image: left clicks / drags pick Detections (and do nothing else)
         self.candidates_pickable = False
@@ -803,7 +802,7 @@ class Canvas(QWidget):
         if self.image is None:
             return
         pos, btn = event.position(), event.button()
-        if btn == Qt.MouseButton.MiddleButton or (btn == Qt.MouseButton.LeftButton and self._space_held):
+        if btn == Qt.MouseButton.MiddleButton:  # pan (Space+drag until p166: Space now hides the masks)
             self._pan_from = (pos, QPointF(self._pan))
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
@@ -1037,9 +1036,6 @@ class Canvas(QWidget):
         k = event.key()
         if k == Qt.Key.Key_Alt:
             self.update()  # the brush circle / region box turns red
-        elif k == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._space_held = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
         elif k == Qt.Key.Key_Shift:
             self.update()
         else:
@@ -1049,9 +1045,6 @@ class Canvas(QWidget):
         k = event.key()
         if k == Qt.Key.Key_Alt:
             self.update()
-        elif k == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._space_held = False
-            self._update_cursor()
         elif k == Qt.Key.Key_Shift:
             if self._brush.is_drawing and not self.brush_mode:
                 self._finish_stroke()  # a Shift stroke ends when Shift is let go
@@ -1060,7 +1053,6 @@ class Canvas(QWidget):
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):
-        self._space_held = False
         if self._brush.is_drawing:
             self._finish_stroke()
         self.update()

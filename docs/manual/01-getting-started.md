@@ -48,7 +48,7 @@ Original(포인트 · 박스 · 불러온 마스크)  ∪  더하기 레이어  
 | ④ | **Objects** | Object 목록. 한 줄: 👁 · 체크박스 · 이름 · 🔗 · 🔒 · Points · × · ···. 아래에 **+ New Object**, **+ Special ▾** 와 선택한 Object용 버튼 |
 | ⑤ | **탭** | **Prompt**(SAM3로 찾기, 마우스를 올리면 Prompt / Detection) · **Batch**(여러 프레임에 한꺼번에) · **Propagation**(전파) · **Logs**(작업 기록) |
 | ⑥ | **작업 상태 바** | 캔버스 위 한 줄: 지금 프레임 │ 대상 Object │ 모드(View, Points, Paint, Auto · …, Select on Image, 전파 중 …) │ 파일 이름 |
-| ⑦ | **캔버스** | 이미지와 마스크. 휠 = 확대 · 축소, 가운데 드래그 또는 `Space`+드래그 = 이동 |
+| ⑦ | **캔버스** | 이미지와 마스크. 휠 = 확대 · 축소, 가운데 드래그 = 이동, `Space`를 누르고 있는 동안 = 마스크 숨김 |
 | ⑧ | **Frames 줄** | 썸네일 줄. Frame List와 같은 목록이라 현재 프레임, 선택, 표시가 똑같이 보입니다. 아래에 **Go to ID** 칸과 ⌖(현재 프레임으로 스크롤) . 옆 탭 **Timeline**(p151) = Object마다 한 줄 |
 | ⑨ | **Properties** | 고른 Object의 자세한 내용. **Mask** 탭(Variants, Points) · **Edit Layer** 탭(Brush, Auto tools) · 특수 Object면 **Special** 탭 |
 
